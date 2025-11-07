@@ -11,7 +11,7 @@ import { RefreshCw, Clock, MessageSquare, CheckCircle, RotateCcw, Trash2, FileTe
 import { toast } from "sonner";
 import { ReassignDialog } from "./ReassignDialog";
 
-export function AdminActions({ ticketId, currentStatus, hasTAT, isPublic, isSuperAdmin = false }: { ticketId: number; currentStatus: string; hasTAT?: boolean; isPublic?: boolean; isSuperAdmin?: boolean }) {
+export function AdminActions({ ticketId, currentStatus, hasTAT, isPublic, isSuperAdmin = false, ticketCategory, ticketLocation, currentAssignedTo }: { ticketId: number; currentStatus: string; hasTAT?: boolean; isPublic?: boolean; isSuperAdmin?: boolean; ticketCategory: string; ticketLocation?: string | null; currentAssignedTo?: string | null }) {
 	const router = useRouter();
 	const [loading, setLoading] = useState<string | null>(null);
 	const [showTATForm, setShowTATForm] = useState(false);
@@ -395,7 +395,9 @@ export function AdminActions({ ticketId, currentStatus, hasTAT, isPublic, isSupe
             open={showReassignDialog}
             onOpenChange={setShowReassignDialog}
             ticketId={ticketId}
-            currentAssignedTo={undefined}
+            currentAssignedTo={currentAssignedTo}
+            ticketCategory={ticketCategory}
+            ticketLocation={ticketLocation}
             onReassigned={() => router.refresh()}
           />
           <Button

@@ -36,6 +36,16 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
 
   let allTickets = await db.select().from(tickets).orderBy(desc(tickets.createdAt));
 
+  // Super admin view: only tickets assigned to me OR escalated to me/role
+  allTickets = allTickets.filter((t) => {
+    const escalatedTo = (t.escalatedTo || "").toLowerCase();
+    return (
+      t.assignedTo === userId ||
+      escalatedTo === String(userId).toLowerCase() ||
+      escalatedTo === "super_admin"
+    );
+  });
+
   if (category) {
     allTickets = allTickets.filter(t => (t.category || "").toLowerCase() === category.toLowerCase());
   }
@@ -194,7 +204,7 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
             <div className="flex justify-between items-center pt-4">
               <h2 className="text-2xl font-semibold flex items-center gap-2">
                 <FileText className="w-6 h-6" />
-                All Tickets (Super Admin View)
+                My Tickets & Escalations
               </h2>
               <p className="text-sm text-muted-foreground">
                 {allTickets.length} {allTickets.length === 1 ? 'ticket' : 'tickets'}

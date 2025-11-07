@@ -49,27 +49,33 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
   // Get admin's domain/scope assignment
   const { getAdminAssignment, ticketMatchesAdminAssignment } = await import("@/lib/admin-assignment");
   const adminAssignment = await getAdminAssignment(adminUserId);
+  const hasAssignment = !!adminAssignment.domain;
 
-  // Fetch tickets: assigned to this admin OR unassigned tickets that match admin's domain/scope
+  // Fetch tickets
   let allTickets = await db
     .select()
     .from(tickets)
     .where(
-      or(
-        eq(tickets.assignedTo, adminUserId),
-        isNull(tickets.assignedTo)
-      )
+      hasAssignment
+        ? eq(tickets.assignedTo, adminUserId)
+        : or(eq(tickets.assignedTo, adminUserId), isNull(tickets.assignedTo))
     )
     .orderBy(desc(tickets.createdAt));
 
-  // Filter unassigned tickets to only show those matching admin's domain/scope
-  if (adminAssignment.domain) {
+  if (hasAssignment) {
+    allTickets = allTickets.filter(t =>
+      t.assignedTo === adminUserId &&
+      ticketMatchesAdminAssignment(
+        { category: t.category, location: t.location },
+        adminAssignment
+      )
+    );
+  }
+
+  // If admin has no assignment, allow viewing matching unassigned tickets (legacy behaviour)
+  if (!hasAssignment) {
     allTickets = allTickets.filter(t => {
-      // If assigned to this admin, always show
-      if (t.assignedTo === adminUserId) {
-        return true;
-      }
-      // If unassigned, only show if matches admin's domain/scope
+      if (t.assignedTo === adminUserId) return true;
       if (!t.assignedTo) {
         return ticketMatchesAdminAssignment(
           { category: t.category, location: t.location },

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth, clerkClient } from "@clerk/nextjs/server";
+import { db, staff } from "@/db";
+import { eq } from "drizzle-orm";
 
 export async function GET(request: NextRequest) {
 	try {
@@ -9,30 +11,51 @@ export async function GET(request: NextRequest) {
 			return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 		}
 
-		// Check if user is admin
+		// Only super admins can access full admin roster for reassignment
 		const role = sessionClaims?.metadata?.role;
-		const isAdmin = role === "admin" || role === "super_admin";
-		
-		if (!isAdmin) {
-			return NextResponse.json({ error: "Only admins can access this" }, { status: 403 });
+		if (role !== "super_admin") {
+			return NextResponse.json({ error: "Only super admins can access this" }, { status: 403 });
 		}
 
+		const staffAdmins = await db
+			.select()
+			.from(staff)
+			.where(eq(staff.role, "admin"));
+
+		const adminsWithClerkId = staffAdmins.filter((admin) => !!admin.clerkUserId);
 		const client = await clerkClient();
-		const userList = await client.users.getUserList();
 
-		// Return all users for staff assignment (can link any user to staff)
-		const users = userList.data.map(user => ({
-			id: user.id,
-			firstName: user.firstName || null,
-			lastName: user.lastName || null,
-			emailAddresses: Array.isArray(user.emailAddresses)
-				? user.emailAddresses.map((email: any) => ({
-						emailAddress: typeof email?.emailAddress === 'string' ? email.emailAddress : ''
-					}))
-				: [],
-		}));
+		const detailedAdmins = await Promise.all(
+			adminsWithClerkId.map(async (admin) => {
+				try {
+					const user = await client.users.getUser(admin.clerkUserId!);
+					const primaryEmail = Array.isArray(user.emailAddresses) && user.emailAddresses.length > 0
+						? user.emailAddresses[0]?.emailAddress || admin.email || ""
+						: admin.email || "";
 
-		return NextResponse.json({ admins: users });
+					const name = [user.firstName, user.lastName].filter(Boolean).join(" ") || admin.fullName || primaryEmail || "Admin";
+
+					return {
+						id: user.id,
+						name,
+						email: primaryEmail,
+						domain: admin.domain,
+						scope: admin.scope,
+					};
+				} catch (error) {
+					console.error("Error fetching clerk user for admin", admin.clerkUserId, error);
+					return {
+						id: admin.clerkUserId!,
+						name: admin.fullName,
+						email: admin.email || "",
+						domain: admin.domain,
+						scope: admin.scope,
+					};
+				}
+			})
+		);
+
+		return NextResponse.json({ admins: detailedAdmins });
 	} catch (error) {
 		console.error("Error fetching admins:", error);
 		return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

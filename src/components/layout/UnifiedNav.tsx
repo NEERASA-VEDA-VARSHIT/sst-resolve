@@ -36,24 +36,29 @@ export function UnifiedNav() {
   
   useEffect(() => setMounted(true), []);
   
-  const role = ((user?.publicMetadata as any)?.role as string | undefined) || "student";
+  // Stabilize role to avoid SSR/CSR mismatch; default to student until mounted
+  const role = mounted ? (((user?.publicMetadata as any)?.role as string | undefined) || "student") : "student";
   const isAdmin = role === "admin" || role === "super_admin";
   const isSuperAdmin = role === "super_admin";
   const isCommittee = role === "committee";
 
   // Build navigation items based on role
-  const navItems = [
-    ...(isSuperAdmin
-      ? [
-          {
-            title: "All Tickets",
-            href: "/superadmin/tickets",
-            icon: LayoutDashboard,
-            show: true,
-          },
-        ]
-      : []),
-  ].filter((item) => item.show);
+  const navItems = mounted
+    ? (
+        [
+          ...(isSuperAdmin
+            ? [
+                {
+                  title: "All Tickets",
+                  href: "/superadmin/tickets",
+                  icon: LayoutDashboard,
+                  show: true,
+                },
+              ]
+            : []),
+        ].filter((item) => item.show)
+      )
+    : [];
 
   const isActive = (href: string) => {
     if (href === "/") {

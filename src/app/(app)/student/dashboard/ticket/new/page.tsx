@@ -455,41 +455,15 @@ export default function NewTicketPage() {
                   </div>
                 )}
 
-                {/* Leave Application removed */}
-
-                {formData.subcategory === "Maintenance / Housekeeping" && isHostel && (
+                {/* College tickets do not require selecting a vendor/location */}
+                {formData.subcategory === "Mess" && isCollege && (
                   <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <Label htmlFor="maintenanceType" className="text-base font-semibold">
-                        Maintenance Type <span className="text-destructive">*</span>
-                      </Label>
-                    </div>
-                    <Select
-                      value={(formData.details as any).maintenanceType || ""}
-                      onValueChange={(value) => {
-                        setFormData({ ...formData, details: { ...formData.details, maintenanceType: value } });
-                        setErrors({ ...errors, maintenanceType: "" });
-                      }}
-                      required
-                    >
-                      <SelectTrigger 
-                        id="maintenanceType" 
-                        className={`w-full h-11 ${errors.maintenanceType ? "border-destructive" : ""}`}
-                      >
-                        <SelectValue placeholder="Select maintenance type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {["Plumbing","Electrical","Painting","Carpenter","Pantry Area"].map((m) => (
-                          <SelectItem key={m} value={m}>{m}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {errors.maintenanceType && (
-                      <p className="text-sm text-destructive flex items-center gap-1">
-                        <AlertCircle className="w-3 h-3" />
-                        {errors.maintenanceType}
-                      </p>
-                    )}
+                    <Label className="text-base font-semibold">
+                      Mess Vendor (automatically assigned)
+                    </Label>
+                    <CardDescription className="text-sm text-muted-foreground">
+                      No vendor selection needed for college tickets.
+                    </CardDescription>
                   </div>
                 )}
 
@@ -570,26 +544,6 @@ export default function NewTicketPage() {
                       </div>
                     </CardContent>
                   </Card>
-                )}
-
-                {formData.subcategory === "Mess" && isCollege && (
-                  <div className="space-y-2">
-                    <Label htmlFor="vendors">Vendors</Label>
-                    <Select
-                      value={formData.location}
-                      onValueChange={(value) => setFormData({ ...formData, location: value })}
-                      required
-                    >
-                      <SelectTrigger id="vendors" className="w-full">
-                        <SelectValue placeholder="Select vendors" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {["GSR", "Uniworld", "TCB"].map((loc) => (
-                          <SelectItem key={loc} value={loc}>{loc}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
                 )}
 
                 {(formData.subcategory === "Mess" || formData.subcategory === "Mess Quality Issues") && (

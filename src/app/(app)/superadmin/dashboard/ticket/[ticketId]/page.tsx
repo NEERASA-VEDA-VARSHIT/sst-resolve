@@ -232,6 +232,9 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
                 hasTAT={!!details.tat}
                 isPublic={ticket.isPublic === "true"}
                 isSuperAdmin={true}
+                ticketCategory={ticket.category}
+                ticketLocation={ticket.location}
+                currentAssignedTo={ticket.assignedTo}
               />
             </CardContent>
           </Card>

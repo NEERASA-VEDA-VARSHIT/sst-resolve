@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -12,14 +12,55 @@ interface ReassignDialogProps {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	ticketId: number;
-	currentAssignedTo?: string;
+	currentAssignedTo?: string | null;
+	ticketCategory: string;
+	ticketLocation?: string | null;
 	onReassigned?: () => void;
 }
 
-export function ReassignDialog({ open, onOpenChange, ticketId, currentAssignedTo, onReassigned }: ReassignDialogProps) {
+export function ReassignDialog({
+	open,
+	onOpenChange,
+	ticketId,
+	currentAssignedTo,
+	ticketCategory,
+	ticketLocation,
+	onReassigned,
+}: ReassignDialogProps) {
 	const { admins, loading: adminsLoading } = useAdminList();
 	const [loading, setLoading] = useState(false);
 	const [selectedAdmin, setSelectedAdmin] = useState<string>("");
+
+	const normalizedCategory = ticketCategory?.toLowerCase() || "";
+	const normalizedLocation = ticketLocation?.toLowerCase() || "";
+
+	const filteredAdmins = useMemo(() => {
+		return admins.filter((admin) => {
+			const domain = admin.domain?.toLowerCase() || "";
+			const scope = admin.scope?.toLowerCase() || "";
+
+			if (!domain) return true; // fallback if assignment missing
+
+			if (normalizedCategory === "hostel") {
+				if (domain !== "hostel") return false;
+				if (!scope) return true; // hostel-wide admin
+				if (!normalizedLocation) return false;
+				return scope === normalizedLocation;
+			}
+
+			if (normalizedCategory === "college") {
+				return domain === "college";
+			}
+
+			return true;
+		});
+	}, [admins, normalizedCategory, normalizedLocation]);
+
+	useEffect(() => {
+		if (open) {
+			setSelectedAdmin(currentAssignedTo ?? "");
+		}
+	}, [open, currentAssignedTo]);
 
 	const handleReassign = async () => {
 		if (!selectedAdmin) {
@@ -66,17 +107,37 @@ export function ReassignDialog({ open, onOpenChange, ticketId, currentAssignedTo
 				<div className="space-y-4 py-4">
 					<div>
 						<Label htmlFor="admin">Select Admin</Label>
-						<Select value={selectedAdmin} onValueChange={setSelectedAdmin}>
+						<Select
+							value={selectedAdmin}
+							onValueChange={setSelectedAdmin}
+							disabled={adminsLoading}
+						>
 							<SelectTrigger id="admin">
-								<SelectValue placeholder="Choose an admin..." />
+								<SelectValue placeholder={adminsLoading ? "Loading admins..." : "Choose an admin..."} />
 							</SelectTrigger>
 							<SelectContent>
 								<SelectItem value="unassigned">Unassigned</SelectItem>
-								{admins.map((admin) => (
-									<SelectItem key={admin.id} value={admin.id}>
-										{admin.name} ({admin.email})
+								{filteredAdmins.length === 0 ? (
+									<SelectItem value="__no_admin" disabled>
+										No eligible admins found for this ticket
 									</SelectItem>
-								))}
+								) : (
+									filteredAdmins.map((admin) => (
+										<SelectItem key={admin.id} value={admin.id}>
+											<span className="flex flex-col">
+												<span className="font-medium">{admin.name}</span>
+												<span className="text-xs text-muted-foreground">
+													{admin.email}
+													{admin.domain && (
+														<span>
+															{` • ${admin.domain}${admin.scope ? ` – ${admin.scope}` : ""}`}
+														</span>
+													)}
+												</span>
+											</span>
+										</SelectItem>
+									))
+								)}
 							</SelectContent>
 						</Select>
 					</div>

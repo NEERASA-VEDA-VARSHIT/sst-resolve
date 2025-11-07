@@ -44,7 +44,8 @@ export async function POST(
 		}
 		
 		const { assignedTo } = validationResult.data;
-
+		const normalizedAssignedTo = assignedTo === "unassigned" ? null : assignedTo;
+ 
 		// Get current ticket
 		const [ticket] = await db
 			.select()
@@ -70,24 +71,40 @@ export async function POST(
 			}
 		}
 
-		// Get admin name (if available)
+		// Validate new assignee against domain/scope assignment
 		let adminName = "Admin";
-		try {
-			const { clerkClient } = await import("@clerk/nextjs/server");
-			const client = await clerkClient();
-			const user = await client.users.getUser(assignedTo);
-			adminName = user.firstName && user.lastName 
-				? `${user.firstName} ${user.lastName}`
-				: user.emailAddresses[0]?.emailAddress || "Admin";
-		} catch (e) {
-			console.error("Error fetching admin name:", e);
+		if (normalizedAssignedTo) {
+			const { getAdminAssignment, ticketMatchesAdminAssignment } = await import("@/lib/admin-assignment");
+			const targetAssignment = await getAdminAssignment(normalizedAssignedTo);
+			if (!targetAssignment.domain) {
+				return NextResponse.json({ error: "Selected admin does not have a domain assignment" }, { status: 400 });
+			}
+			const matchesAssignment = ticketMatchesAdminAssignment(
+				{ category: ticket.category, location: ticket.location },
+				targetAssignment
+			);
+			if (!matchesAssignment) {
+				return NextResponse.json({ error: "Selected admin is not authorized for this ticket's domain" }, { status: 400 });
+			}
+			try {
+				const { clerkClient } = await import("@clerk/nextjs/server");
+				const client = await clerkClient();
+				const user = await client.users.getUser(normalizedAssignedTo);
+				adminName = user.firstName && user.lastName 
+					? `${user.firstName} ${user.lastName}`
+					: user.emailAddresses[0]?.emailAddress || "Admin";
+			} catch (e) {
+				console.error("Error fetching admin name:", e);
+			}
+		} else {
+			adminName = "Unassigned";
 		}
 
 		// Update ticket
 		await db
 			.update(tickets)
 			.set({
-				assignedTo: assignedTo,
+				assignedTo: normalizedAssignedTo,
 				updatedAt: new Date(),
 			})
 			.where(eq(tickets.id, ticketId));
@@ -97,7 +114,9 @@ export async function POST(
 			const slackMessageTs = details.slackMessageTs;
 			if (slackMessageTs) {
 				try {
-					const reassignText = `🔄 *Ticket Reassigned*\nTicket #${ticketId} has been reassigned to ${adminName}.\nPrevious assignment: ${ticket.assignedTo || "Unassigned"}`;
+					const reassignText = normalizedAssignedTo
+						? `🔄 *Ticket Reassigned*\nTicket #${ticketId} has been reassigned to ${adminName}.\nPrevious assignment: ${ticket.assignedTo || "Unassigned"}`
+						: `🔄 *Ticket Unassigned*\nTicket #${ticketId} is now unassigned.\nPrevious assignment: ${ticket.assignedTo || "Unassigned"}`;
 					await postThreadReply(
 						ticket.category as "Hostel" | "College",
 						slackMessageTs,
@@ -114,9 +133,10 @@ export async function POST(
 		try {
 			const studentEmail = await getStudentEmail(ticket.userNumber);
 			if (studentEmail) {
-				const emailTemplate = {
-					subject: `Re: Ticket #${ticketId} Reassigned`,
-					html: `
+				const emailTemplate = normalizedAssignedTo
+					? {
+						subject: `Re: Ticket #${ticketId} Reassigned`,
+						html: `
 						<!DOCTYPE html>
 						<html>
 						<head>
@@ -150,6 +170,43 @@ export async function POST(
 						</body>
 						</html>
 					`,
+				}
+					: {
+						subject: `Re: Ticket #${ticketId} Update`,
+						html: `
+						<!DOCTYPE html>
+						<html>
+						<head>
+							<style>
+								body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+								.container { max-width: 600px; margin: 0 auto; padding: 20px; }
+								.header { background-color: #4F46E5; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+								.content { background-color: #f9fafb; padding: 20px; border: 1px solid #e5e7eb; }
+								.info-box { background-color: white; padding: 15px; margin: 15px 0; border-radius: 5px; border-left: 4px solid #4F46E5; }
+								.footer { text-align: center; padding: 20px; color: #6b7280; font-size: 12px; }
+							</style>
+						</head>
+						<body>
+							<div class="container">
+								<div class="header">
+									<h1>🔄 Ticket Reassigned</h1>
+								</div>
+								<div class="content">
+									<p>Your ticket has been updated to ensure prompt attention.</p>
+									<div class="info-box">
+										<p><strong>Ticket ID:</strong> #${ticketId}</p>
+										<p><strong>Category:</strong> ${ticket.category}</p>
+										<p><strong>Assigned To:</strong> ${adminName}</p>
+										<p>Your ticket will be handled by the new assignee.</p>
+									</div>
+								</div>
+								<div class="footer">
+									<p>This is an automated email from SST Resolve</p>
+								</div>
+							</div>
+						</body>
+						</html>
+					`,
 				};
 
 				await sendEmail({
@@ -168,8 +225,8 @@ export async function POST(
 
 		return NextResponse.json({ 
 			success: true, 
-			message: "Ticket reassigned successfully",
-			assignedTo: assignedTo,
+			message: normalizedAssignedTo ? "Ticket reassigned successfully" : "Ticket unassigned successfully",
+			assignedTo: normalizedAssignedTo,
 		});
 	} catch (error) {
 		console.error("Error reassigning ticket:", error);

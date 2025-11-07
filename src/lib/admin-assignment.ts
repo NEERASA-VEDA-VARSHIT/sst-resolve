@@ -4,7 +4,7 @@
  */
 
 import { db, staff } from "@/db";
-import { eq, and, or, isNull } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 
 export interface AdminAssignment {
   domain: string | null; // "Hostel" | "College" | null
@@ -49,21 +49,27 @@ export function ticketMatchesAdminAssignment(
   ticket: { category: string | null; location: string | null },
   assignment: AdminAssignment
 ): boolean {
-  // If admin has no assignment, they can see unassigned tickets (handled separately)
+  // If admin has no assignment configured, allow viewing
   if (!assignment.domain) {
-    return false; // Will be handled by unassigned check
+    return true;
   }
 
+  const ticketCategory = (ticket.category || "").toLowerCase();
+  const ticketLocation = (ticket.location || "").toLowerCase();
+  const assignmentDomain = (assignment.domain || "").toLowerCase();
+  const assignmentScope = (assignment.scope || "").toLowerCase();
+
   // Match domain (category)
-  if (ticket.category !== assignment.domain) {
+  if (!ticketCategory || ticketCategory !== assignmentDomain) {
     return false;
   }
 
   // For Hostel domain, also check scope (location)
-  if (assignment.domain === "Hostel") {
+  if (assignmentDomain === "hostel") {
     if (assignment.scope) {
       // Admin assigned to specific hostel, must match location
-      return ticket.location === assignment.scope;
+      if (!ticketLocation) return false;
+      return ticketLocation === assignmentScope;
     } else {
       // Admin assigned to Hostel but no specific scope, can see all hostel tickets
       return true;
@@ -71,7 +77,7 @@ export function ticketMatchesAdminAssignment(
   }
 
   // For College domain, no scope needed
-  if (assignment.domain === "College") {
+  if (assignmentDomain === "college") {
     return true;
   }
 

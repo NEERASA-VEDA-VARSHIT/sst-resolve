@@ -6,6 +6,8 @@ interface Admin {
   id: string;
   name: string;
   email: string;
+  domain: string | null;
+  scope: string | null;
 }
 
 interface UseAdminListReturn {
@@ -32,7 +34,16 @@ export function useAdminList(): UseAdminListReturn {
       
       if (response.ok) {
         const data = await response.json();
-        setAdmins(data.admins || []);
+        const normalized = Array.isArray(data.admins)
+          ? data.admins.map((admin: any) => ({
+              id: String(admin.id ?? ""),
+              name: String(admin.name ?? ""),
+              email: String(admin.email ?? ""),
+              domain: admin.domain ?? null,
+              scope: admin.scope ?? null,
+            })).filter((admin: Admin) => admin.id.length > 0)
+          : [];
+        setAdmins(normalized);
       } else {
         throw new Error("Failed to fetch admin list");
       }

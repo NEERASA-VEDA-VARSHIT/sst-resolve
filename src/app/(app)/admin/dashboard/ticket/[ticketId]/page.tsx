@@ -263,6 +263,9 @@ export default async function AdminTicketPage({ params }: { params: Promise<{ ti
                 hasTAT={!!details.tat}
                 isPublic={ticket.isPublic === "true"}
                 isSuperAdmin={false}
+                ticketCategory={ticket.category}
+                ticketLocation={ticket.location}
+                currentAssignedTo={ticket.assignedTo}
               />
             </CardContent>
           </Card>
