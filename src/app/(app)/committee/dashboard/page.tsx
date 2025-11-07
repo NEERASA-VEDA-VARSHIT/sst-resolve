@@ -13,7 +13,7 @@ import { StatsCards } from "@/components/dashboard/StatsCards";
 export default async function CommitteeDashboardPage({ 
   searchParams 
 }: { 
-  searchParams?: Promise<Record<string, string>> 
+  searchParams?: Record<string, string | undefined> 
 }) {
   const { userId, sessionClaims } = await auth();
 
@@ -27,7 +27,7 @@ export default async function CommitteeDashboardPage({
     redirect("/student/dashboard");
   }
 
-  const params = (await (searchParams || Promise.resolve({}))) || {};
+  const params = searchParams || {};
   const search = params.search || "";
   const statusFilter = params.status || "";
   const categoryFilter = params.category || "";
