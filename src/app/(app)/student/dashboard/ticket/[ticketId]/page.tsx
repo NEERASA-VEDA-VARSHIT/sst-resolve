@@ -325,7 +325,6 @@ export default async function StudentTicketPage({ params }: { params: Promise<{ 
           <StudentActions
             ticketId={ticket.id}
             currentStatus={ticket.status || "open"}
-            escalationCount={ticket.escalationCount || "0"}
           />
 
           <Separator />
