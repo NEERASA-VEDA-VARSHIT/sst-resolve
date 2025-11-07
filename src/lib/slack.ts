@@ -17,14 +17,21 @@ export async function postToSlackChannel(
     ccUserIds?: string[],
     channelOverride?: string
 ): Promise<string | null> {
+	console.log("[Slack] Preparing message", {
+		category,
+		ticketId,
+		channelOverride,
+		hasBotToken: !!slackConfig.botToken,
+	});
+
 	if (!slack) {
-		console.warn("SLACK_BOT_TOKEN not set; skipping Slack send.");
+		console.warn("[Slack] SLACK_BOT_TOKEN not set; skipping Slack send.");
 		return null;
 	}
 
 	const channel = channelOverride || SLACK_CHANNELS[category];
 	if (!channel) {
-		console.warn(`No Slack channel configured for category: ${category}`);
+		console.warn("[Slack] No channel configured for category", { category, channelOverride });
 		return null;
 	}
 
@@ -121,6 +128,12 @@ export async function postToSlackChannel(
 			} as any);
 		}
 
+		console.log("[Slack] Sending chat.postMessage", {
+			channel: normalizedChannel,
+			category,
+			ticketId,
+			ccCount: ccUserIds?.length || 0,
+		});
         const result = await slack.chat.postMessage({
 			channel: normalizedChannel,
             text: `${text}${ccSuffix}`,
@@ -128,10 +141,14 @@ export async function postToSlackChannel(
 		});
 		
 		const messageTs = result.ts || null;
-		console.log(`✅ Posted to ${normalizedChannel}${ticketId ? ` (Ticket #${ticketId})` : ""}`);
+		console.log("[Slack] Message posted", {
+			channel: normalizedChannel,
+			ticketId,
+			messageTs,
+		});
 		return messageTs;
 	} catch (error: any) {
-		console.error(`❌ Error posting to Slack channel ${channel}:`, {
+		console.error(`[Slack] Error posting to ${channel}`, {
 			message: error.message,
 			code: error.code,
 			data: error.data,
