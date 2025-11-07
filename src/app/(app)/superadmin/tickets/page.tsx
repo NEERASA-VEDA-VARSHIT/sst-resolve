@@ -7,13 +7,13 @@ import { AdminTicketFilters } from "@/components/admin/AdminTicketFilters";
 import { Card, CardContent } from "@/components/ui/card";
 import { FileText } from "lucide-react";
 
-export default async function SuperAdminAllTicketsPage({ searchParams }: { searchParams?: Promise<Record<string, string>> }) {
+export default async function SuperAdminAllTicketsPage({ searchParams }: { searchParams?: Record<string, string | undefined> }) {
   const { userId, sessionClaims } = await auth();
   if (!userId) redirect("/");
   const role = sessionClaims?.metadata?.role;
   if (role !== "super_admin") redirect("/student/dashboard");
 
-  const params = (await (searchParams || Promise.resolve({}))) || {};
+  const params = searchParams || {};
   const category = params["category"] || "";
   const subcategory = params["subcategory"] || "";
   const location = params["location"] || "";
