@@ -1,0 +1,28 @@
+{
+  "buildCommand": "pnpm build",
+  "devCommand": "pnpm dev",
+  "installCommand": "pnpm install",
+  "framework": "nextjs",
+  "regions": ["iad1"],
+  "env": {
+    "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY": "@clerk_publishable_key",
+    "CLERK_SECRET_KEY": "@clerk_secret_key",
+    "DATABASE_URL": "@database_url",
+    "SMTP_HOST": "@smtp_host",
+    "SMTP_PORT": "@smtp_port",
+    "SMTP_SECURE": "@smtp_secure",
+    "SMTP_USER": "@smtp_user",
+    "SMTP_PASS": "@smtp_pass",
+    "SMTP_FROM": "@smtp_from",
+    "SLACK_BOT_TOKEN": "@slack_bot_token",
+    "SLACK_WEBHOOK_URL": "@slack_webhook_url",
+    "SLACK_HOSTEL_CHANNEL": "@slack_hostel_channel",
+    "SLACK_COLLEGE_CHANNEL": "@slack_college_channel",
+    "SLACK_COMMITTEE_CHANNEL": "@slack_committee_channel",
+    "TWILIO_ACCOUNT_SID": "@twilio_account_sid",
+    "TWILIO_AUTH_TOKEN": "@twilio_auth_token",
+    "TWILIO_WHATSAPP_FROM": "@twilio_whatsapp_from",
+    "CRON_SECRET": "@cron_secret"
+  }
+}
+
