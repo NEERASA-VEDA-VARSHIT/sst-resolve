@@ -13,7 +13,7 @@ import { StatsCards } from "@/components/dashboard/StatsCards";
 export default async function StudentDashboardPage({ 
   searchParams 
 }: { 
-  searchParams?: Promise<Record<string, string>> 
+  searchParams?: Record<string, string | undefined> 
 }) {
   const { userId, sessionClaims } = await auth();
 
@@ -21,13 +21,13 @@ export default async function StudentDashboardPage({
     redirect("/");
   }
 
-  const userNumber = sessionClaims?.metadata?.userNumber as string | undefined;
+  const userNumber = (sessionClaims?.metadata as { userNumber?: string } | undefined)?.userNumber;
   
   if (!userNumber) {
     redirect("/profile");
   }
 
-  const params = (await (searchParams || Promise.resolve({}))) || {};
+  const params = searchParams || {};
   const search = params.search || "";
   const statusFilter = params.status || "";
   const categoryFilter = params.category || "";
