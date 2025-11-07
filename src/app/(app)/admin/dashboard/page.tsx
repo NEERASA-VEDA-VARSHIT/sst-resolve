@@ -12,7 +12,7 @@ import { StatsCards } from "@/components/dashboard/StatsCards";
 import { Button } from "@/components/ui/button";
 import { FileText, Clock, CheckCircle2, AlertCircle, TrendingUp, Calendar, Users, Globe } from "lucide-react";
 
-export default async function AdminDashboardPage({ searchParams }: { searchParams?: Promise<Record<string, string>> }) {
+export default async function AdminDashboardPage({ searchParams }: { searchParams?: Record<string, string | undefined> }) {
   const { userId, sessionClaims } = await auth();
 
   if (!userId) {
@@ -30,7 +30,7 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
     redirect('/student/dashboard');
   }
 
-  const params = (await (searchParams || Promise.resolve({}))) || {};
+  const params = searchParams || {};
   const activeTab = params["tab"] || "tickets";
   const searchQuery = params["search"] || "";
   const category = params["category"] || "";
