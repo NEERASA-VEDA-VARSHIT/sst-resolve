@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { FileText, Clock, CheckCircle2, AlertCircle, Users, BarChart3, Calendar, TrendingUp, Shield, Globe } from "lucide-react";
 import { StatsCards } from "@/components/dashboard/StatsCards";
 
-export default async function SuperAdminDashboardPage({ searchParams }: { searchParams?: Promise<Record<string, string>> }) {
+export default async function SuperAdminDashboardPage({ searchParams }: { searchParams?: Record<string, string | undefined> }) {
   const { userId, sessionClaims } = await auth();
 
   if (!userId) {
@@ -23,7 +23,7 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
     redirect('/student/dashboard');
   }
 
-  const params = (await (searchParams || Promise.resolve({}))) || {};
+  const params = searchParams || {};
   const category = params["category"] || "";
   const subcategory = params["subcategory"] || "";
   const location = params["location"] || "";
