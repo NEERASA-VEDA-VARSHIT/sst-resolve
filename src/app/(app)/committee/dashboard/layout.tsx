@@ -1,18 +1,24 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
+import { getUserRoleFromDB } from "@/lib/db-roles";
+import { getOrCreateUser } from "@/lib/user-sync";
 
 export default async function CommitteeDashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const { userId, sessionClaims } = await auth();
+  const { userId } = await auth();
 
   if (!userId) {
     redirect("/");
   }
 
-  const role = sessionClaims?.metadata?.role || "student";
+  // Ensure user exists in database
+  await getOrCreateUser(userId);
+
+  // Get role from database (single source of truth)
+  const role = await getUserRoleFromDB(userId);
 
   if (role !== "committee") {
     redirect("/student/dashboard");

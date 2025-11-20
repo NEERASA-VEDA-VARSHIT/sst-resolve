@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import { setRole, removeRole } from "@/app/(app)/dashboard/admin/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -40,11 +39,22 @@ interface StaffMember {
   scope: string | null;
 }
 
+interface MasterData {
+  hostels: Array<{ id: number; name: string; code: string | null }>;
+  batches: Array<{ id: number; batch_year: number; display_name: string | null }>;
+  class_sections: Array<{ id: number; name: string }>;
+  domains: Array<{ value: string; label: string }>;
+  roles: Array<{ value: string; label: string; description: string | null }>;
+  scopes: Array<{ value: string; label: string }>; // Dynamic scopes from staff data
+}
+
 export function IntegratedUserManagement({ users }: { users: User[] }) {
   const [loading, setLoading] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [staff, setStaff] = useState<StaffMember[]>([]);
+  const [masterData, setMasterData] = useState<MasterData | null>(null);
+  const [loadingMasterData, setLoadingMasterData] = useState(true);
   const [isStaffDialogOpen, setIsStaffDialogOpen] = useState(false);
   const [selectedUserForStaff, setSelectedUserForStaff] = useState<User | null>(null);
   const [staffFormData, setStaffFormData] = useState({
@@ -58,6 +68,7 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
 
   useEffect(() => {
     fetchStaff();
+    fetchMasterData();
   }, []);
 
   const fetchStaff = async () => {
@@ -65,10 +76,39 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
       const response = await fetch("/api/admin/staff");
       if (response.ok) {
         const data = await response.json();
-        setStaff(data.staff || []);
+        // Map API response (snake_case) to component format (camelCase)
+        const mappedStaff = (data.staff || []).map((s: any) => ({
+          id: s.id,
+          clerkUserId: s.clerk_user_id || null, // Map snake_case to camelCase
+          fullName: s.full_name || "",
+          email: s.email || null,
+          role: s.role || "",
+          domain: s.domain || "",
+          scope: s.scope || null,
+        }));
+        setStaff(mappedStaff);
       }
     } catch (error) {
       console.error("Error fetching staff:", error);
+    }
+  };
+
+  const fetchMasterData = async () => {
+    try {
+      setLoadingMasterData(true);
+      const response = await fetch("/api/admin/master-data");
+      if (response.ok) {
+        const data = await response.json();
+        setMasterData(data);
+      } else {
+        console.error("Failed to fetch master data");
+        toast.error("Failed to load master data");
+      }
+    } catch (error) {
+      console.error("Error fetching master data:", error);
+      toast.error("Failed to load master data");
+    } finally {
+      setLoadingMasterData(false);
     }
   };
 
@@ -109,11 +149,19 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
 
   const handleSetRole = async (userId: string, role: Roles) => {
     setLoading(`${userId}-${role}`);
-    const formData = new FormData();
-    formData.append("id", userId);
-    formData.append("role", role);
     try {
-      await setRole(formData);
+      const response = await fetch(`/api/users/${userId}/role`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ role }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to update role");
+      }
       
       // If setting admin/super_admin, prompt for staff assignment
       if ((role === "admin" || role === "super_admin") && !getStaffAssignment(userId)) {
@@ -136,7 +184,7 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
       window.location.reload();
     } catch (error) {
       console.error("Error setting role:", error);
-      toast.error("Failed to update role");
+      toast.error(error instanceof Error ? error.message : "Failed to update role");
     } finally {
       setLoading(null);
     }
@@ -144,16 +192,22 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
 
   const handleRemoveRole = async (userId: string) => {
     setLoading(`${userId}-remove`);
-    const formData = new FormData();
-    formData.append("id", userId);
     try {
-      await removeRole(formData);
+      const response = await fetch(`/api/users/${userId}/role`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to remove role");
+      }
+
       toast.success("Role removed");
       await fetchStaff();
       window.location.reload();
     } catch (error) {
       console.error("Error removing role:", error);
-      toast.error("Failed to remove role");
+      toast.error(error instanceof Error ? error.message : "Failed to remove role");
     } finally {
       setLoading(null);
     }
@@ -434,6 +488,14 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
                             )}
                           </div>
                         </div>
+                        
+                        {/* Role Assignment Buttons */}
+                        {currentRole === "student" && (
+                          <p className="text-xs text-muted-foreground mb-2 italic">
+                            💡 Tip: Assigning an elevated role (Admin, Super Admin, Committee) will automatically remove the Student role.
+                          </p>
+                        )}
+                        
                         <div className="flex flex-wrap gap-2 sm:flex-nowrap">
                           <Button
                             variant={currentRole === "student" ? "default" : "outline"}
@@ -548,30 +610,80 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
                   required
                 >
                   <SelectTrigger id="domain">
-                    <SelectValue placeholder="Select domain" />
+                    <SelectValue placeholder={masterData ? "Select domain" : "Loading..."} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Hostel">Hostel</SelectItem>
-                    <SelectItem value="College">College</SelectItem>
+                    {!masterData ? (
+                      <SelectItem value="loading" disabled>Loading domains...</SelectItem>
+                    ) : masterData.domains.length === 0 ? (
+                      <SelectItem value="empty" disabled>No domains available</SelectItem>
+                    ) : (
+                      masterData.domains.map((domain) => (
+                        <SelectItem key={domain.value} value={domain.value}>
+                          {domain.label}
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
               </div>
               {staffFormData.domain === "Hostel" && (
                 <div className="space-y-2">
-                  <Label htmlFor="scope">Scope (Hostel) *</Label>
+                  <Label htmlFor="scope">Scope (Hostel/Location) *</Label>
                   <Select
                     value={staffFormData.scope}
                     onValueChange={(value) => setStaffFormData({ ...staffFormData, scope: value })}
                     required
+                    disabled={!masterData || (masterData.scopes.length === 0 && masterData.hostels.length === 0)}
                   >
                     <SelectTrigger id="scope">
-                      <SelectValue placeholder="Select hostel" />
+                      <SelectValue placeholder={masterData ? "Select location/hostel" : "Loading..."} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Velankani">Velankani</SelectItem>
-                      <SelectItem value="Neeladri">Neeladri</SelectItem>
+                      {!masterData ? (
+                        <SelectItem value="loading" disabled>Loading locations...</SelectItem>
+                      ) : masterData.scopes.length === 0 && masterData.hostels.length === 0 ? (
+                        <SelectItem value="empty" disabled>No locations available</SelectItem>
+                      ) : (
+                        <>
+                          {/* Show existing scopes from staff data (dynamic) */}
+                          {masterData.scopes.length > 0 && (
+                            <>
+                              {masterData.scopes.map((scope) => (
+                                <SelectItem key={`scope-${scope.value}`} value={scope.value}>
+                                  {scope.label}
+                                </SelectItem>
+                              ))}
+                              {masterData.hostels.length > 0 && (
+                                <SelectItem value="divider" disabled>
+                                  ──── From Hostels Table ────
+                                </SelectItem>
+                              )}
+                            </>
+                          )}
+                          {/* Also show hostels from hostels table, but only if not already in scopes */}
+                          {masterData.hostels
+                            .filter(hostel => !masterData.scopes.some(scope => scope.value === hostel.name))
+                            .map((hostel) => (
+                              <SelectItem key={`hostel-${hostel.id}`} value={hostel.name}>
+                                {hostel.name} {hostel.code ? `(${hostel.code})` : ''}
+                              </SelectItem>
+                            ))}
+                        </>
+                      )}
                     </SelectContent>
                   </Select>
+                  {masterData && masterData.scopes.length === 0 && masterData.hostels.length === 0 && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400">
+                      ⚠️ No locations configured. Please add staff with locations or configure hostels first.
+                    </p>
+                  )}
+                  {masterData && masterData.scopes.length > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      📍 {masterData.scopes.length} location{masterData.scopes.length !== 1 ? 's' : ''} from staff data
+                      {masterData.hostels.length > 0 && ` + ${masterData.hostels.length} from hostels table`}
+                    </p>
+                  )}
                 </div>
               )}
             </div>
@@ -582,15 +694,30 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
                 value={staffFormData.role}
                 onValueChange={(value) => setStaffFormData({ ...staffFormData, role: value })}
                 required
+                disabled={!masterData || masterData.roles.length === 0}
               >
                 <SelectTrigger id="role">
-                  <SelectValue placeholder="Select role" />
+                  <SelectValue placeholder={masterData ? "Select role" : "Loading..."} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="admin">Admin</SelectItem>
-                  <SelectItem value="super_admin">Super Admin</SelectItem>
+                  {!masterData ? (
+                    <SelectItem value="loading" disabled>Loading roles...</SelectItem>
+                  ) : masterData.roles.length === 0 ? (
+                    <SelectItem value="empty" disabled>No roles available</SelectItem>
+                  ) : (
+                    masterData.roles.map((role) => (
+                      <SelectItem key={role.value} value={role.value}>
+                        {role.label}
+                      </SelectItem>
+                    ))
+                  )}
                 </SelectContent>
               </Select>
+              {masterData && masterData.roles.length === 0 && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">
+                  ⚠️ No staff roles configured. Please configure roles in the system.
+                </p>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-4">

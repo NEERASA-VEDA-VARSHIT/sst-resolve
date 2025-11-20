@@ -8,22 +8,75 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Filter, Search, X, ChevronDown, ChevronUp, Calendar, User, MapPin, Clock, Tag, RotateCcw, AlertTriangle, Building2, GraduationCap } from "lucide-react";
-import { CATEGORY_TREE, LOCATIONS } from "@/lib/categories";
+import { Filter, Search, X, ChevronDown, ChevronUp, Calendar, User, MapPin, Clock, Tag, RotateCcw, AlertTriangle, Building2, GraduationCap, ArrowUpDown } from "lucide-react";
+// Removed static LOCATIONS import - now fetching from database
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
+
+interface StatusOption {
+  value: string;
+  label: string;
+  enum: string;
+}
+
+interface CategoryOption {
+  value: string;
+  label: string;
+  id: number;
+  subcategories: Array<{ value: string; label: string; id: number }>;
+}
 
 export function AdminTicketFilters() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const pathname = usePathname();
-
+  
+  // Fetch filter options from database
+  const [statusOptions, setStatusOptions] = useState<StatusOption[]>([]);
+  const [categoryOptions, setCategoryOptions] = useState<CategoryOption[]>([]);
+  const [locationOptions, setLocationOptions] = useState<string[]>([]);
+  const [loadingFilters, setLoadingFilters] = useState(true);
+  
   const [searchQuery, setSearchQuery] = useState<string>(searchParams.get("search") || "");
   const [category, setCategory] = useState<string>(searchParams.get("category") || "");
   const [subcategory, setSubcategory] = useState<string>(searchParams.get("subcategory") || "");
   const [location, setLocation] = useState<string>(searchParams.get("location") || "");
   const [tat, setTat] = useState<string>(searchParams.get("tat") || "");
-  const [status, setStatus] = useState<string>(searchParams.get("status") || "");
+  const [status, setStatus] = useState<string>("");
+  
+  // Get subcategories for selected category
+  const availableSubcategories = category
+    ? categoryOptions.find(cat => cat.value === category)?.subcategories || []
+    : [];
+  
+  // Fetch filter options from API
+  useEffect(() => {
+    const fetchFilters = async () => {
+      try {
+        setLoadingFilters(true);
+        
+        // Fetch statuses
+        const statusRes = await fetch("/api/filters/statuses");
+        if (statusRes.ok) {
+          const statusData = await statusRes.json();
+          setStatusOptions(statusData.statuses || []);
+        }
+        
+        // Fetch categories
+        const categoryRes = await fetch("/api/filters/categories");
+        if (categoryRes.ok) {
+          const categoryData = await categoryRes.json();
+          setCategoryOptions(categoryData.categories || []);
+        }
+      } catch (error) {
+        console.error("Error fetching filters:", error);
+      } finally {
+        setLoadingFilters(false);
+      }
+    };
+    
+    fetchFilters();
+  }, []);
   const [createdFrom, setCreatedFrom] = useState<string>(searchParams.get("from") || "");
   const [createdTo, setCreatedTo] = useState<string>(searchParams.get("to") || "");
   const [userNumber, setUserNumber] = useState<string>(searchParams.get("user") || "");
@@ -31,26 +84,42 @@ export function AdminTicketFilters() {
   const [showAdvanced, setShowAdvanced] = useState<boolean>(false);
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
 
-  // Derive subcategory and location/vendor options from category tree
+  // Get subcategories for selected category from database
   const subcategoryOptions = useMemo(() => {
-    if (!category) return [] as string[];
-    const node = CATEGORY_TREE.find(n => n.title === category);
-    if (!node?.children) return [] as string[];
-    const issueNode = node.children.find(c => c.id.endsWith("_issue"));
-    if (!issueNode?.children) return [] as string[];
-    return issueNode.children.map(c => c.title);
-  }, [category]);
+    if (!category) return [] as Array<{ value: string; label: string; id: number }>;
+    const selectedCategory = categoryOptions.find(cat => cat.value === category);
+    return selectedCategory?.subcategories || [];
+  }, [category, categoryOptions]);
 
-  const locationOptions = useMemo(() => {
-    if (!category) return [] as string[];
-    if (category === "Hostel") {
-      return LOCATIONS.hostel || [];
-    }
-    if (category === "College" && subcategory === "Mess Quality Issues") {
-      // Vendors for college mess
-      return ["GSR", "Uniworld", "TCB"];
-    }
-    return [] as string[];
+  // Fetch location options from database when category/subcategory changes
+  useEffect(() => {
+    const fetchLocations = async () => {
+      if (!category) {
+        setLocationOptions([]);
+        return;
+      }
+
+      try {
+        const params = new URLSearchParams();
+        params.set("category", category);
+        if (subcategory) {
+          params.set("subcategory", subcategory);
+        }
+
+        const locationRes = await fetch(`/api/filters/locations?${params.toString()}`);
+        if (locationRes.ok) {
+          const locationData = await locationRes.json();
+          setLocationOptions(locationData.locations || []);
+        } else {
+          setLocationOptions([]);
+        }
+      } catch (error) {
+        console.error("Error fetching locations:", error);
+        setLocationOptions([]);
+      }
+    };
+
+    fetchLocations();
   }, [category, subcategory]);
 
   useEffect(() => {
@@ -59,13 +128,19 @@ export function AdminTicketFilters() {
     setSubcategory(searchParams.get("subcategory") || "");
     setLocation(searchParams.get("location") || "");
     setTat(searchParams.get("tat") || "");
-    setStatus(searchParams.get("status") || "");
+    const urlStatus = searchParams.get("status") || "";
+    // Only set status filter if it's valid and options are loaded
+    if (urlStatus && statusOptions.length > 0) {
+      const validStatuses = statusOptions.map(s => s.value);
+      setStatus(validStatuses.includes(urlStatus) ? urlStatus : "");
+    } else if (!urlStatus) {
+      setStatus("");
+    }
     setCreatedFrom(searchParams.get("from") || "");
     setCreatedTo(searchParams.get("to") || "");
     setUserNumber(searchParams.get("user") || "");
     setSort(searchParams.get("sort") || "newest");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams.toString()]);
+  }, [searchParams, statusOptions]);
 
   const activeFilters = useMemo(() => {
     const filters: Array<{ key: string; label: string; value: string }> = [];
@@ -298,72 +373,106 @@ export function AdminTicketFilters() {
           <>
             <Separator className="my-4" />
 
-            {/* Quick Filters */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              <div>
-                <Label htmlFor="category" className="text-xs mb-1.5 block">Category</Label>
-                <Select value={category || undefined} onValueChange={(value) => setCategory(value || "")}>
-                  <SelectTrigger id="category" className="w-full h-9 text-sm">
-                    <SelectValue placeholder="All Categories" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Hostel">Hostel</SelectItem>
-                    <SelectItem value="College">College</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="subcategory" className="text-xs mb-1.5 block">Subcategory</Label>
-                {subcategoryOptions.length > 0 ? (
-                  <Select value={subcategory || undefined} onValueChange={(value) => setSubcategory(value || "")}>
-                    <SelectTrigger id="subcategory" className="w-full h-9 text-sm">
-                      <SelectValue placeholder="All Subcategories" />
+            {/* Filters Section */}
+            <div className="space-y-2">
+              <Badge variant="outline" className="text-xs font-semibold border-primary/30 bg-primary/5 text-primary px-2 py-1">
+                <Filter className="w-3 h-3 mr-1.5" />
+                Filters
+              </Badge>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div>
+                  <Label htmlFor="category" className="text-xs mb-1.5 block">Category</Label>
+                  <Select value={category || undefined} onValueChange={(value) => setCategory(value || "")}>
+                    <SelectTrigger id="category" className="w-full h-9 text-sm">
+                      <SelectValue placeholder="All Categories" />
                     </SelectTrigger>
                     <SelectContent>
-                      {subcategoryOptions.map(opt => (
-                        <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                      {!loadingFilters && categoryOptions.map((cat) => (
+                        <SelectItem key={cat.id} value={cat.value}>
+                          {cat.label}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                ) : (
-                  <Input
-                    id="subcategory"
-                    value={subcategory}
-                    onChange={(e) => setSubcategory(e.target.value)}
-                    placeholder="e.g., Mess Quality Issues"
-                    className="h-9 text-sm"
-                  />
-                )}
+                </div>
+                <div>
+                  <Label htmlFor="subcategory" className="text-xs mb-1.5 block">Subcategory</Label>
+                  {subcategoryOptions.length > 0 ? (
+                    <Select value={subcategory || undefined} onValueChange={(value) => setSubcategory(value || "")}>
+                      <SelectTrigger id="subcategory" className="w-full h-9 text-sm">
+                        <SelectValue placeholder="All Subcategories" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {subcategoryOptions.map(opt => (
+                          <SelectItem key={opt.id} value={opt.value}>{opt.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input
+                      id="subcategory"
+                      value={subcategory}
+                      onChange={(e) => setSubcategory(e.target.value)}
+                      placeholder="e.g., Mess Quality Issues"
+                      className="h-9 text-sm"
+                    />
+                  )}
+                </div>
+                <div>
+                  <Label htmlFor="status" className="text-xs mb-1.5 block">Status</Label>
+                  <Select value={status || "all"} onValueChange={(value) => setStatus(value === "all" ? "" : value)}>
+                    <SelectTrigger id="status" className="w-full h-9 text-sm">
+                      <SelectValue placeholder="Any Status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Any Status</SelectItem>
+                      {!loadingFilters && statusOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="tat" className="text-xs mb-1.5 block">TAT</Label>
+                  <Select value={tat || undefined} onValueChange={(value) => setTat(value || "")}>
+                    <SelectTrigger id="tat" className="w-full h-9 text-sm">
+                      <SelectValue placeholder="Any TAT" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="has">Has TAT</SelectItem>
+                      <SelectItem value="none">No TAT</SelectItem>
+                      <SelectItem value="due">Due/Past</SelectItem>
+                      <SelectItem value="upcoming">Upcoming</SelectItem>
+                      <SelectItem value="today">Today</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-              <div>
-                <Label htmlFor="status" className="text-xs mb-1.5 block">Status</Label>
-                <Select value={status || undefined} onValueChange={(value) => setStatus(value || "")}>
-                  <SelectTrigger id="status" className="w-full h-9 text-sm">
-                    <SelectValue placeholder="Any Status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="open">Open</SelectItem>
-                    <SelectItem value="in_progress">In Progress</SelectItem>
-                    <SelectItem value="closed">Closed</SelectItem>
-                    <SelectItem value="resolved">Resolved</SelectItem>
-                    <SelectItem value="awaiting_student_response">Awaiting Student Response</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="tat" className="text-xs mb-1.5 block">TAT</Label>
-                <Select value={tat || undefined} onValueChange={(value) => setTat(value || "")}>
-                  <SelectTrigger id="tat" className="w-full h-9 text-sm">
-                    <SelectValue placeholder="Any TAT" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="has">Has TAT</SelectItem>
-                    <SelectItem value="none">No TAT</SelectItem>
-                    <SelectItem value="due">Due/Past</SelectItem>
-                    <SelectItem value="upcoming">Upcoming</SelectItem>
-                    <SelectItem value="today">Today</SelectItem>
-                  </SelectContent>
-                </Select>
+            </div>
+
+            {/* Sorting Section */}
+            <div className="space-y-2 pt-3 border-t">
+              <Badge variant="outline" className="text-xs font-semibold border-muted-foreground/30 bg-muted/30 text-muted-foreground px-2 py-1">
+                <ArrowUpDown className="w-3 h-3 mr-1.5" />
+                Sorting
+              </Badge>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div>
+                  <Label htmlFor="sort" className="text-xs mb-1.5 block">Sort By</Label>
+                  <Select value={sort} onValueChange={setSort}>
+                    <SelectTrigger id="sort" className="w-full h-9 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="newest">Newest First</SelectItem>
+                      <SelectItem value="oldest">Oldest First</SelectItem>
+                      <SelectItem value="status">Status</SelectItem>
+                      <SelectItem value="due-date">Due Date</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </div>
 
@@ -456,18 +565,6 @@ export function AdminTicketFilters() {
                         onChange={(e) => setCreatedTo(e.target.value)}
                         className="h-9 text-sm"
                       />
-                    </div>
-                    <div>
-                      <Label htmlFor="sort" className="text-xs mb-1.5 block">Sort By</Label>
-                      <Select value={sort} onValueChange={setSort}>
-                        <SelectTrigger id="sort" className="w-full h-9 text-sm">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="newest">Newest First</SelectItem>
-                          <SelectItem value="oldest">Oldest First</SelectItem>
-                        </SelectContent>
-                      </Select>
                     </div>
                   </div>
                 </div>

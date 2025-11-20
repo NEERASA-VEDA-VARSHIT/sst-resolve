@@ -18,7 +18,8 @@ export {
 // Student schemas
 export * from "./student.schema";
 export {
-  UpdateStudentProfileSchema,
-  LinkUserNumberSchema,
+  UpdateStudentMobileSchema,
+  UpdateStudentProfileSchema, // DEPRECATED - kept for backward compatibility
+  LinkUserNumberSchema, // DEPRECATED - kept for backward compatibility
 } from "./student.schema";
 

@@ -1,79 +1,179 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { db, tickets } from "@/db";
-import { desc } from "drizzle-orm";
+import { db, tickets, categories, users, staff } from "@/db";
+import { desc, eq, and, isNull, or, sql, count } from "drizzle-orm";
 import { TicketCard } from "@/components/layout/TicketCard";
 import { Card, CardContent } from "@/components/ui/card";
 import Link from "next/link";
 import { AdminTicketFilters } from "@/components/admin/AdminTicketFilters";
 import { Button } from "@/components/ui/button";
-import { FileText, Clock, CheckCircle2, AlertCircle, Users, BarChart3, Calendar, TrendingUp, Shield, Globe } from "lucide-react";
+import { FileText, Clock, CheckCircle2, AlertCircle, Users, BarChart3, Calendar, TrendingUp, Shield, Settings, Building2 } from "lucide-react";
 import { StatsCards } from "@/components/dashboard/StatsCards";
+import { PaginationControls } from "@/components/dashboard/PaginationControls";
+import { getUserRoleFromDB } from "@/lib/db-roles";
+import { getOrCreateUser } from "@/lib/user-sync";
+import { normalizeStatusForComparison } from "@/lib/utils";
 
-export default async function SuperAdminDashboardPage({ searchParams }: { searchParams?: Record<string, string | undefined> }) {
-  const { userId, sessionClaims } = await auth();
+export default async function SuperAdminDashboardPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> | Record<string, string | string[] | undefined> }) {
+  const { userId } = await auth();
 
   if (!userId) {
     redirect("/");
   }
 
-  const role = sessionClaims?.metadata?.role || 'student';
+  // Ensure user exists in database
+  await getOrCreateUser(userId);
+
+  // Get role from database (single source of truth)
+  const role = await getUserRoleFromDB(userId);
 
   if (role !== 'super_admin') {
     redirect('/student/dashboard');
   }
 
-  const params = searchParams || {};
-  const category = params["category"] || "";
-  const subcategory = params["subcategory"] || "";
-  const location = params["location"] || "";
-  const tat = params["tat"] || "";
-  const status = params["status"] || "";
-  const createdFrom = params["from"] || "";
-  const createdTo = params["to"] || "";
-  const user = params["user"] || "";
-  const sort = params["sort"] || "newest";
+  // Get super admin's staff ID to check assigned tickets
+  let superAdminStaffId: number | null = null;
+  try {
+    const dbUser = await getOrCreateUser(userId);
 
-  let allTickets = await db.select().from(tickets).orderBy(desc(tickets.createdAt));
-
-  // Super admin view: only tickets assigned to me OR escalated to me/role
-  allTickets = allTickets.filter((t) => {
-    const escalatedTo = (t.escalatedTo || "").toLowerCase();
-    return (
-      t.assignedTo === userId ||
-      escalatedTo === String(userId).toLowerCase() ||
-      escalatedTo === "super_admin"
-    );
-  });
-
-  if (category) {
-    allTickets = allTickets.filter(t => (t.category || "").toLowerCase() === category.toLowerCase());
-  }
-  if (subcategory) {
-    allTickets = allTickets.filter(t => (t.subcategory || "").toLowerCase().includes(subcategory.toLowerCase()));
-  }
-  if (location) {
-    allTickets = allTickets.filter(t => (t.location || "").toLowerCase().includes(location.toLowerCase()));
-  }
-  if (status) {
-    if (status.toLowerCase() === "resolved") {
-      allTickets = allTickets.filter(t => t.status === "resolved" || t.status === "closed");
-    } else {
-      allTickets = allTickets.filter(t => (t.status || "").toLowerCase() === status.toLowerCase());
+    if (!dbUser) {
+      console.error('[Super Admin Dashboard] Failed to create/fetch user');
+      throw new Error('Failed to load user profile');
     }
+
+    const [superAdminStaff] = await db
+      .select({ id: staff.id })
+      .from(staff)
+      .where(eq(staff.user_id, dbUser.id))
+      .limit(1);
+
+    superAdminStaffId = superAdminStaff?.id || null;
+  } catch (error) {
+    console.error('[Super Admin Dashboard] Error fetching user/staff info:', error);
+    throw new Error('Failed to load super admin profile');
   }
+
+  const resolvedSearchParams = searchParams instanceof Promise ? await searchParams : (searchParams || {});
+  const params = resolvedSearchParams || {};
+  const category = (typeof params["category"] === "string" ? params["category"] : params["category"]?.[0]) || "";
+  const subcategory = (typeof params["subcategory"] === "string" ? params["subcategory"] : params["subcategory"]?.[0]) || "";
+  const location = (typeof params["location"] === "string" ? params["location"] : params["location"]?.[0]) || "";
+  const tat = (typeof params["tat"] === "string" ? params["tat"] : params["tat"]?.[0]) || "";
+  const status = (typeof params["status"] === "string" ? params["status"] : params["status"]?.[0]) || "";
+  const escalatedFilter = (typeof params["escalated"] === "string" ? params["escalated"] : params["escalated"]?.[0]) || "";
+  const createdFrom = (typeof params["from"] === "string" ? params["from"] : params["from"]?.[0]) || "";
+  const createdTo = (typeof params["to"] === "string" ? params["to"] : params["to"]?.[0]) || "";
+  const user = (typeof params["user"] === "string" ? params["user"] : params["user"]?.[0]) || "";
+  const sort = (typeof params["sort"] === "string" ? params["sort"] : params["sort"]?.[0]) || "newest";
+  
+  // Pagination
+  const page = parseInt((typeof params["page"] === "string" ? params["page"] : params["page"]?.[0]) || "1", 10);
+  const limit = 20; // Tickets per page
+  const offsetValue = (page - 1) * limit;
+
+  // Define where conditions for reuse
+  const whereConditions = or(
+    isNull(tickets.assigned_to), // Unassigned tickets
+    superAdminStaffId ? eq(tickets.assigned_to, superAdminStaffId) : sql`false`, // Assigned to super admin
+    sql`${tickets.escalation_level} > 0` // Escalated tickets
+  );
+
+  // Get total count of tickets matching the conditions (for pagination)
+  let totalCount = 0;
+  let ticketRows: any[] = [];
+  try {
+    const [totalResult] = await db
+      .select({ count: count() })
+      .from(tickets)
+      .where(whereConditions);
+
+    totalCount = totalResult?.count || 0;
+
+    // Fetch tickets with joins for category and creator info
+    ticketRows = await db
+      .select({
+        // All ticket columns explicitly
+        id: tickets.id,
+        title: tickets.title,
+        description: tickets.description,
+        location: tickets.location,
+        status: tickets.status,
+        category_id: tickets.category_id,
+        created_by: tickets.created_by,
+        assigned_to: tickets.assigned_to,
+        acknowledged_by: tickets.acknowledged_by,
+        group_id: tickets.group_id,
+        escalation_level: tickets.escalation_level,
+        tat_extended_count: tickets.tat_extended_count,
+        last_escalation_at: tickets.last_escalation_at,
+        due_at: tickets.due_at,
+        acknowledgement_tat: tickets.acknowledgement_tat,
+        acknowledged_at: tickets.acknowledged_at,
+        reopened_at: tickets.reopened_at,
+        sla_breached_at: tickets.sla_breached_at,
+        rating: tickets.rating,
+        rating_submitted: tickets.rating_submitted,
+        feedback: tickets.feedback,
+        is_public: tickets.is_public,
+        admin_link: tickets.admin_link,
+        student_link: tickets.student_link,
+        slack_thread_id: tickets.slack_thread_id,
+        external_ref: tickets.external_ref,
+        metadata: tickets.metadata,
+        attachments: tickets.attachments,
+        user_number: tickets.user_number,
+        category: tickets.category,
+        subcategory: tickets.subcategory,
+        details: tickets.details,
+        created_at: tickets.created_at,
+        updated_at: tickets.updated_at,
+        resolved_at: tickets.resolved_at,
+        // Joined fields
+        category_name: categories.name,
+        creator_name: users.name,
+        creator_email: users.email,
+        assigned_staff_name: staff.full_name,
+        assigned_staff_email: staff.email,
+      })
+      .from(tickets)
+      .leftJoin(categories, eq(tickets.category_id, categories.id))
+      .leftJoin(users, eq(tickets.created_by, users.id))
+      .leftJoin(staff, eq(staff.id, tickets.assigned_to))
+      .where(whereConditions)
+      .orderBy(desc(tickets.created_at))
+      .limit(limit)
+      .offset(offsetValue);
+  } catch (error) {
+    console.error('[Super Admin Dashboard] Error fetching tickets/count:', error);
+    throw new Error('Failed to load tickets for dashboard');
+  }
+
+  // Apply additional client-side filters not handled by API
+  let filteredTickets = ticketRows;
+
+  // Filter by escalated tickets (escalation_level > 0)
+  if (escalatedFilter === "true") {
+    filteredTickets = filteredTickets.filter(t => (t.escalation_level || 0) > 0);
+  }
+  
   if (user) {
-    allTickets = allTickets.filter(t => (t.userNumber || "").toLowerCase().includes(user.toLowerCase()));
+    filteredTickets = filteredTickets.filter(t => {
+      const name = (t.creator_name || "").toLowerCase();
+      const email = (t.creator_email || "").toLowerCase();
+      return name.includes(user.toLowerCase()) || email.includes(user.toLowerCase());
+    });
   }
+  
   if (createdFrom) {
     const from = new Date(createdFrom);
-    from.setHours(0,0,0,0);
-    allTickets = allTickets.filter(t => t.createdAt ? new Date(t.createdAt).getTime() >= from.getTime() : false);
+    from.setHours(0, 0, 0, 0);
+    filteredTickets = filteredTickets.filter(t => t.created_at && t.created_at.getTime() >= from.getTime());
   }
+  
   if (createdTo) {
     const to = new Date(createdTo);
-    to.setHours(23,59,59,999);
-    allTickets = allTickets.filter(t => t.createdAt ? new Date(t.createdAt).getTime() <= to.getTime() : false);
+    to.setHours(23, 59, 59, 999);
+    filteredTickets = filteredTickets.filter(t => t.created_at && t.created_at.getTime() <= to.getTime());
   }
 
   if (tat) {
@@ -82,37 +182,90 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
     startOfToday.setHours(0, 0, 0, 0);
     const endOfToday = new Date(now);
     endOfToday.setHours(23, 59, 59, 999);
-    allTickets = allTickets.filter(t => {
-      if (!t.details) return tat === "none";
-      try {
-        const d = JSON.parse(t.details as any);
-        const hasTat = !!d.tat;
-        const tatDate = d.tatDate ? new Date(d.tatDate) : null;
-        if (tat === "has") return hasTat;
-        if (tat === "none") return !hasTat;
-        if (tat === "due") return hasTat && tatDate && tatDate.getTime() < now.getTime();
-        if (tat === "upcoming") return hasTat && tatDate && tatDate.getTime() >= now.getTime();
-        if (tat === "today") {
-          return hasTat && tatDate && tatDate.getTime() >= startOfToday.getTime() && tatDate.getTime() <= endOfToday.getTime();
-        }
-        return true;
-      } catch {
-        return tat === "none";
+    filteredTickets = filteredTickets.filter(t => {
+      const metadata = (t.metadata as any) || {};
+      const tatDate = t.due_at || (metadata?.tatDate ? new Date(metadata.tatDate) : null);
+      const hasTat = !!tatDate;
+      
+      if (tat === "has") return hasTat;
+      if (tat === "none") return !hasTat;
+      if (tat === "due") return hasTat && tatDate && tatDate.getTime() < now.getTime();
+      if (tat === "upcoming") return hasTat && tatDate && tatDate.getTime() >= now.getTime();
+      if (tat === "today") {
+        return hasTat && tatDate && tatDate.getTime() >= startOfToday.getTime() && tatDate.getTime() <= endOfToday.getTime();
       }
+      return true;
     });
   }
 
-  if (sort === "oldest") {
-    allTickets = [...allTickets].reverse();
-  }
+  // Apply sorting
+  filteredTickets.sort((a, b) => {
+    switch (sort) {
+      case "newest":
+        return (b.created_at?.getTime() || 0) - (a.created_at?.getTime() || 0);
+      case "oldest":
+        return (a.created_at?.getTime() || 0) - (b.created_at?.getTime() || 0);
+      case "status":
+        const statusOrder = { 
+          OPEN: 1, IN_PROGRESS: 2, AWAITING_STUDENT: 3,
+          REOPENED: 4, ESCALATED: 5, RESOLVED: 6
+        };
+        const aStatus = statusOrder[a.status as keyof typeof statusOrder] || 99;
+        const bStatus = statusOrder[b.status as keyof typeof statusOrder] || 99;
+        if (aStatus !== bStatus) return aStatus - bStatus;
+        return (b.created_at?.getTime() || 0) - (a.created_at?.getTime() || 0);
+      case "due-date":
+        const aDue = a.due_at?.getTime() || Infinity;
+        const bDue = b.due_at?.getTime() || Infinity;
+        if (aDue !== bDue) return aDue - bDue;
+        return (b.created_at?.getTime() || 0) - (a.created_at?.getTime() || 0);
+      default:
+        return (b.created_at?.getTime() || 0) - (a.created_at?.getTime() || 0);
+    }
+  });
 
+  // Map to TicketCard format (all fields already selected, just add joined fields)
+  const allTickets = filteredTickets;
+
+  // Calculate pagination metadata
+  const actualCount = allTickets.length;
+  const totalPages = Math.ceil(totalCount / limit);
+  const hasNextPage = page < totalPages;
+  const hasPrevPage = page > 1;
+  const startIndex = offsetValue + 1;
+  const endIndex = Math.min(offsetValue + actualCount, totalCount);
+
+  const pagination = {
+    page,
+    totalPages,
+    hasNextPage,
+    hasPrevPage,
+    totalCount,
+    startIndex,
+    endIndex,
+    actualCount, // Add actual filtered count
+  };
 
   const stats = {
     total: allTickets.length,
-    open: allTickets.filter(t => t.status === 'open').length,
-    inProgress: allTickets.filter(t => t.status === 'in_progress').length,
-    resolved: allTickets.filter(t => t.status === 'resolved' || t.status === 'closed').length,
-    escalated: allTickets.filter(t => (Number(t.escalationCount) || 0) > 0).length,
+    open: allTickets.filter(t => {
+      const normalized = normalizeStatusForComparison(t.status);
+      return normalized === "open";
+    }).length,
+    inProgress: allTickets.filter(t => {
+      const normalized = normalizeStatusForComparison(t.status);
+      // Include both IN_PROGRESS and ESCALATED status as "in progress"
+      return normalized === "in_progress" || normalized === "escalated";
+    }).length,
+    awaitingStudent: allTickets.filter(t => {
+      const normalized = normalizeStatusForComparison(t.status);
+      return normalized === "awaiting_student_response";
+    }).length,
+    resolved: allTickets.filter(t => {
+      const normalized = normalizeStatusForComparison(t.status);
+      return normalized === "resolved" || normalized === "closed";
+    }).length,
+    escalated: allTickets.filter(t => (t.escalation_level || 0) > 0).length,
   };
 
   // Calculate today pending count
@@ -122,17 +275,16 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
   const endOfToday = new Date(now);
   endOfToday.setHours(23, 59, 59, 999);
   const todayPending = allTickets.filter(t => {
-    const status = (t.status || "").toLowerCase();
-    if (!["open", "in_progress", "awaiting_student_response", "reopened"].includes(status)) return false;
-    try {
-      const d = t.details ? JSON.parse(String(t.details)) : {};
-      const tatDate = d.tatDate ? new Date(d.tatDate) : null;
-      if (!tatDate) return false;
-      return tatDate.getTime() >= startOfToday.getTime() && tatDate.getTime() <= endOfToday.getTime();
-    } catch {
-      return false;
-    }
+    const normalized = normalizeStatusForComparison(t.status);
+    if (!["open", "in_progress", "awaiting_student_response", "reopened"].includes(normalized)) return false;
+    const metadata = (t.metadata as any) || {};
+    const tatDate = t.due_at || (metadata?.tatDate ? new Date(metadata.tatDate) : null);
+    if (!tatDate) return false;
+    return tatDate.getTime() >= startOfToday.getTime() && tatDate.getTime() <= endOfToday.getTime();
   }).length;
+
+  // Count unassigned tickets
+  const unassignedCount = ticketRows.filter(t => !t.assigned_to).length;
 
   return (
     <div className="space-y-8">
@@ -143,14 +295,25 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
               Super Admin Dashboard
             </h1>
             <p className="text-muted-foreground">
-              Comprehensive overview of all tickets and user management
+              Manage unassigned tickets, escalations, and system-wide operations
             </p>
           </div>
           <div className="flex gap-2 flex-wrap">
+            {unassignedCount > 0 && (
+              <Button variant="default" asChild className="bg-amber-500 hover:bg-amber-600">
+                <Link href="/superadmin/dashboard?status=open&assigned=unassigned">
+                  <Shield className="w-4 h-4 mr-2" />
+                  Unassigned Tickets
+                  <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-white/20 text-white">
+                    {unassignedCount}
+                  </span>
+                </Link>
+              </Button>
+            )}
             <Button variant="outline" asChild>
-              <Link href="/public">
-                <Globe className="w-4 h-4 mr-2" />
-                Public Dashboard
+              <Link href="/superadmin/dashboard/groups">
+                <Users className="w-4 h-4 mr-2" />
+                Groups
               </Link>
             </Button>
             <Button variant="outline" asChild>
@@ -176,9 +339,9 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
               </Link>
             </Button>
             <Button variant="outline" asChild>
-              <Link href="/superadmin/dashboard/committee">
-                <Users className="w-4 h-4 mr-2" />
-                Committee
+              <Link href="/superadmin/dashboard/analytics">
+                <BarChart3 className="w-4 h-4 mr-2" />
+                Analytics
               </Link>
             </Button>
             <Button variant="outline" asChild>
@@ -193,6 +356,24 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
                 User & Staff Management
               </Link>
             </Button>
+            <Button variant="outline" asChild>
+              <Link href="/superadmin/dashboard/staff">
+                <Building2 className="w-4 h-4 mr-2" />
+                SPOC Management
+              </Link>
+            </Button>
+            <Button variant="outline" asChild>
+              <Link href="/superadmin/dashboard/forms">
+                <FileText className="w-4 h-4 mr-2" />
+                Form Management
+              </Link>
+            </Button>
+            <Button variant="outline" asChild>
+              <Link href="/superadmin/dashboard/categories">
+                <Settings className="w-4 h-4 mr-2" />
+                Category Builder
+              </Link>
+            </Button>
           </div>
         </div>
 
@@ -204,10 +385,20 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
             <div className="flex justify-between items-center pt-4">
               <h2 className="text-2xl font-semibold flex items-center gap-2">
                 <FileText className="w-6 h-6" />
-                My Tickets & Escalations
+                Unassigned Tickets & Escalations
+                {unassignedCount > 0 && (
+                  <span className="ml-2 px-2 py-1 text-xs rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 font-medium">
+                    {unassignedCount} unassigned
+                  </span>
+                )}
               </h2>
               <p className="text-sm text-muted-foreground">
-                {allTickets.length} {allTickets.length === 1 ? 'ticket' : 'tickets'}
+                {pagination.actualCount} {pagination.actualCount === 1 ? 'ticket' : 'tickets'} on this page
+                {pagination.totalPages > 1 && (
+                  <span className="ml-2">
+                    (Page {pagination.page} of {pagination.totalPages})
+                  </span>
+                )}
               </p>
             </div>
 
@@ -219,20 +410,33 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
                   </div>
                   <p className="text-lg font-semibold mb-1">No tickets found</p>
                   <p className="text-sm text-muted-foreground text-center max-w-md">
-                    All system tickets will appear here. Use the filters above to search for specific tickets.
+                    Unassigned tickets and escalations will appear here. Use the filters above to search for specific tickets.
                   </p>
                 </CardContent>
               </Card>
             ) : (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {allTickets.map((ticket) => (
-                  <TicketCard key={ticket.id} ticket={ticket} basePath="/superadmin/dashboard" />
-                ))}
-              </div>
+              <>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {allTickets.map((ticket) => (
+                    <TicketCard key={ticket.id} ticket={ticket} basePath="/superadmin/dashboard" />
+                  ))}
+                </div>
+
+                {/* Pagination Controls */}
+                <PaginationControls
+                  currentPage={pagination.page}
+                  totalPages={pagination.totalPages}
+                  hasNext={pagination.hasNextPage}
+                  hasPrev={pagination.hasPrevPage}
+                  totalCount={pagination.totalCount}
+                  startIndex={pagination.startIndex}
+                  endIndex={pagination.endIndex}
+                  baseUrl="/superadmin/dashboard"
+                />
+              </>
             )}
         </div>
       </div>
     </div>
   );
 }
-

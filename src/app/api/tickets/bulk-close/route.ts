@@ -3,16 +3,39 @@ import { auth } from "@clerk/nextjs/server";
 import { and, eq, inArray } from "drizzle-orm";
 import { db, tickets } from "@/db";
 import { BulkCloseTicketsSchema } from "@/schema/ticket.schema";
+import { getUserRoleFromDB } from "@/lib/db-roles";
+import { getOrCreateUser } from "@/lib/user-sync";
+import { statusToEnum } from "@/db/status-mapper";
+
+/**
+ * ============================================
+ * /api/tickets/bulk-close
+ * ============================================
+ * 
+ * POST → Bulk Close Tickets
+ *   - Auth: Required (Admin only)
+ *   - Close multiple tickets at once
+ *   - Body: { ticketIds: number[], reason: string (optional) }
+ *   - Updates status to CLOSED for all specified tickets
+ *   - Notifies affected students
+ *   - Returns: 200 OK with count of closed tickets
+ * ============================================
+ */
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId, sessionClaims } = await auth();
+    const { userId } = await auth();
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const role = (sessionClaims as any)?.metadata?.role;
+    // Ensure user exists in database
+    await getOrCreateUser(userId);
+
+    // Get role from database (single source of truth)
+    const role = await getUserRoleFromDB(userId);
     const isAdmin = role === "admin" || role === "super_admin";
+    
     if (!isAdmin) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
@@ -24,7 +47,7 @@ export async function POST(request: NextRequest) {
     }
 
     const { ids, comment, status } = parsed.data;
-    const targetStatus = status || "closed";
+    const targetStatus = statusToEnum(status || "closed"); // Convert to uppercase enum
 
     // Fetch the tickets to modify
     const rows = await db.select().from(tickets).where(inArray(tickets.id, ids));
@@ -59,10 +82,6 @@ export async function POST(request: NextRequest) {
         details: JSON.stringify(details),
       };
 
-      // Only set ratingRequired for closed/resolved
-      if (targetStatus === "closed" || targetStatus === "resolved") {
-        updateData.ratingRequired = "true";
-      }
 
       await db
         .update(tickets)

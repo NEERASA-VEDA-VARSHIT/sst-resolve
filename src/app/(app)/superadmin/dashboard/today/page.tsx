@@ -7,18 +7,24 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Calendar, AlertTriangle, CheckCircle2, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { getUserRoleFromDB } from "@/lib/db-roles";
+import { getOrCreateUser } from "@/lib/user-sync";
 
 export default async function SuperAdminTodayPendingPage() {
-  const { userId, sessionClaims } = await auth();
+  const { userId } = await auth();
   if (!userId) redirect("/");
 
-  const role = sessionClaims?.metadata?.role || "student";
+  // Ensure user exists in database
+  await getOrCreateUser(userId);
+
+  // Get role from database (single source of truth)
+  const role = await getUserRoleFromDB(userId);
   if (role !== "super_admin") redirect("/student/dashboard");
 
   let allTickets = await db
     .select()
     .from(tickets)
-    .orderBy(desc(tickets.createdAt));
+    .orderBy(desc(tickets.created_at));
 
   const now = new Date();
   const todayYear = now.getFullYear();
@@ -33,57 +39,49 @@ export default async function SuperAdminTodayPendingPage() {
     
     if (!hasPendingStatus) return false;
     
-    try {
-      const d = t.details ? JSON.parse(String(t.details)) : {};
-      if (!d.tatDate) return false;
-      
-      const tatDate = new Date(d.tatDate);
-      if (isNaN(tatDate.getTime())) return false;
-      
-      const tatYear = tatDate.getFullYear();
-      const tatMonth = tatDate.getMonth();
-      const tatDay = tatDate.getDate();
-      
-      const tatIsToday = 
-        tatYear === todayYear &&
-        tatMonth === todayMonth &&
-        tatDay === todayDate;
-      
-      return tatIsToday;
-    } catch {
-      return false;
-    }
+    // Use authoritative due_at field first, fallback to metadata
+    const metadata = (t.metadata as any) || {};
+    const tatDate = t.due_at || (metadata?.tatDate ? new Date(metadata.tatDate) : null);
+    
+    if (!tatDate || isNaN(tatDate.getTime())) return false;
+    
+    const tatYear = tatDate.getFullYear();
+    const tatMonth = tatDate.getMonth();
+    const tatDay = tatDate.getDate();
+    
+    const tatIsToday = 
+      tatYear === todayYear &&
+      tatMonth === todayMonth &&
+      tatDay === todayDate;
+    
+    return tatIsToday;
   });
 
   const overdueToday = allTickets.filter(t => {
     const status = (t.status || "").toLowerCase();
     if (!pendingStatuses.has(status)) return false;
     
-    try {
-      const d = t.details ? JSON.parse(String(t.details)) : {};
-      if (!d.tatDate) return false;
-      
-      const tatDate = new Date(d.tatDate);
-      if (isNaN(tatDate.getTime())) return false;
-      
-      const tatYear = tatDate.getFullYear();
-      const tatMonth = tatDate.getMonth();
-      const tatDay = tatDate.getDate();
-      
-      const tatIsToday = 
-        tatYear === todayYear &&
-        tatMonth === todayMonth &&
-        tatDay === todayDate;
-      
-      if (tatIsToday) return false;
-      
-      const tatTime = new Date(tatYear, tatMonth, tatDay).getTime();
-      const todayTime = new Date(todayYear, todayMonth, todayDate).getTime();
-      
-      return tatTime < todayTime;
-    } catch {
-      return false;
-    }
+    // Use authoritative due_at field first, fallback to metadata
+    const metadata = (t.metadata as any) || {};
+    const tatDate = t.due_at || (metadata?.tatDate ? new Date(metadata.tatDate) : null);
+    
+    if (!tatDate || isNaN(tatDate.getTime())) return false;
+    
+    const tatYear = tatDate.getFullYear();
+    const tatMonth = tatDate.getMonth();
+    const tatDay = tatDate.getDate();
+    
+    const tatIsToday = 
+      tatYear === todayYear &&
+      tatMonth === todayMonth &&
+      tatDay === todayDate;
+    
+    if (tatIsToday) return false;
+    
+    const tatTime = new Date(tatYear, tatMonth, tatDay).getTime();
+    const todayTime = new Date(todayYear, todayMonth, todayDate).getTime();
+    
+    return tatTime < todayTime;
   });
 
   const overdueTodayIds = new Set(overdueToday.map(t => t.id));

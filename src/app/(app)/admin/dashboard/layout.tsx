@@ -1,27 +1,43 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
+import { getUserRoleFromDB } from "@/lib/db-roles";
+import { getOrCreateUser } from "@/lib/user-sync";
+import { isAdminLevel } from "@/conf/constants";
 
 export default async function AdminDashboardLayout({
-  children,
+    children,
 }: {
-  children: React.ReactNode;
+    children: React.ReactNode;
 }) {
-  const { userId, sessionClaims } = await auth();
+    try {
+        const { userId } = await auth();
 
-  if (!userId) {
-    redirect("/");
-  }
+        if (!userId) {
+            redirect("/");
+        }
 
-  const role = (sessionClaims as any)?.metadata?.role || "student";
-  if (role === "student") {
-    redirect("/student/dashboard");
-  }
+        // Ensure user exists in database
+        const dbUser = await getOrCreateUser(userId);
+        if (!dbUser) {
+            console.error('[Admin Layout] Failed to create/fetch user');
+            redirect("/");
+        }
 
-  return (
-    <div className="pb-16 lg:pb-0 pt-16 lg:pt-0">
-      <main className="min-h-screen p-4 md:p-6 lg:p-8">{children}</main>
-    </div>
-  );
+        // Get role from database (single source of truth)
+        const role = await getUserRoleFromDB(userId);
+
+        // Only allow admin, committee, or super_admin
+        if (!isAdminLevel(role)) {
+            redirect("/student/dashboard");
+        }
+
+        return (
+            <div className="pb-16 lg:pb-0 pt-16 lg:pt-0">
+                <main className="min-h-screen p-4 md:p-6 lg:p-8">{children}</main>
+            </div>
+        );
+    } catch (error) {
+        console.error('[Admin Layout] Error:', error);
+        redirect("/");
+    }
 }
-
-

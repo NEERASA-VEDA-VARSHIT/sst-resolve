@@ -1,5 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
+import { isProfileComplete } from "@/lib/profile-check";
+import { getOrCreateUser } from "@/lib/user-sync";
 
 export default async function StudentDashboardLayout({
   children,
@@ -8,8 +10,23 @@ export default async function StudentDashboardLayout({
 }) {
   const { userId } = await auth();
 
-  if (!userId) {
+  if (!userId) redirect("/");
+
+  // Ensure DB user exists for this Clerk ID
+  const dbUser = await getOrCreateUser(userId);
+  if (!dbUser) redirect("/");
+
+  // Safety check (UUID should always exist)
+  if (!dbUser.id) {
+    console.error("[StudentDashboardLayout] Missing dbUser.id", dbUser);
     redirect("/");
+  }
+
+  // Profile check must use DB UUID (not Clerk ID)
+  const profileComplete = await isProfileComplete(dbUser.id);
+
+  if (!profileComplete) {
+    redirect("/student/profile");
   }
 
   return (
@@ -18,5 +35,3 @@ export default async function StudentDashboardLayout({
     </div>
   );
 }
-
-

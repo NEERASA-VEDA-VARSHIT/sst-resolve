@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { WebClient } from "@slack/web-api";
 import { postThreadReply } from "@/lib/slack";
 import { sendEmail, getStatusUpdateEmail, getTATSetEmail, getCommentAddedEmail, getStudentEmail } from "@/lib/email";
-
+import { statusToEnum } from "@/db/status-mapper";
 import { calculateTATDate } from "@/utils";
 
 const slack = process.env.SLACK_BOT_TOKEN
@@ -267,10 +267,10 @@ export async function POST(request: NextRequest) {
 						const originalMessageId = details.originalEmailMessageId;
 						const originalSubject = details.originalEmailSubject;
 
-						await db
-							.update(tickets)
-							.set({ status: "closed" })
-							.where(eq(tickets.id, ticketId));
+					await db
+						.update(tickets)
+						.set({ status: "CLOSED" }) // Use uppercase enum value
+						.where(eq(tickets.id, ticketId));
 
 						// Return response immediately to avoid Slack timeout
 						const response = NextResponse.json({ text: "✅ Ticket closed" });
@@ -359,10 +359,10 @@ export async function POST(request: NextRequest) {
 						const originalMessageId = details.originalEmailMessageId;
 						const originalSubject = details.originalEmailSubject;
 
-						await db
-							.update(tickets)
-							.set({ status: "open" })
-							.where(eq(tickets.id, ticketId));
+					await db
+						.update(tickets)
+						.set({ status: "OPEN" }) // Use uppercase enum value
+						.where(eq(tickets.id, ticketId));
 
 						// Return response immediately to avoid Slack timeout
 						const response = NextResponse.json({ text: "🔄 Ticket reopened" });
@@ -472,12 +472,12 @@ export async function POST(request: NextRequest) {
 					details.tatExtendedAt = new Date().toISOString();
 				}
 
-				// Update ticket with TAT and optionally mark as in_progress
+				// Update ticket with TAT and optionally mark as IN_PROGRESS
 				// Note: For Slack actions, we can't assign to a specific Clerk userId since we only have Slack user ID
 				// Assignment will happen when admins take actions from the web dashboard
 				const updateData: any = { details: JSON.stringify(details) };
 				if (markInProgress) {
-					updateData.status = "in_progress";
+					updateData.status = "IN_PROGRESS"; // Use uppercase enum value
 				}
 
 				await db

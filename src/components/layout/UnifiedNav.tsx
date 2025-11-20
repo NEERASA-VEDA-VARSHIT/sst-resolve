@@ -16,6 +16,13 @@ import {
   LogOut,
   ChevronRight,
   User,
+  Calendar,
+  AlertCircle,
+  TrendingUp,
+  Users,
+  Building2,
+  Shield,
+  BarChart3,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "./ThemeToggle";
@@ -29,29 +36,165 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
+type UserRole = "student" | "admin" | "super_admin" | "committee";
+
 export function UnifiedNav() {
   const pathname = usePathname();
   const { user } = useUser();
   const [mounted, setMounted] = useState(false);
+  const [role, setRole] = useState<UserRole>("student");
   
-  useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    setMounted(true);
+    
+    // Fetch role from database API (single source of truth)
+    if (user?.id) {
+      fetch(`/api/auth/role?userId=${user.id}`, { cache: "no-store" })
+        .then(res => res.json())
+        .then(data => {
+          if (data?.role) {
+            setRole(data.role as UserRole);
+          }
+        })
+        .catch(err => {
+          console.error("[UnifiedNav] Error fetching role:", err);
+          // Default to student on error
+          setRole("student");
+        });
+    }
+  }, [user?.id]);
   
-  // Stabilize role to avoid SSR/CSR mismatch; default to student until mounted
-  const role = mounted ? (((user?.publicMetadata as any)?.role as string | undefined) || "student") : "student";
-  const isAdmin = role === "admin" || role === "super_admin";
+  const isAdmin = role === "admin" || role === "super_admin" || role === "committee";
   const isSuperAdmin = role === "super_admin";
   const isCommittee = role === "committee";
+  const isRegularAdmin = role === "admin";
 
   // Build navigation items based on role
   const navItems = mounted
     ? (
         [
+          // Home for everyone
+          {
+            title: "Home",
+            href: "/",
+            icon: Home,
+            show: true,
+          },
+          // Student dashboard
+          {
+            title: "My Tickets",
+            href: "/student/dashboard",
+            icon: FileText,
+            show: role === "student",
+          },
+          // Admin dashboard items
+          ...(isRegularAdmin || isCommittee
+            ? [
+                {
+                  title: "Dashboard",
+                  href: "/admin/dashboard",
+                  icon: LayoutDashboard,
+                  show: true,
+                },
+                {
+                  title: "Today",
+                  href: "/admin/dashboard/today",
+                  icon: Calendar,
+                  show: true,
+                },
+                {
+                  title: "Escalated",
+                  href: "/admin/dashboard/escalated",
+                  icon: AlertCircle,
+                  show: true,
+                },
+                {
+                  title: "Analytics",
+                  href: "/admin/dashboard/analytics",
+                  icon: TrendingUp,
+                  show: true,
+                },
+                {
+                  title: "Groups",
+                  href: "/admin/dashboard/groups",
+                  icon: Users,
+                  show: true,
+                },
+              ]
+            : []),
+          // Super Admin dashboard items
           ...(isSuperAdmin
             ? [
                 {
+                  title: "Dashboard",
+                  href: "/superadmin/dashboard",
+                  icon: LayoutDashboard,
+                  show: true,
+                },
+                {
                   title: "All Tickets",
                   href: "/superadmin/tickets",
-                  icon: LayoutDashboard,
+                  icon: FileText,
+                  show: true,
+                },
+                {
+                  title: "Today",
+                  href: "/superadmin/dashboard/today",
+                  icon: Calendar,
+                  show: true,
+                },
+                {
+                  title: "Escalated",
+                  href: "/superadmin/dashboard/escalated",
+                  icon: AlertCircle,
+                  show: true,
+                },
+                {
+                  title: "Analytics",
+                  href: "/superadmin/dashboard/analytics",
+                  icon: BarChart3,
+                  show: true,
+                },
+                {
+                  title: "Groups",
+                  href: "/superadmin/dashboard/groups",
+                  icon: Users,
+                  show: true,
+                },
+                {
+                  title: "Categories",
+                  href: "/superadmin/dashboard/categories",
+                  icon: Building2,
+                  show: true,
+                },
+                {
+                  title: "Staff",
+                  href: "/superadmin/dashboard/staff",
+                  icon: Shield,
+                  show: true,
+                },
+                {
+                  title: "Users",
+                  href: "/superadmin/dashboard/users",
+                  icon: User,
+                  show: true,
+                },
+                {
+                  title: "Forms",
+                  href: "/superadmin/dashboard/forms",
+                  icon: FileText,
+                  show: true,
+                },
+                {
+                  title: "Committees",
+                  href: "/superadmin/dashboard/committees",
+                  icon: Users,
+                  show: true,
+                },
+                {
+                  title: "Master Data",
+                  href: "/superadmin/dashboard/master-data",
+                  icon: Settings,
                   show: true,
                 },
               ]
@@ -134,7 +277,13 @@ export function UnifiedNav() {
                                   : user.emailAddresses[0]?.emailAddress?.split("@")[0] || "User"}
                               </p>
                               <Badge variant="secondary" className="text-xs mt-0.5">
-                                {role === "super_admin" ? "Super Admin" : role === "admin" ? "Admin" : role === "committee" ? "Committee" : "Student"}
+                                {role === "super_admin" 
+                                  ? "Super Admin" 
+                                  : role === "admin" 
+                                  ? "Admin" 
+                                  : role === "committee" 
+                                  ? "Committee" 
+                                  : "Student"}
                               </Badge>
                             </div>
                             <ChevronRight className="w-4 h-4 text-muted-foreground hidden xl:block" />
@@ -155,12 +304,14 @@ export function UnifiedNav() {
                           </DropdownMenuLabel>
                           <>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem asChild>
-                              <Link href={isCommittee ? "/committee/profile" : "/profile"} className="cursor-pointer">
-                                <User className="mr-2 h-4 w-4" />
-                                <span>Profile</span>
-                              </Link>
-                            </DropdownMenuItem>
+                            {(role === "student" || role === "committee") && (
+                              <DropdownMenuItem asChild>
+                                <Link href={isCommittee ? "/committee/profile" : "/profile"} className="cursor-pointer">
+                                  <User className="mr-2 h-4 w-4" />
+                                  <span>Profile</span>
+                                </Link>
+                              </DropdownMenuItem>
+                            )}
                           </>
                           <DropdownMenuSeparator />
                           <SignOutButton>
@@ -258,12 +409,14 @@ export function UnifiedNav() {
                   </DropdownMenuLabel>
                   <>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem asChild>
-                      <Link href={isCommittee ? "/committee/profile" : "/profile"} className="cursor-pointer">
-                        <User className="mr-2 h-4 w-4" />
-                        <span>Profile</span>
-                      </Link>
-                    </DropdownMenuItem>
+                    {(role === "student" || role === "committee") && (
+                      <DropdownMenuItem asChild>
+                        <Link href={isCommittee ? "/committee/profile" : "/profile"} className="cursor-pointer">
+                          <User className="mr-2 h-4 w-4" />
+                          <span>Profile</span>
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
                   </>
                   <DropdownMenuSeparator />
                   <SignOutButton>

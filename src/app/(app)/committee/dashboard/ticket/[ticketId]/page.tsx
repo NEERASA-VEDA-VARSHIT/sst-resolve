@@ -8,10 +8,14 @@ import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Calendar, ArrowLeft, Clock, CheckCircle2, AlertCircle, MessageSquare, User, MapPin, FileText, Image as ImageIcon } from "lucide-react";
-import { db, tickets } from "@/db";
-import { eq } from "drizzle-orm";
+import { db, tickets, ticket_committee_tags, committee_members, categories } from "@/db";
+import { eq, inArray, and } from "drizzle-orm";
+import { getOrCreateUser } from "@/lib/user-sync";
 import { CommentForm } from "@/components/tickets/CommentForm";
 import { RatingForm } from "@/components/tickets/RatingForm";
+import { CommitteeActions } from "@/components/tickets/CommitteeActions";
+import { enumToStatus } from "@/db/status-mapper";
+import { normalizeStatusForComparison, formatStatus } from "@/lib/utils";
 
 export default async function CommitteeTicketPage({ params }: { params: Promise<{ ticketId: string }> }) {
   const { userId } = await auth();
@@ -21,25 +25,95 @@ export default async function CommitteeTicketPage({ params }: { params: Promise<
   const id = Number(ticketId);
   if (!Number.isFinite(id)) notFound();
 
-  const row = await db.select().from(tickets).where(eq(tickets.id, id)).limit(1);
-  if (row.length === 0) notFound();
-  const ticket = row[0];
+  // Fetch ticket with category join
+  const ticketRows = await db
+    .select({
+      id: tickets.id,
+      status: tickets.status,
+      description: tickets.description,
+      location: tickets.location,
+      created_by: tickets.created_by,
+      category_id: tickets.category_id,
+      metadata: tickets.metadata,
+      due_at: tickets.due_at,
+      created_at: tickets.created_at,
+      rating: tickets.rating,
+      category_name: categories.name,
+    })
+    .from(tickets)
+    .leftJoin(categories, eq(tickets.category_id, categories.id))
+    .where(eq(tickets.id, id))
+    .limit(1);
 
-  // Ensure committee member owns this ticket (userNumber is userId for committee)
-  if (ticket.userNumber !== userId || ticket.category !== "Committee") {
+  if (ticketRows.length === 0) notFound();
+  const ticket = ticketRows[0];
+
+  // Ensure user exists and get user_id
+  const user = await getOrCreateUser(userId);
+
+  // Get committee IDs this user belongs to (using user_id FK)
+  const memberRecords = await db
+    .select({ committee_id: committee_members.committee_id })
+    .from(committee_members)
+    .where(eq(committee_members.user_id, user.id));
+
+  const committeeIds = memberRecords.map(m => m.committee_id);
+
+  // Check if ticket is created by this committee member OR tagged to their committee
+  let canAccess = false;
+  
+  // Check if ticket is created by this committee member
+  if (ticket.created_by === user.id && ticket.category_name === "Committee") {
+    canAccess = true;
+  }
+  
+  // Check if ticket is tagged to any of the user's committees
+  if (!canAccess && committeeIds.length > 0) {
+    const tagRecords = await db
+      .select()
+      .from(ticket_committee_tags)
+      .where(
+        and(
+          eq(ticket_committee_tags.ticket_id, id),
+          inArray(ticket_committee_tags.committee_id, committeeIds)
+        )
+      )
+      .limit(1);
+    
+    if (tagRecords.length > 0) {
+      canAccess = true;
+    }
+  }
+
+  if (!canAccess) {
     redirect("/committee/dashboard");
   }
 
-  // Parse details for comments
-  let details: any = {};
-  try {
-    details = ticket.details ? JSON.parse(ticket.details) : {};
-  } catch {
-    details = {};
-  }
+  // Check if this ticket is tagged to user's committee
+  const isTaggedTicket = committeeIds.length > 0 && (await db
+    .select()
+    .from(ticket_committee_tags)
+    .where(
+      and(
+        eq(ticket_committee_tags.ticket_id, id),
+        inArray(ticket_committee_tags.committee_id, committeeIds)
+      )
+    )
+    .limit(1)).length > 0;
+
+  // Parse metadata (JSONB) for comments
+  const metadata = (ticket.metadata as any) || {};
+  const comments = Array.isArray(metadata?.comments) ? metadata.comments : [];
+  const visibleComments = comments.filter(
+    (c: any) => c.type !== "internal_note" && c.type !== "super_admin_note"
+  );
+
+  // Normalize status for comparisons
+  const normalizedStatus = normalizeStatusForComparison(ticket.status);
 
   const statusVariant = (status: string | null | undefined) => {
-    switch (status) {
+    const normalized = normalizeStatusForComparison(status);
+    switch (normalized) {
       case "open":
       case "reopened":
         return "default" as const;
@@ -57,7 +131,8 @@ export default async function CommitteeTicketPage({ params }: { params: Promise<
   };
 
   const getStatusColor = (status: string | null | undefined) => {
-    switch (status) {
+    const normalized = normalizeStatusForComparison(status);
+    switch (normalized) {
       case "open":
       case "reopened":
         return "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border-blue-200 dark:border-blue-800";
@@ -74,25 +149,26 @@ export default async function CommitteeTicketPage({ params }: { params: Promise<
     }
   };
 
-  // Get visible comments (non-internal)
-  const allComments = Array.isArray(details.comments) ? details.comments : [];
-  const visibleComments = allComments.filter(
-    (c: any) => c.type !== "internal_note" && c.type !== "super_admin_note"
-  );
-
   // Calculate ticket progress
   const getTicketProgress = () => {
-    if (ticket.status === "closed" || ticket.status === "resolved") return 100;
-    if (ticket.status === "in_progress") return 50;
-    if (ticket.status === "awaiting_student_response") return 30;
-    return 10;
+    switch (normalizedStatus) {
+      case "closed":
+      case "resolved":
+        return 100;
+      case "in_progress":
+        return 50;
+      case "awaiting_student_response":
+        return 30;
+      default:
+        return 10;
+    }
   };
 
   // TAT info
   let tatInfo: { date: Date; daysRemaining: number; isOverdue: boolean } | null = null;
-  if (details.tatDate) {
+  const tatDate = ticket.due_at || (metadata?.tatDate ? new Date(metadata.tatDate) : null);
+  if (tatDate) {
     try {
-      const tatDate = new Date(details.tatDate);
       const now = new Date();
       const diffTime = tatDate.getTime() - now.getTime();
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
@@ -123,16 +199,16 @@ export default async function CommitteeTicketPage({ params }: { params: Promise<
                 <CardTitle className="text-3xl font-bold">Ticket #{ticket.id}</CardTitle>
                 {ticket.status && (
                   <Badge variant={statusVariant(ticket.status)} className={getStatusColor(ticket.status)}>
-                    {ticket.status.replaceAll('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                    {formatStatus(enumToStatus(ticket.status))}
                   </Badge>
                 )}
-                {ticket.category && (
-                  <Badge variant="outline">{ticket.category}</Badge>
+                {ticket.category_name && (
+                  <Badge variant="outline">{ticket.category_name}</Badge>
                 )}
               </div>
-              {ticket.subcategory && (
+              {metadata?.subcategory && (
                 <CardDescription className="text-base">
-                  {ticket.subcategory}
+                  {metadata.subcategory}
                 </CardDescription>
               )}
             </div>
@@ -214,14 +290,14 @@ export default async function CommitteeTicketPage({ params }: { params: Promise<
                     </div>
                     
                     {/* Display Images if available */}
-                    {details.images && Array.isArray(details.images) && details.images.length > 0 && (
+                    {metadata.images && Array.isArray(metadata.images) && metadata.images.length > 0 && (
                       <div className="space-y-2 pt-4 border-t">
                         <div className="flex items-center gap-2">
                           <ImageIcon className="w-4 h-4 text-muted-foreground" />
                           <span className="text-sm font-semibold text-muted-foreground">Attached Images</span>
                         </div>
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                          {details.images.map((imageUrl: string, index: number) => (
+                          {metadata.images.map((imageUrl: string, index: number) => (
                             <a
                               key={index}
                               href={imageUrl}
@@ -289,7 +365,7 @@ export default async function CommitteeTicketPage({ params }: { params: Promise<
               )}
 
               {/* Comment form - only show if status allows */}
-              {ticket.status === "awaiting_student_response" && (
+              {normalizedStatus === "awaiting_student_response" && (
                 <div className="pt-4 border-t">
                   <Alert className="mb-4 border-amber-200 bg-amber-50/50 dark:bg-amber-950/20">
                     <AlertCircle className="h-4 w-4 text-amber-600" />
@@ -299,14 +375,36 @@ export default async function CommitteeTicketPage({ params }: { params: Promise<
                       </span>
                     </AlertDescription>
                   </Alert>
-                  <CommentForm ticketId={ticket.id} currentStatus={ticket.status || undefined} />
+                  <CommentForm ticketId={ticket.id} currentStatus={enumToStatus(ticket.status) || undefined} />
                 </div>
               )}
             </CardContent>
           </Card>
 
-          {/* Rating Form - only show for closed/resolved tickets */}
-          {ticket.ratingRequired === "true" && !ticket.rating && (
+          {/* Committee Actions - for tagged tickets */}
+          {isTaggedTicket && (
+            <Card className="border-2 border-blue-200 dark:border-blue-800">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <CheckCircle2 className="w-5 h-5 text-blue-600" />
+                  Committee Actions
+                </CardTitle>
+                <CardDescription>
+                  This ticket was tagged to your committee. You can add comments and close it.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <CommitteeActions
+                  ticketId={ticket.id}
+                  currentStatus={enumToStatus(ticket.status) || "open"}
+                  isTaggedTicket={isTaggedTicket}
+                />
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Rating Form - only show for resolved tickets without rating */}
+          {normalizedStatus === "resolved" && !ticket.rating && (
             <Card className="border-2">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">

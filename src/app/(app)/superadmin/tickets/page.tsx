@@ -1,44 +1,89 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { db, tickets } from "@/db";
-import { desc } from "drizzle-orm";
+import { desc, sql, and, count } from "drizzle-orm";
+import Link from "next/link";
 import { TicketCard } from "@/components/layout/TicketCard";
 import { AdminTicketFilters } from "@/components/admin/AdminTicketFilters";
 import { Card, CardContent } from "@/components/ui/card";
 import { FileText } from "lucide-react";
+import { getUserRoleFromDB } from "@/lib/db-roles";
+import { getOrCreateUser } from "@/lib/user-sync";
 
-export default async function SuperAdminAllTicketsPage({ searchParams }: { searchParams?: Record<string, string | undefined> }) {
-  const { userId, sessionClaims } = await auth();
+export default async function SuperAdminAllTicketsPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> | Record<string, string | string[] | undefined> }) {
+  const { userId } = await auth();
   if (!userId) redirect("/");
-  const role = sessionClaims?.metadata?.role;
+  
+  // Ensure user exists in database
+  await getOrCreateUser(userId);
+  
+  // Get role from database (single source of truth)
+  const role = await getUserRoleFromDB(userId);
   if (role !== "super_admin") redirect("/student/dashboard");
 
-  const params = searchParams || {};
-  const category = params["category"] || "";
-  const subcategory = params["subcategory"] || "";
-  const location = params["location"] || "";
-  const tat = params["tat"] || "";
-  const status = params["status"] || "";
-  const createdFrom = params["from"] || "";
-  const createdTo = params["to"] || "";
-  const user = params["user"] || "";
-  const sort = params["sort"] || "newest";
+  const resolvedSearchParams = searchParams instanceof Promise ? await searchParams : (searchParams || {});
+  const params = resolvedSearchParams || {};
+  const category = (typeof params["category"] === "string" ? params["category"] : params["category"]?.[0]) || "";
+  const subcategory = (typeof params["subcategory"] === "string" ? params["subcategory"] : params["subcategory"]?.[0]) || "";
+  const location = (typeof params["location"] === "string" ? params["location"] : params["location"]?.[0]) || "";
+  const tat = (typeof params["tat"] === "string" ? params["tat"] : params["tat"]?.[0]) || "";
+  const status = (typeof params["status"] === "string" ? params["status"] : params["status"]?.[0]) || "";
+  const createdFrom = (typeof params["from"] === "string" ? params["from"] : params["from"]?.[0]) || "";
+  const createdTo = (typeof params["to"] === "string" ? params["to"] : params["to"]?.[0]) || "";
+  const user = (typeof params["user"] === "string" ? params["user"] : params["user"]?.[0]) || "";
+  const sort = (typeof params["sort"] === "string" ? params["sort"] : params["sort"]?.[0]) || "newest";
+  const page = parseInt((typeof params["page"] === "string" ? params["page"] : params["page"]?.[0]) || "1", 10);
+  const limit = Math.min(50, Math.max(5, parseInt((typeof params["limit"] === "string" ? params["limit"] : params["limit"]?.[0]) || "20", 10)));
+  const offset = (page - 1) * limit;
 
-  let allTickets = await db.select().from(tickets).orderBy(desc(tickets.createdAt));
-
-  if (category) allTickets = allTickets.filter(t => (t.category || "").toLowerCase() === category.toLowerCase());
-  if (subcategory) allTickets = allTickets.filter(t => (t.subcategory || "").toLowerCase().includes(subcategory.toLowerCase()));
-  if (location) allTickets = allTickets.filter(t => (t.location || "").toLowerCase().includes(location.toLowerCase()));
-  if (status) allTickets = allTickets.filter(t => (t.status || "").toLowerCase() === status.toLowerCase());
-  if (user) allTickets = allTickets.filter(t => (t.userNumber || "").toLowerCase().includes(user.toLowerCase()));
-
+  // Build server-side where conditions (simple, case-insensitive where possible)
+  const whereClauses: any[] = [];
+  if (status) {
+    whereClauses.push(sql`LOWER(${tickets.status}) = ${status.toLowerCase()}`);
+  }
+  if (category) {
+    whereClauses.push(sql`LOWER(${tickets.category}) = ${category.toLowerCase()}`);
+  }
+  if (subcategory) {
+    whereClauses.push(sql`LOWER(${tickets.subcategory}) LIKE ${"%" + subcategory.toLowerCase() + "%"}`);
+  }
+  if (location) {
+    whereClauses.push(sql`LOWER(${tickets.location}) LIKE ${"%" + location.toLowerCase() + "%"}`);
+  }
+  if (user) {
+    whereClauses.push(sql`LOWER(${tickets.user_number}) LIKE ${"%" + user.toLowerCase() + "%"}`);
+  }
   if (createdFrom) {
-    const from = new Date(createdFrom); from.setHours(0,0,0,0);
-    allTickets = allTickets.filter(t => t.createdAt ? new Date(t.createdAt).getTime() >= from.getTime() : false);
+    const from = new Date(createdFrom);
+    from.setHours(0, 0, 0, 0);
+    whereClauses.push(sql`${tickets.created_at} >= ${from}`);
   }
   if (createdTo) {
-    const to = new Date(createdTo); to.setHours(23,59,59,999);
-    allTickets = allTickets.filter(t => t.createdAt ? new Date(t.createdAt).getTime() <= to.getTime() : false);
+    const to = new Date(createdTo);
+    to.setHours(23, 59, 59, 999);
+    whereClauses.push(sql`${tickets.created_at} <= ${to}`);
+  }
+
+  let allTickets: any[] = [];
+  let total = 0;
+  try {
+    // total count with same filters
+    const totalQuery = whereClauses.length > 0
+      ? db.select({ total: count() }).from(tickets).where(and(...whereClauses))
+      : db.select({ total: count() }).from(tickets);
+
+    const [totalRow] = await totalQuery;
+    total = totalRow?.total || 0;
+
+    // fetch page
+    const rowsQuery = whereClauses.length > 0
+      ? db.select().from(tickets).where(and(...whereClauses)).orderBy(desc(tickets.created_at)).limit(limit).offset(offset)
+      : db.select().from(tickets).orderBy(desc(tickets.created_at)).limit(limit).offset(offset);
+
+    allTickets = await rowsQuery;
+  } catch (error) {
+    console.error('[Super Admin All Tickets] Error fetching tickets:', error);
+    throw new Error('Failed to load tickets');
   }
 
   if (tat) {
@@ -46,24 +91,38 @@ export default async function SuperAdminAllTicketsPage({ searchParams }: { searc
     const startOfToday = new Date(now); startOfToday.setHours(0,0,0,0);
     const endOfToday = new Date(now); endOfToday.setHours(23,59,59,999);
     allTickets = allTickets.filter(t => {
-      if (!t.details) return tat === "none";
-      try {
-        const d = JSON.parse(t.details as any);
-        const hasTat = !!d.tat;
-        const tatDate = d.tatDate ? new Date(d.tatDate) : null;
-        if (tat === "has") return hasTat;
-        if (tat === "none") return !hasTat;
-        if (tat === "due") return hasTat && tatDate && tatDate.getTime() < now.getTime();
-        if (tat === "upcoming") return hasTat && tatDate && tatDate.getTime() >= now.getTime();
-        if (tat === "today") return hasTat && tatDate && tatDate.getTime() >= startOfToday.getTime() && tatDate.getTime() <= endOfToday.getTime();
-        return true;
-      } catch {
-        return tat === "none";
-      }
+      // Use authoritative due_at field first, fallback to metadata
+      const metadata = (t.metadata as any) || {};
+      const tatDate = t.due_at || (metadata?.tatDate ? new Date(metadata.tatDate) : null);
+      const hasTat = !!tatDate && !isNaN(tatDate.getTime());
+      
+      if (tat === "has") return hasTat;
+      if (tat === "none") return !hasTat;
+      if (tat === "due") return hasTat && tatDate && tatDate.getTime() < now.getTime();
+      if (tat === "upcoming") return hasTat && tatDate && tatDate.getTime() >= now.getTime();
+      if (tat === "today") return hasTat && tatDate && tatDate.getTime() >= startOfToday.getTime() && tatDate.getTime() <= endOfToday.getTime();
+      return true;
     });
   }
 
   if (sort === "oldest") allTickets = [...allTickets].reverse();
+
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  const hasNext = page < totalPages;
+  const hasPrev = page > 1;
+
+  const buildHref = (newPage: number) => {
+    const qp: Record<string, string> = {};
+    for (const k of Object.keys(params)) {
+      const v = params[k as keyof typeof params];
+      if (typeof v === "string") qp[k] = v;
+      else if (Array.isArray(v) && v.length > 0) qp[k] = String(v[0]);
+    }
+    qp.page = String(newPage);
+    qp.limit = String(limit);
+    const search = new URLSearchParams(qp).toString();
+    return `/superadmin/tickets?${search}`;
+  };
 
   return (
     <div className="space-y-6">
@@ -104,6 +163,24 @@ export default async function SuperAdminAllTicketsPage({ searchParams }: { searc
           {allTickets.map((ticket) => (
             <TicketCard key={ticket.id} ticket={ticket} basePath="/superadmin/dashboard" />
           ))}
+        </div>
+      )}
+
+      {/* Pagination controls */}
+      {total > 0 && (
+        <div className="flex items-center justify-between pt-4">
+          <div className="text-sm text-muted-foreground">
+            Showing {Math.min(total, (page - 1) * limit + 1)} - {Math.min(page * limit, total)} of {total} tickets
+          </div>
+          <div className="flex items-center gap-2">
+            <Link href={hasPrev ? buildHref(page - 1) : '#'} className={`px-3 py-1 border rounded ${!hasPrev ? 'opacity-50 pointer-events-none' : ''}`}>
+              Previous
+            </Link>
+            <span className="text-sm">Page {page} of {totalPages}</span>
+            <Link href={hasNext ? buildHref(page + 1) : '#'} className={`px-3 py-1 border rounded ${!hasNext ? 'opacity-50 pointer-events-none' : ''}`}>
+              Next
+            </Link>
+          </div>
         </div>
       )}
     </div>

@@ -7,19 +7,32 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Users, Calendar, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { getUserRoleFromDB } from "@/lib/db-roles";
+import { getOrCreateUser } from "@/lib/user-sync";
 
 export default async function SuperAdminCommitteePage() {
-  const { userId, sessionClaims } = await auth();
+  const { userId } = await auth();
   if (!userId) redirect("/");
 
-  const role = sessionClaims?.metadata?.role || "student";
+  // Ensure user exists in database
+  await getOrCreateUser(userId);
+
+  // Get role from database (single source of truth)
+  const role = await getUserRoleFromDB(userId);
   if (role !== "super_admin") redirect("/student/dashboard");
 
-  // Get all tickets for super admin
-  const allTickets = await db
-    .select()
-    .from(tickets)
-    .orderBy(desc(tickets.createdAt));
+  // Get all tickets for super admin (with limit to prevent performance issues)
+  let allTickets = [];
+  try {
+    allTickets = await db
+      .select()
+      .from(tickets)
+      .orderBy(desc(tickets.created_at))
+      .limit(1000); // Reasonable limit for committee view
+  } catch (error) {
+    console.error('[Super Admin Committee] Error fetching tickets:', error);
+    // Continue with empty array
+  }
 
   // Filter committee tickets - for now, we'll show all tickets
   // You can customize this filter based on your committee criteria

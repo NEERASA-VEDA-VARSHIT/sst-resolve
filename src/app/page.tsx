@@ -1,25 +1,31 @@
 import { auth } from "@clerk/nextjs/server";
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
 import { redirect } from "next/navigation";
+import { LandingPage } from "@/components/landing/LandingPage";
+import { getDashboardPath } from "@/types/auth";
+import { getUserRoleFromDB } from "@/lib/db-roles";
+import { getOrCreateUser } from "@/lib/user-sync";
+
+// Ensures session is not cached
+export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const { userId, sessionClaims } = await auth();
+  const { userId } = await auth();
 
   if (!userId) {
-    return (
-      <div className="flex items-center justify-center min-h-[calc(100vh-73px)]">
-        <div className="text-center space-y-4">
-          <h1 className="text-4xl font-bold">Welcome to SST Resolve</h1>
-          <p className="text-muted-foreground">Sign in to access your tickets and dashboard</p>
-        </div>
-      </div>
-    );
+    return <LandingPage />;
   }
 
-  const role = (sessionClaims as any)?.metadata?.role || "student";
-  if (role === "super_admin") redirect("/superadmin/dashboard");
-  if (role === "admin") redirect("/admin/dashboard");
-  if (role === "committee") redirect("/committee/dashboard");
-  redirect("/student/dashboard");
+  // Ensure user exists in DB
+  const dbUser = await getOrCreateUser(userId);
+
+  // If Clerk user was deleted → dbUser = null → force logout
+  if (!dbUser) {
+    redirect("/");
+  }
+
+  // Fetch role from DB (single source of truth)
+  const role = await getUserRoleFromDB(userId);
+
+  // Redirect based on role
+  redirect(getDashboardPath(role));
 }

@@ -1,18 +1,25 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { db, tickets } from "@/db";
+import { db, tickets, staff } from "@/db";
 import { desc, eq, isNull, or } from "drizzle-orm";
 import { TicketCard } from "@/components/layout/TicketCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Calendar, AlertTriangle, CheckCircle2, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { getUserRoleFromDB } from "@/lib/db-roles";
+import { getOrCreateUser } from "@/lib/user-sync";
+import { getTicketStatuses } from "@/lib/status/getTicketStatuses";
 
 export default async function AdminTodayPendingPage() {
-  const { userId, sessionClaims } = await auth();
+  const { userId } = await auth();
   if (!userId) redirect("/");
 
-  const role = sessionClaims?.metadata?.role || "student";
+  // Ensure user exists in database
+  await getOrCreateUser(userId);
+
+  // Get role from database (single source of truth)
+  const role = await getUserRoleFromDB(userId);
   const isSuperAdmin = role === "super_admin";
   if (role === "student") redirect("/student/dashboard");
   if (isSuperAdmin) redirect("/superadmin/dashboard");
@@ -23,29 +30,56 @@ export default async function AdminTodayPendingPage() {
   const { getAdminAssignment, ticketMatchesAdminAssignment } = await import("@/lib/admin-assignment");
   const adminAssignment = await getAdminAssignment(adminUserId);
 
+  // Get admin's staff record
+  const dbUser = await getOrCreateUser(adminUserId);
+  if (!dbUser) {
+    console.error("[AdminTodayPendingPage] Failed to create/fetch user");
+    redirect("/");
+  }
+
+  const [adminStaff] = await db
+    .select({ id: staff.id })
+    .from(staff)
+    .where(eq(staff.user_id, dbUser.id))
+    .limit(1);
+
+  if (!adminStaff) {
+    return (
+      <div className="space-y-8">
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-muted-foreground">No staff assignment found. Please contact super admin.</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   // Fetch tickets: assigned to this admin OR unassigned tickets that match admin's domain/scope
   let allTickets = await db
     .select()
     .from(tickets)
     .where(
       or(
-        eq(tickets.assignedTo, adminUserId),
-        isNull(tickets.assignedTo)
+        eq(tickets.assigned_to, adminStaff.id),
+        isNull(tickets.assigned_to)
       )
     )
-    .orderBy(desc(tickets.createdAt));
+    .orderBy(desc(tickets.created_at));
 
   // Filter unassigned tickets to only show those matching admin's domain/scope
   if (adminAssignment.domain) {
     allTickets = allTickets.filter(t => {
       // If assigned to this admin, always show
-      if (t.assignedTo === adminUserId) {
+      if (t.assigned_to === adminStaff.id) {
         return true;
       }
       // If unassigned, only show if matches admin's domain/scope
-      if (!t.assignedTo) {
+      if (!t.assigned_to) {
+        // Get category name from join or metadata
+        const categoryName = t.category || (t.metadata && typeof t.metadata === "object" ? (t.metadata as any).category : null);
         return ticketMatchesAdminAssignment(
-          { category: t.category, location: t.location },
+          { category: categoryName, location: t.location },
           adminAssignment
         );
       }
@@ -58,83 +92,94 @@ export default async function AdminTodayPendingPage() {
   const todayYear = now.getFullYear();
   const todayMonth = now.getMonth();
   const todayDate = now.getDate();
-
-  // Debug: Log today's date
-  console.log("Today's date:", { year: todayYear, month: todayMonth, date: todayDate });
-  console.log("Total tickets fetched:", allTickets.length);
+  const startOfToday = new Date(todayYear, todayMonth, todayDate, 0, 0, 0, 0);
+  const endOfToday = new Date(todayYear, todayMonth, todayDate, 23, 59, 59, 999);
 
   // "Pending today": tickets with TAT date falling today (should be resolved today)
-  const pendingStatuses = new Set(["open", "in_progress", "awaiting_student_response", "reopened"]);
-
-  // Debug: Count tickets with TAT dates
-  let ticketsWithTat = 0;
-  let ticketsWithPendingStatus = 0;
+  // Fetch dynamic ticket statuses
+  const ticketStatuses = await getTicketStatuses();
+  const pendingStatuses = new Set(ticketStatuses.filter(s => !s.is_final).map(s => s.value));
 
   const todayPending = allTickets.filter(t => {
-    const status = (t.status || "").toLowerCase();
-    const hasPendingStatus = pendingStatuses.has(status);
-    if (hasPendingStatus) ticketsWithPendingStatus++;
-    
-    if (!hasPendingStatus) return false;
-    
-    // Include tickets where TAT date is today OR overdue (past TAT but still pending)
     try {
-      const d = t.details ? JSON.parse(String(t.details)) : {};
-      if (!d.tatDate) return false;
-      
-      ticketsWithTat++;
-      
-      // Parse TAT date (could be ISO string or other format)
-      const tatDate = new Date(d.tatDate);
-      if (isNaN(tatDate.getTime())) {
-        console.log("Invalid TAT date for ticket", t.id, d.tatDate);
-        return false;
+      const status = (t.status || "").toLowerCase();
+      if (!pendingStatuses.has(status)) return false;
+
+      // Check due_at first (authoritative)
+      if (t.due_at) {
+        const dueDate = new Date(t.due_at);
+        if (!isNaN(dueDate.getTime())) {
+          const dueYear = dueDate.getFullYear();
+          const dueMonth = dueDate.getMonth();
+          const dueDay = dueDate.getDate();
+          return dueYear === todayYear && dueMonth === todayMonth && dueDay === todayDate;
+        }
       }
-      
-      // Get date parts in local timezone (JavaScript Date automatically converts UTC to local)
-      const tatYear = tatDate.getFullYear();
-      const tatMonth = tatDate.getMonth();
-      const tatDay = tatDate.getDate();
-      
-      // Check if TAT is today (compare by date only, ignoring time)
-      const tatIsToday = 
-        tatYear === todayYear &&
-        tatMonth === todayMonth &&
-        tatDay === todayDate;
-      
-      // Debug: Log TAT date comparison for first few tickets
-      if (ticketsWithTat <= 5) {
-        console.log(`Ticket ${t.id} TAT:`, {
-          tatDateString: d.tatDate,
-          parsedISO: tatDate.toISOString(),
-          localDate: `${tatYear}-${String(tatMonth + 1).padStart(2, '0')}-${String(tatDay).padStart(2, '0')}`,
-          todayDate: `${todayYear}-${String(todayMonth + 1).padStart(2, '0')}-${String(todayDate).padStart(2, '0')}`,
-          isToday: tatIsToday
-        });
+
+      // Fallback to metadata
+      if (t.metadata && typeof t.metadata === "object") {
+        const metadata = t.metadata as any;
+        if (metadata?.tatDate) {
+          const tatDate = new Date(metadata.tatDate);
+          if (!isNaN(tatDate.getTime())) {
+            const tatYear = tatDate.getFullYear();
+            const tatMonth = tatDate.getMonth();
+            const tatDay = tatDate.getDate();
+            return tatYear === todayYear && tatMonth === todayMonth && tatDay === todayDate;
+          }
+        }
       }
-      
-      return tatIsToday;
+
+      // Legacy fallback to details JSON
+      if (t.details) {
+        try {
+          const d = typeof t.details === "string" ? JSON.parse(t.details) : t.details;
+          if (d?.tatDate) {
+            const tatDate = new Date(d.tatDate);
+            if (!isNaN(tatDate.getTime())) {
+              const tatYear = tatDate.getFullYear();
+              const tatMonth = tatDate.getMonth();
+              const tatDay = tatDate.getDate();
+              return tatYear === todayYear && tatMonth === todayMonth && tatDay === todayDate;
+            }
+          }
+        } catch {
+          // Invalid JSON, continue
+        }
+      }
+
+      return false;
     } catch (error) {
-      // Log error for debugging but don't break the filter
-      console.error("Error parsing ticket details for TAT:", error, t.id);
+      console.error("[AdminTodayPendingPage] Error filtering ticket:", error, t.id);
       return false;
     }
   });
-
-  // Debug: Log results
-  console.log("Tickets with pending status:", ticketsWithPendingStatus);
-  console.log("Tickets with TAT date:", ticketsWithTat);
-  console.log("Tickets with TAT due today:", todayPending.length);
 
   // Calculate additional metrics - create a Set of overdue ticket IDs for efficient lookup
   const overdueTodayIds = new Set(
     todayPending
       .filter(t => {
         try {
-          const d = t.details ? JSON.parse(String(t.details)) : {};
-          const tatDate = d.tatDate ? new Date(d.tatDate) : null;
-          if (!tatDate) return false;
-          return tatDate.getTime() < now.getTime();
+          // Check due_at first
+          if (t.due_at) {
+            const dueDate = new Date(t.due_at);
+            if (!isNaN(dueDate.getTime())) {
+              return dueDate.getTime() < now.getTime();
+            }
+          }
+
+          // Fallback to metadata
+          if (t.metadata && typeof t.metadata === "object") {
+            const metadata = t.metadata as any;
+            if (metadata?.tatDate) {
+              const tatDate = new Date(metadata.tatDate);
+              if (!isNaN(tatDate.getTime())) {
+                return tatDate.getTime() < now.getTime();
+              }
+            }
+          }
+
+          return false;
         } catch {
           return false;
         }
@@ -145,21 +190,34 @@ export default async function AdminTodayPendingPage() {
   // Sort by urgency (overdue first, then by TAT time)
   const sortedTodayPending = [...todayPending].sort((a, b) => {
     try {
-      const aDetails = a.details ? JSON.parse(String(a.details)) : {};
-      const bDetails = b.details ? JSON.parse(String(b.details)) : {};
-      const aTat = aDetails.tatDate ? new Date(aDetails.tatDate) : null;
-      const bTat = bDetails.tatDate ? new Date(bDetails.tatDate) : null;
-      
+      const getTatDate = (t: typeof a): Date | null => {
+        if (t.due_at) {
+          const date = new Date(t.due_at);
+          return !isNaN(date.getTime()) ? date : null;
+        }
+        if (t.metadata && typeof t.metadata === "object") {
+          const metadata = t.metadata as any;
+          if (metadata?.tatDate) {
+            const date = new Date(metadata.tatDate);
+            return !isNaN(date.getTime()) ? date : null;
+          }
+        }
+        return null;
+      };
+
+      const aTat = getTatDate(a);
+      const bTat = getTatDate(b);
+
       if (!aTat && !bTat) return 0;
       if (!aTat) return 1;
       if (!bTat) return -1;
-      
+
       const aOverdue = aTat.getTime() < now.getTime();
       const bOverdue = bTat.getTime() < now.getTime();
-      
+
       if (aOverdue && !bOverdue) return -1;
       if (!aOverdue && bOverdue) return 1;
-      
+
       return aTat.getTime() - bTat.getTime();
     } catch {
       return 0;
@@ -242,5 +300,6 @@ export default async function AdminTodayPendingPage() {
     </div>
   );
 }
+
 
 

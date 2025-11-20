@@ -10,6 +10,15 @@ const nextConfig: NextConfig = {
     // Allow production builds to complete even if there are type errors
     ignoreBuildErrors: true,
   },
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'res.cloudinary.com',
+        pathname: '/**',
+      },
+    ],
+  },
 };
 
 export default nextConfig;

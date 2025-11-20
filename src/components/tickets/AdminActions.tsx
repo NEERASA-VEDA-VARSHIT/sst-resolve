@@ -7,11 +7,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { RefreshCw, Clock, MessageSquare, CheckCircle, RotateCcw, Trash2, FileText, UserCog, Globe, Lock, AlertTriangle } from "lucide-react";
+import { RefreshCw, Clock, MessageSquare, CheckCircle, RotateCcw, Trash2, FileText, UserCog, AlertTriangle, ArrowUpRight } from "lucide-react";
 import { toast } from "sonner";
 import { ReassignDialog } from "./ReassignDialog";
+import { normalizeStatusForComparison } from "@/lib/utils";
 
-export function AdminActions({ ticketId, currentStatus, hasTAT, isPublic, isSuperAdmin = false, ticketCategory, ticketLocation, currentAssignedTo }: { ticketId: number; currentStatus: string; hasTAT?: boolean; isPublic?: boolean; isSuperAdmin?: boolean; ticketCategory: string; ticketLocation?: string | null; currentAssignedTo?: string | null }) {
+export function AdminActions({ ticketId, currentStatus, hasTAT, isSuperAdmin = false, ticketCategory, ticketLocation, currentAssignedTo }: { ticketId: number; currentStatus: string; hasTAT?: boolean; isSuperAdmin?: boolean; ticketCategory: string; ticketLocation?: string | null; currentAssignedTo?: string | null }) {
 	const router = useRouter();
 	const [loading, setLoading] = useState<string | null>(null);
 	const [showTATForm, setShowTATForm] = useState(false);
@@ -19,21 +20,20 @@ export function AdminActions({ ticketId, currentStatus, hasTAT, isPublic, isSupe
 	const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 	const [showReassignDialog, setShowReassignDialog] = useState(false);
 	const [showEscalateDialog, setShowEscalateDialog] = useState(false);
-	const [publicStatus, setPublicStatus] = useState(isPublic || false);
+	const [showForwardDialog, setShowForwardDialog] = useState(false);
 	const [tat, setTat] = useState("");
 	const [comment, setComment] = useState("");
 	const [escalationReason, setEscalationReason] = useState("");
+	const [forwardReason, setForwardReason] = useState("");
 	const [commentType, setCommentType] = useState<"comment" | "question" | "internal" | "super_admin">("comment");
 
-	// Sync public status when prop changes
-	useEffect(() => {
-		setPublicStatus(isPublic || false);
-	}, [isPublic]);
+	// Normalize status for comparison (handles both uppercase enum and lowercase constants)
+	const normalizedStatus = normalizeStatusForComparison(currentStatus);
 
 	const handleStatusUpdate = async (status: string) => {
 		setLoading(status);
 		try {
-			const response = await fetch(`/api/tickets/${ticketId}`, {
+			const response = await fetch(`/api/tickets/${ticketId}/status`, {
 				method: "PATCH",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ status }),
@@ -64,7 +64,7 @@ export function AdminActions({ ticketId, currentStatus, hasTAT, isPublic, isSupe
 			const response = await fetch(`/api/tickets/${ticketId}/tat`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ tat, markInProgress: currentStatus !== "in_progress" }),
+				body: JSON.stringify({ tat, markInProgress: normalizedStatus !== "in_progress" }),
 			});
 
 			if (response.ok) {
@@ -103,8 +103,8 @@ export function AdminActions({ ticketId, currentStatus, hasTAT, isPublic, isSupe
 				apiCommentType = "super_admin_note";
 			}
 
-			const body: any = { 
-				comment, 
+			const body: any = {
+				comment,
 				isAdmin: true,
 				commentType: apiCommentType,
 			};
@@ -112,14 +112,14 @@ export function AdminActions({ ticketId, currentStatus, hasTAT, isPublic, isSupe
 			// If asking a question, also update status
 			if (statusUpdate) {
 				// First update status
-				await fetch(`/api/tickets/${ticketId}`, {
+				await fetch(`/api/tickets/${ticketId}/status`, {
 					method: "PATCH",
 					headers: { "Content-Type": "application/json" },
 					body: JSON.stringify({ status: statusUpdate }),
 				});
 			}
 
-			const response = await fetch(`/api/tickets/${ticketId}/comment`, {
+			const response = await fetch(`/api/tickets/${ticketId}/comments`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify(body),
@@ -129,8 +129,8 @@ export function AdminActions({ ticketId, currentStatus, hasTAT, isPublic, isSupe
 				setComment("");
 				setShowCommentForm(false);
 				setCommentType("comment");
-				const message = commentType === "question" 
-					? "Question sent to student successfully" 
+				const message = commentType === "question"
+					? "Question sent to student successfully"
 					: "Comment added successfully";
 				toast.success(message);
 				router.refresh();
@@ -146,52 +146,51 @@ export function AdminActions({ ticketId, currentStatus, hasTAT, isPublic, isSupe
 		}
 	};
 
-	const handleTogglePublic = async () => {
-		setLoading("public");
+	const handleMarkResolved = async () => {
+		setLoading("resolved");
 		try {
-			const response = await fetch(`/api/tickets/${ticketId}/public`, {
+			const response = await fetch(`/api/tickets/${ticketId}/status`, {
 				method: "PATCH",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ isPublic: !publicStatus }),
+				body: JSON.stringify({ status: "RESOLVED" }),
 			});
 
 			if (response.ok) {
-				setPublicStatus(!publicStatus);
-				toast.success(!publicStatus ? "Ticket made public" : "Ticket made private");
+				toast.success("Ticket marked as resolved");
 				router.refresh();
 			} else {
-				const error = await response.json().catch(() => ({ error: "Failed to update public status" }));
-				toast.error(error.error || "Failed to update public status");
+				const error = await response.json().catch(() => ({ error: "Failed to mark ticket as resolved" }));
+				toast.error(error.error || "Failed to mark ticket as resolved");
 			}
 		} catch (error) {
-			console.error("Error updating public status:", error);
-			toast.error("Failed to update public status. Please try again.");
+			console.error("Error marking ticket as resolved:", error);
+			toast.error("Failed to mark ticket as resolved. Please try again.");
 		} finally {
 			setLoading(null);
 		}
 	};
 
-  const handleDelete = async () => {
-    setLoading("delete");
-    setShowDeleteDialog(false);
-    try {
-      const response = await fetch(`/api/tickets/${ticketId}`, {
-        method: "DELETE",
-      });
-      if (response.ok) {
-        toast.success("Ticket deleted successfully");
-        router.push("/admin");
-      } else {
-        const error = await response.json().catch(() => ({ error: "Failed to delete ticket" }));
-        toast.error(error.error || "Failed to delete ticket");
-      }
-    } catch (error) {
-      console.error("Error deleting ticket:", error);
-      toast.error("Failed to delete ticket. Please try again.");
-    } finally {
-      setLoading(null);
-    }
-  };
+	const handleDelete = async () => {
+		setLoading("delete");
+		setShowDeleteDialog(false);
+		try {
+			const response = await fetch(`/api/tickets/${ticketId}`, {
+				method: "DELETE",
+			});
+			if (response.ok) {
+				toast.success("Ticket deleted successfully");
+				router.push("/admin");
+			} else {
+				const error = await response.json().catch(() => ({ error: "Failed to delete ticket" }));
+				toast.error(error.error || "Failed to delete ticket");
+			}
+		} catch (error) {
+			console.error("Error deleting ticket:", error);
+			toast.error("Failed to delete ticket. Please try again.");
+		} finally {
+			setLoading(null);
+		}
+	};
 
 	const handleEscalate = async (e: React.FormEvent) => {
 		e.preventDefault();
@@ -216,6 +215,34 @@ export function AdminActions({ ticketId, currentStatus, hasTAT, isPublic, isSupe
 		} catch (error) {
 			console.error("Error escalating ticket:", error);
 			toast.error("Failed to escalate ticket. Please try again.");
+		} finally {
+			setLoading(null);
+		}
+	};
+
+	const handleForward = async (e: React.FormEvent) => {
+		e.preventDefault();
+		setLoading("forward");
+		try {
+			const response = await fetch(`/api/tickets/${ticketId}/forward`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ reason: forwardReason || undefined }),
+			});
+
+			if (response.ok) {
+				const data = await response.json();
+				setForwardReason("");
+				setShowForwardDialog(false);
+				toast.success(data.message || "Ticket forwarded successfully");
+				router.refresh();
+			} else {
+				const error = await response.json().catch(() => ({ error: "Failed to forward ticket" }));
+				toast.error(error.error || "Failed to forward ticket");
+			}
+		} catch (error) {
+			console.error("Error forwarding ticket:", error);
+			toast.error("Failed to forward ticket. Please try again.");
 		} finally {
 			setLoading(null);
 		}
@@ -257,7 +284,7 @@ export function AdminActions({ ticketId, currentStatus, hasTAT, isPublic, isSupe
 					</form>
 				) : (
 					// Show Mark In Progress button if not in progress
-					currentStatus !== "in_progress" && (
+					normalizedStatus !== "in_progress" && (
 						<Button
 							variant="outline"
 							onClick={() => setShowTATForm(true)}
@@ -270,7 +297,7 @@ export function AdminActions({ ticketId, currentStatus, hasTAT, isPublic, isSupe
 				)}
 
 				{/* Show Extend TAT button if already in progress with TAT */}
-				{!showTATForm && currentStatus === "in_progress" && hasTAT && (
+				{!showTATForm && normalizedStatus === "in_progress" && hasTAT && (
 					<Button
 						variant="outline"
 						onClick={() => setShowTATForm(true)}
@@ -281,7 +308,7 @@ export function AdminActions({ ticketId, currentStatus, hasTAT, isPublic, isSupe
 				)}
 
 				{/* Ask Question Button - sets status to awaiting_student_response */}
-				{currentStatus !== "resolved" && (
+				{normalizedStatus !== "resolved" && (
 					<Button
 						variant="outline"
 						onClick={() => {
@@ -344,140 +371,185 @@ export function AdminActions({ ticketId, currentStatus, hasTAT, isPublic, isSupe
 				)}
 
 
-      {/* Delete ticket - only for super admin */}
-      {isSuperAdmin && (
-        <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-          <DialogTrigger asChild>
-            <Button
-              variant="destructive"
-              disabled={loading === "delete"}
-            >
-              <Trash2 className="w-4 h-4 mr-2" />
-              Delete Ticket
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Delete Ticket</DialogTitle>
-              <DialogDescription>
-                Are you sure you want to permanently delete ticket #{ticketId}? This action cannot be undone.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
-                Cancel
-              </Button>
-              <Button variant="destructive" onClick={handleDelete} disabled={loading === "delete"}>
-                {loading === "delete" ? "Deleting..." : "Delete"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
+				{/* Delete ticket - only for super admin */}
+				{isSuperAdmin && (
+					<Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+						<DialogTrigger asChild>
+							<Button
+								variant="destructive"
+								disabled={loading === "delete"}
+							>
+								<Trash2 className="w-4 h-4 mr-2" />
+								Delete Ticket
+							</Button>
+						</DialogTrigger>
+						<DialogContent>
+							<DialogHeader>
+								<DialogTitle>Delete Ticket</DialogTitle>
+								<DialogDescription>
+									Are you sure you want to permanently delete ticket #{ticketId}? This action cannot be undone.
+								</DialogDescription>
+							</DialogHeader>
+							<DialogFooter>
+								<Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
+									Cancel
+								</Button>
+								<Button variant="destructive" onClick={handleDelete} disabled={loading === "delete"}>
+									{loading === "delete" ? "Deleting..." : "Delete"}
+								</Button>
+							</DialogFooter>
+						</DialogContent>
+					</Dialog>
+				)}
 
-			{/* Internal Note Button */}
-			<Button
-				variant="outline"
-				onClick={() => {
-					setShowCommentForm(true);
-					setCommentType("internal");
-				}}
-				disabled={loading !== null}
-			>
-				<FileText className="w-4 h-4 mr-2" />
-				Internal Note
-			</Button>
+				{/* Internal Note Button */}
+				<Button
+					variant="outline"
+					onClick={() => {
+						setShowCommentForm(true);
+						setCommentType("internal");
+					}}
+					disabled={loading !== null}
+				>
+					<FileText className="w-4 h-4 mr-2" />
+					Internal Note
+				</Button>
 
-      {/* Reassign - only for super admin */}
-      {isSuperAdmin && (
-        <>
-          <ReassignDialog
-            open={showReassignDialog}
-            onOpenChange={setShowReassignDialog}
-            ticketId={ticketId}
-            currentAssignedTo={currentAssignedTo}
-            ticketCategory={ticketCategory}
-            ticketLocation={ticketLocation}
-            onReassigned={() => router.refresh()}
-          />
-          <Button
-            variant="outline"
-            disabled={loading !== null}
-            onClick={() => setShowReassignDialog(true)}
-          >
-            <UserCog className="w-4 h-4 mr-2" />
-            Reassign
-          </Button>
-        </>
-      )}
-
-			{/* Manual Escalation */}
-			{currentStatus !== "resolved" && (
-				<Dialog open={showEscalateDialog} onOpenChange={setShowEscalateDialog}>
-					<DialogTrigger asChild>
+				{/* Reassign - only for super admin */}
+				{isSuperAdmin && (
+					<>
+						<ReassignDialog
+							open={showReassignDialog}
+							onOpenChange={setShowReassignDialog}
+							ticketId={ticketId}
+							currentAssignedTo={currentAssignedTo}
+							ticketCategory={ticketCategory}
+							ticketLocation={ticketLocation}
+							onReassigned={() => router.refresh()}
+						/>
 						<Button
 							variant="outline"
 							disabled={loading !== null}
+							onClick={() => setShowReassignDialog(true)}
 						>
-							<AlertTriangle className="w-4 h-4 mr-2" />
-							Escalate
+							<UserCog className="w-4 h-4 mr-2" />
+							Reassign
 						</Button>
-					</DialogTrigger>
-					<DialogContent>
-						<DialogHeader>
-							<DialogTitle>Escalate Ticket</DialogTitle>
-							<DialogDescription>
-								Escalate this ticket to a higher level. This will notify super admins.
-							</DialogDescription>
-						</DialogHeader>
-						<form onSubmit={handleEscalate} className="space-y-4">
-							<div>
-								<Label htmlFor="escalationReason">Reason (Optional)</Label>
-								<Textarea
-									id="escalationReason"
-									value={escalationReason}
-									onChange={(e) => setEscalationReason(e.target.value)}
-									placeholder="e.g., Requires urgent attention, Complex issue beyond scope..."
-									rows={3}
-								/>
-							</div>
-							<DialogFooter>
-								<Button
-									type="button"
-									variant="outline"
-									onClick={() => {
-										setShowEscalateDialog(false);
-										setEscalationReason("");
-									}}
-								>
-									Cancel
-								</Button>
-								<Button type="submit" disabled={loading === "escalate"}>
-									{loading === "escalate" ? "Escalating..." : "Escalate"}
-								</Button>
-							</DialogFooter>
-						</form>
-					</DialogContent>
-				</Dialog>
-			)}
-			<Button
-				variant={publicStatus ? "default" : "outline"}
-				size="sm"
-				onClick={handleTogglePublic}
-				disabled={loading !== null}
-			>
-				{publicStatus ? (
-					<>
-						<Globe className="w-4 h-4 mr-2" />
-						Make Private
-					</>
-				) : (
-					<>
-						<Lock className="w-4 h-4 mr-2" />
-						Make Public
 					</>
 				)}
-			</Button>
+
+				{/* Forward to Next Level */}
+				{normalizedStatus !== "resolved" && (
+					<Dialog open={showForwardDialog} onOpenChange={setShowForwardDialog}>
+						<DialogTrigger asChild>
+							<Button
+								variant="outline"
+								disabled={loading !== null}
+							>
+								<ArrowUpRight className="w-4 h-4 mr-2" />
+								Forward
+							</Button>
+						</DialogTrigger>
+						<DialogContent>
+							<DialogHeader>
+								<DialogTitle>Forward Ticket</DialogTitle>
+								<DialogDescription>
+									Forward this ticket to the next level admin for handling.
+								</DialogDescription>
+							</DialogHeader>
+							<form onSubmit={handleForward} className="space-y-4">
+								<div>
+									<Label htmlFor="forwardReason">Reason (Optional)</Label>
+									<Textarea
+										id="forwardReason"
+										value={forwardReason}
+										onChange={(e) => setForwardReason(e.target.value)}
+										placeholder="e.g., Requires senior admin approval, Beyond my scope..."
+										rows={3}
+									/>
+								</div>
+								<DialogFooter>
+									<Button
+										type="button"
+										variant="outline"
+										onClick={() => {
+											setShowForwardDialog(false);
+											setForwardReason("");
+										}}
+									>
+										Cancel
+									</Button>
+									<Button type="submit" disabled={loading === "forward"}>
+										{loading === "forward" ? "Forwarding..." : "Forward"}
+									</Button>
+								</DialogFooter>
+							</form>
+						</DialogContent>
+					</Dialog>
+				)}
+
+				{/* Manual Escalation */}
+				{normalizedStatus !== "resolved" && (
+					<Dialog open={showEscalateDialog} onOpenChange={setShowEscalateDialog}>
+						<DialogTrigger asChild>
+							<Button
+								variant="outline"
+								disabled={loading !== null}
+							>
+								<AlertTriangle className="w-4 h-4 mr-2" />
+								Escalate
+							</Button>
+						</DialogTrigger>
+						<DialogContent>
+							<DialogHeader>
+								<DialogTitle>Escalate Ticket</DialogTitle>
+								<DialogDescription>
+									Escalate this ticket to a higher level. This will notify super admins and mark as ESCALATED.
+								</DialogDescription>
+							</DialogHeader>
+							<form onSubmit={handleEscalate} className="space-y-4">
+								<div>
+									<Label htmlFor="escalationReason">Reason (Optional)</Label>
+									<Textarea
+										id="escalationReason"
+										value={escalationReason}
+										onChange={(e) => setEscalationReason(e.target.value)}
+										placeholder="e.g., Requires urgent attention, Complex issue beyond scope..."
+										rows={3}
+									/>
+								</div>
+								<DialogFooter>
+									<Button
+										type="button"
+										variant="outline"
+										onClick={() => {
+											setShowEscalateDialog(false);
+											setEscalationReason("");
+										}}
+									>
+										Cancel
+									</Button>
+									<Button type="submit" disabled={loading === "escalate"}>
+										{loading === "escalate" ? "Escalating..." : "Escalate"}
+									</Button>
+								</DialogFooter>
+							</form>
+						</DialogContent>
+					</Dialog>
+				)}
+
+				{/* Mark as Resolved */}
+				{normalizedStatus !== "resolved" && (
+					<Button
+						variant="default"
+						onClick={handleMarkResolved}
+						disabled={loading !== null}
+						className="bg-green-600 hover:bg-green-700 text-white"
+					>
+						<CheckCircle className="w-4 h-4 mr-2" />
+						{loading === "resolved" ? "Marking..." : "Mark as Resolved"}
+					</Button>
+				)}
 			</div>
 		</div>
 	);

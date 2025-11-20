@@ -4,6 +4,19 @@ import { db, tickets } from "@/db";
 import { eq } from "drizzle-orm";
 import { RateTicketSchema } from "@/schema/ticket.schema";
 
+/**
+ * ============================================
+ * /api/tickets/[id]/rate
+ * ============================================
+ * 
+ * POST → Student Rating
+ *   - Auth: Required (Student only - own tickets)
+ *   - Submit rating after ticket resolution
+ *   - Body: { rating: number (1-5), feedback: string (optional) }
+ *   - Returns: 200 OK with updated ticket
+ * ============================================
+ */
+
 export async function POST(
 	request: NextRequest,
 	{ params }: { params: Promise<{ id: string }> }
@@ -68,7 +81,6 @@ export async function POST(
 			.set({
 				rating: ratingNum.toString(),
 				ratingSubmitted: new Date(),
-				ratingRequired: "false", // Clear the requirement after rating
 				updatedAt: new Date(),
 			})
 			.where(eq(tickets.id, ticketId));

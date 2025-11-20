@@ -3,22 +3,28 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { RotateCcw } from "lucide-react";
 import { toast } from "sonner";
+import { normalizeStatusForComparison } from "@/lib/utils";
 
 export function StudentActions({ ticketId, currentStatus }: { ticketId: number; currentStatus: string }) {
 	const router = useRouter();
 	const [loading, setLoading] = useState(false);
 
+	// Normalize status for comparison (handles both uppercase enum and lowercase constants)
+	const normalizedStatus = normalizeStatusForComparison(currentStatus);
+
 	const handleReopen = async () => {
-		if (currentStatus !== "closed") return;
+		// Students can reopen closed or resolved tickets
+		if (normalizedStatus !== "closed" && normalizedStatus !== "resolved") return;
 
 		setLoading(true);
 		try {
-			const response = await fetch(`/api/tickets/${ticketId}`, {
+			const response = await fetch(`/api/tickets/${ticketId}/status`, {
 				method: "PATCH",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ status: "open" }),
+				body: JSON.stringify({ status: "REOPENED" }),
 			});
 
 			if (response.ok) {
@@ -36,27 +42,37 @@ export function StudentActions({ ticketId, currentStatus }: { ticketId: number; 
 		}
 	};
 
-	if (currentStatus !== "closed") {
+	// Students can only reopen closed/resolved tickets (escalation removed)
+	const canReopen = normalizedStatus === "closed" || normalizedStatus === "resolved";
+
+	if (!canReopen) {
 		return null;
 	}
 
 	return (
-		<div className="border-t pt-4 space-y-4">
-			<label className="text-sm font-medium text-muted-foreground block">
-				👤 Student Actions
-			</label>
-
-			<div className="flex flex-wrap gap-2">
-				<Button
-					variant="outline"
-					onClick={handleReopen}
-					disabled={loading}
-				>
-					<RotateCcw className="w-4 h-4 mr-2" />
-					{loading ? "Reopening..." : "Reopen Ticket"}
-				</Button>
-			</div>
-		</div>
+		<Card className="border-2 border-blue-200 dark:border-blue-900 bg-blue-50/50 dark:bg-blue-950/20">
+			<CardContent className="p-5">
+				<div className="flex items-center justify-between flex-wrap gap-4">
+					<div className="flex-1 min-w-0">
+						<h3 className="text-base font-semibold text-blue-900 dark:text-blue-100 mb-1">
+							Reopen Ticket
+						</h3>
+						<p className="text-sm text-blue-700 dark:text-blue-300">
+							If your issue wasn't resolved, you can reopen this ticket for further assistance
+						</p>
+					</div>
+					<Button
+						variant="outline"
+						onClick={handleReopen}
+						disabled={loading}
+						className="border-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900 whitespace-nowrap"
+						size="lg"
+					>
+						<RotateCcw className="w-4 h-4 mr-2" />
+						{loading ? "Reopening..." : "Reopen Ticket"}
+					</Button>
+				</div>
+			</CardContent>
+		</Card>
 	);
 }
-

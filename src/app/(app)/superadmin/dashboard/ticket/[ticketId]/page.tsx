@@ -4,36 +4,87 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Calendar, ArrowLeft, User, MapPin, FileText, Clock, AlertTriangle, Image as ImageIcon, MessageSquare } from "lucide-react";
-import { db, tickets } from "@/db";
+import { db, tickets, categories, users, staff } from "@/db";
 import { eq } from "drizzle-orm";
 import { AdminActions } from "@/components/tickets/AdminActions";
+import { CommitteeTagging } from "@/components/admin/CommitteeTagging";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { getUserRoleFromDB } from "@/lib/db-roles";
+import { getOrCreateUser } from "@/lib/user-sync";
+import { enumToStatus } from "@/db/status-mapper";
+import { normalizeStatusForComparison, formatStatus } from "@/lib/utils";
+
+// Force dynamic rendering for real-time ticket data
+export const dynamic = "force-dynamic";
 
 export default async function SuperAdminTicketPage({ params }: { params: Promise<{ ticketId: string }> }) {
-  const { userId, sessionClaims } = await auth();
+  const { userId } = await auth();
   if (!userId) redirect("/");
-  const role = sessionClaims?.metadata?.role;
+  
+  // Ensure user exists in database
+  await getOrCreateUser(userId);
+  
+  // Get role from database (single source of truth)
+  const role = await getUserRoleFromDB(userId);
   if (role !== "super_admin") redirect("/student/dashboard");
 
   const { ticketId } = await params;
   const id = Number(ticketId);
   if (!Number.isFinite(id)) notFound();
 
-  const row = await db.select().from(tickets).where(eq(tickets.id, id)).limit(1);
-  if (row.length === 0) notFound();
-  const ticket = row[0];
+  // Fetch ticket with joins for category, creator, and assigned staff
+  const ticketRows = await db
+    .select({
+      id: tickets.id,
+      status: tickets.status,
+      description: tickets.description,
+      location: tickets.location,
+      created_by: tickets.created_by,
+      category_id: tickets.category_id,
+      assigned_to: tickets.assigned_to,
+      escalation_level: tickets.escalation_level,
+      metadata: tickets.metadata,
+      due_at: tickets.due_at,
+      created_at: tickets.created_at,
+      updated_at: tickets.updated_at,
+      resolved_at: tickets.resolved_at,
+      category_name: categories.name,
+      creator_name: users.name,
+      creator_email: users.email,
+      assigned_staff_id: staff.id,
+    })
+    .from(tickets)
+    .leftJoin(categories, eq(tickets.category_id, categories.id))
+    .leftJoin(users, eq(tickets.created_by, users.id))
+    .leftJoin(staff, eq(tickets.assigned_to, staff.id))
+    .where(eq(tickets.id, id))
+    .limit(1);
 
-  let details: any = {};
+  if (ticketRows.length === 0) notFound();
+  const ticket = ticketRows[0];
+
+  // Parse metadata (JSONB) with error handling
+  let metadata: any = {};
+  let subcategory: string | null = null;
+  let comments: any[] = [];
+  
   try {
-    details = ticket.details ? JSON.parse(ticket.details) : {};
-  } catch {
-    details = {};
+    metadata = (ticket.metadata as any) || {};
+    subcategory = metadata?.subcategory || null;
+    comments = Array.isArray(metadata?.comments) ? metadata.comments : [];
+  } catch (error) {
+    console.error('[Super Admin Ticket] Error parsing metadata:', error);
+    // Continue with empty defaults
   }
 
+  // Normalize status for comparisons
+  const normalizedStatus = normalizeStatusForComparison(ticket.status);
+
   const getStatusBadgeClass = (status: string | null | undefined) => {
-    if (!status) return "bg-muted text-foreground";
-    switch (status) {
+    const normalized = normalizeStatusForComparison(status);
+    if (!normalized) return "bg-muted text-foreground";
+    switch (normalized) {
       case "open":
         return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 border-transparent";
       case "reopened":
@@ -52,7 +103,7 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
   };
 
   // Check for TAT
-  const tatDate = details.tatDate ? new Date(details.tatDate) : null;
+  const tatDate = ticket.due_at || (metadata?.tatDate ? new Date(metadata.tatDate) : null);
   const hasTATDue = tatDate && tatDate.getTime() < new Date().getTime();
   const isTATToday = tatDate && tatDate.toDateString() === new Date().toDateString();
 
@@ -71,23 +122,23 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div>
               <CardTitle className="text-3xl font-bold mb-2">Ticket #{ticket.id}</CardTitle>
-              {ticket.subcategory && (
-                <p className="text-muted-foreground">{ticket.subcategory}</p>
+              {subcategory && (
+                <p className="text-muted-foreground">{subcategory}</p>
               )}
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               {ticket.status && (
                 <Badge variant="outline" className={`${getStatusBadgeClass(ticket.status)} text-sm px-3 py-1`}>
-                  {ticket.status.replaceAll("_", " ")}
+                  {formatStatus(enumToStatus(ticket.status))}
                 </Badge>
               )}
-              {ticket.escalationCount && ticket.escalationCount !== "0" && (
+              {ticket.escalation_level && ticket.escalation_level > 0 && (
                 <Badge variant="destructive" className="text-sm px-3 py-1">
                   <AlertTriangle className="w-3 h-3 mr-1" />
-                  Escalated × {ticket.escalationCount}
+                  Escalated × {ticket.escalation_level}
                 </Badge>
               )}
-              <Badge variant="outline" className="text-sm px-3 py-1">{ticket.category}</Badge>
+              <Badge variant="outline" className="text-sm px-3 py-1">{ticket.category_name || "Unknown"}</Badge>
             </div>
           </div>
         </CardHeader>
@@ -130,29 +181,34 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
               </p>
               
               {/* Display Images if available */}
-              {details.images && Array.isArray(details.images) && details.images.length > 0 && (
+              {metadata.images && Array.isArray(metadata.images) && metadata.images.length > 0 && (
                 <div className="space-y-2 pt-4 border-t">
                   <div className="flex items-center gap-2">
                     <ImageIcon className="w-4 h-4 text-muted-foreground" />
                     <span className="text-sm font-semibold text-muted-foreground">Attached Images</span>
                   </div>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                    {details.images.map((imageUrl: string, index: number) => (
-                      <a
-                        key={index}
-                        href={imageUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="relative group aspect-square rounded-lg overflow-hidden border-2 border-border hover:border-primary transition-colors"
-                      >
-                        <img
-                          src={imageUrl}
-                          alt={`Ticket image ${index + 1}`}
-                          className="w-full h-full object-cover"
-                        />
-                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
-                      </a>
-                    ))}
+                    {metadata.images
+                      .filter((imageUrl: any): imageUrl is string => typeof imageUrl === 'string' && imageUrl.trim().length > 0)
+                      .map((imageUrl: string, index: number) => (
+                        <a
+                          key={index}
+                          href={imageUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="relative group aspect-square rounded-lg overflow-hidden border-2 border-border hover:border-primary transition-colors"
+                        >
+                          <img
+                            src={imageUrl}
+                            alt={`Ticket image ${index + 1}`}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display = 'none';
+                            }}
+                          />
+                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
+                        </a>
+                      ))}
                   </div>
                 </div>
               )}
@@ -165,18 +221,32 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
               <CardTitle className="flex items-center gap-2">
                 <MessageSquare className="w-5 h-5" />
                 Comments
-                {Array.isArray(details?.comments) && details.comments.length > 0 && (
+                {comments.length > 0 && (
                   <Badge variant="secondary" className="ml-2">
-                    {details.comments.length}
+                    {comments.length}
                   </Badge>
                 )}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {Array.isArray(details?.comments) && details.comments.length > 0 ? (
+              {comments.length > 0 ? (
                 <div className="space-y-3">
-                  {details.comments.map((comment: any, idx: number) => {
+                  {comments.map((comment: any, idx: number) => {
+                    if (!comment || typeof comment !== 'object') return null;
                     const isInternal = comment.isInternal || comment.type === "internal_note" || comment.type === "super_admin_note";
+                    const commentText = comment.text || comment.message || '';
+                    const commentAuthor = comment.author || comment.created_by || 'Unknown';
+                    let commentDate: Date | null = null;
+                    
+                    try {
+                      if (comment.createdAt) {
+                        commentDate = new Date(comment.createdAt);
+                        if (isNaN(commentDate.getTime())) commentDate = null;
+                      }
+                    } catch {
+                      commentDate = null;
+                    }
+                    
                     return (
                       <Card key={idx} className={`border ${isInternal ? 'bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800' : 'bg-muted/30'}`}>
                         <CardContent className="p-4">
@@ -186,22 +256,22 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
                             </Badge>
                           )}
                           <p className="text-base whitespace-pre-wrap leading-relaxed mb-3">
-                            {comment.text}
+                            {commentText}
                           </p>
                           <Separator className="my-2" />
                           <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                            {comment.author && (
+                            {commentAuthor && (
                               <div className="flex items-center gap-1">
                                 <User className="w-3 h-3" />
-                                <span className="font-medium">{comment.author}</span>
+                                <span className="font-medium">{commentAuthor}</span>
                               </div>
                             )}
-                            {comment.createdAt && (
+                            {commentDate && (
                               <>
                                 <span>•</span>
                                 <div className="flex items-center gap-1">
                                   <Calendar className="w-3 h-3" />
-                                  <span>{new Date(comment.createdAt).toLocaleString()}</span>
+                                  <span>{commentDate.toLocaleString()}</span>
                                 </div>
                               </>
                             )}
@@ -228,14 +298,23 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
             <CardContent>
               <AdminActions
                 ticketId={ticket.id}
-                currentStatus={ticket.status || "open"}
-                hasTAT={!!details.tat}
-                isPublic={ticket.isPublic === "true"}
+                currentStatus={enumToStatus(ticket.status) || "open"}
+                hasTAT={!!ticket.due_at || !!metadata?.tat}
                 isSuperAdmin={true}
-                ticketCategory={ticket.category}
+                ticketCategory={ticket.category_name || null}
                 ticketLocation={ticket.location}
-                currentAssignedTo={ticket.assignedTo}
+                currentAssignedTo={ticket.assigned_staff_id?.toString() || null}
               />
+            </CardContent>
+          </Card>
+
+          {/* Committee Tagging */}
+          <Card className="border-2">
+            <CardHeader>
+              <CardTitle>Committee Tagging</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <CommitteeTagging ticketId={ticket.id} />
             </CardContent>
           </Card>
         </div>
@@ -250,9 +329,12 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
               <div>
                 <label className="text-sm font-medium text-muted-foreground flex items-center gap-2 mb-1">
                   <User className="w-4 h-4" />
-                  User Number
+                  Created By
                 </label>
-                <p className="text-base font-medium">{ticket.userNumber}</p>
+                <p className="text-base font-medium">{ticket.creator_name || ticket.creator_email || "Unknown"}</p>
+                {ticket.creator_email && (
+                  <p className="text-xs text-muted-foreground mt-1">{ticket.creator_email}</p>
+                )}
               </div>
               {ticket.location && (
                 <>
@@ -273,25 +355,25 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
                   Created
                 </label>
                 <p className="text-base font-medium">
-                  {ticket.createdAt?.toLocaleDateString('en-US', { 
+                  {ticket.created_at?.toLocaleDateString('en-US', { 
                     year: 'numeric', 
                     month: 'long', 
                     day: 'numeric' 
                   })}
                 </p>
               </div>
-              {details.tat && (
+              {tatDate && (
                 <>
                   <Separator />
                   <div>
                     <label className="text-sm font-medium text-muted-foreground flex items-center gap-2 mb-1">
                       <Clock className="w-4 h-4" />
-                      TAT
+                      TAT Due Date
                     </label>
-                    <p className="text-base font-medium">{details.tat}</p>
-                    {tatDate && (
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Due: {tatDate.toLocaleDateString()}
+                    <p className="text-base font-medium">{tatDate.toLocaleDateString()}</p>
+                    {hasTATDue && (
+                      <p className="text-xs text-red-600 dark:text-red-400 mt-1 font-medium">
+                        Overdue
                       </p>
                     )}
                   </div>
@@ -304,4 +386,3 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
     </div>
   );
 }
-

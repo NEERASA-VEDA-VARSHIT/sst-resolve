@@ -4,6 +4,23 @@ import { and, eq, ne } from "drizzle-orm";
 import { postThreadReply } from "@/lib/slack";
 import { sendEmail, getTATReminderEmail, getStudentEmail } from "@/lib/email";
 
+/**
+ * ============================================
+ * /api/tickets/reminders
+ * ============================================
+ * 
+ * GET → Send TAT Reminders (Cron Job)
+ *   - Auth: Not required (internal cron endpoint)
+ *   - Should be called by automated cron job (daily)
+ *   - Checks tickets where TAT date is today or has passed
+ *   - Sends reminder emails to:
+ *     • Assigned staff (approaching TAT deadline)
+ *     • Students (TAT commitment updates)
+ *   - Returns: 200 OK with count of reminders sent
+ *   - Note: Consider adding secret token auth for security
+ * ============================================
+ */
+
 export async function GET(request: NextRequest) {
 	try {
 		// This endpoint should be called by a cron job (e.g., daily)

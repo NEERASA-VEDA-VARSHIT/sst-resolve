@@ -1,4 +1,5 @@
-import { auth, clerkClient } from "@clerk/nextjs/server";
+import React from "react";
+import { auth } from "@clerk/nextjs/server";
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -7,12 +8,36 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Calendar, ArrowLeft, Clock, CheckCircle2, AlertCircle, MessageSquare, User, MapPin, FileText, Image as ImageIcon } from "lucide-react";
-import { db, tickets } from "@/db";
-import { eq } from "drizzle-orm";
+import { Calendar, ArrowLeft, Clock, CheckCircle2, AlertCircle, MessageSquare, User, FileText, UserCheck, TrendingUp, CalendarCheck } from "lucide-react";
 import { CommentForm } from "@/components/tickets/CommentForm";
 import { RatingForm } from "@/components/tickets/RatingForm";
 import { StudentActions } from "@/components/tickets/StudentActions";
+import { ImageLightbox } from "@/components/tickets/ImageLightbox";
+import { TicketStatusBadge } from "@/components/tickets/TicketStatusBadge";
+import { DynamicFieldDisplay } from "@/components/tickets/DynamicFieldDisplay";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { getOrCreateUser } from "@/lib/user-sync";
+import { getFullTicketData } from "@/lib/ticket/getFullTicketData";
+import { resolveProfileFields } from "@/lib/ticket/profileFieldResolver";
+import { buildTimeline } from "@/lib/ticket/buildTimeline";
+import { normalizeStatusForComparison } from "@/lib/utils";
+import { getTicketStatuses, buildProgressMap } from "@/lib/status/getTicketStatuses";
+import { format } from "date-fns";
+
+// Force dynamic rendering for real-time ticket data
+export const dynamic = "force-dynamic";
+
+// Revalidate cached response every 30 seconds
+// Ticket updates are rare, so this provides a performance boost
+export const revalidate = 30;
+
+// Icon map for timeline
+const ICON_MAP: Record<string, React.ComponentType<any>> = {
+  Calendar,
+  CheckCircle2,
+  Clock,
+  AlertCircle,
+};
 
 export default async function StudentTicketPage({ params }: { params: Promise<{ ticketId: string }> }) {
   const { userId } = await auth();
@@ -22,67 +47,47 @@ export default async function StudentTicketPage({ params }: { params: Promise<{ 
   const id = Number(ticketId);
   if (!Number.isFinite(id)) notFound();
 
-  const row = await db.select().from(tickets).where(eq(tickets.id, id)).limit(1);
-  if (row.length === 0) notFound();
-  const ticket = row[0];
+  // Get user_id from database
+  const dbUser = await getOrCreateUser(userId);
 
-  // Ensure student owns this ticket
-  const client = await clerkClient();
-  const user = await client.users.getUser(userId);
-  const userNumber = (user.publicMetadata as any)?.userNumber as string | undefined;
-  if (!userNumber || userNumber !== ticket.userNumber) {
-    redirect("/student/dashboard");
+  if (!dbUser) {
+    console.error('[Student Ticket Page] Failed to create/fetch user');
+    notFound();
   }
 
-  // Parse details for comments
-  let details: any = {};
-  try {
-    details = ticket.details ? JSON.parse(ticket.details) : {};
-  } catch {
-    details = {};
-  }
+  // Fetch ALL ticket data in ONE optimized call (5-7 DB queries total)
+  const [data, ticketStatuses] = await Promise.all([
+    getFullTicketData(id, dbUser.id),
+    getTicketStatuses(),
+  ]);
 
-  const statusVariant = (status: string | null | undefined) => {
-    switch (status) {
-      case "open":
-      case "reopened":
-        return "default" as const;
-      case "in_progress":
-      case "awaiting_student_response":
-        return "outline" as const;
-      case "closed":
-      case "resolved":
-        return "secondary" as const;
-      default:
-        return "outline" as const;
-    }
-  };
+  if (!data) notFound();
 
-  const comments: any[] = Array.isArray(details?.comments) ? details.comments : [];
-  const visibleComments = comments.filter((c) => !c?.isInternal && c?.type !== "super_admin_note");
+  const { ticket, category, subcategory, subSubcategory, creator, student, assignedStaff, spoc, profileFields, dynamicFields, comments, sla } = data;
+  const metadata = ticket.metadata as any || {};
 
-  // Calculate ticket progress based on status
-  const getTicketProgress = () => {
-    switch (ticket.status) {
-      case "open": return 20;
-      case "in_progress": return 50;
-      case "awaiting_student_response": return 70;
-      case "resolved": return 90;
-      case "closed": return 100;
-      default: return 10;
-    }
-  };
+  // Resolve profile field values
+  const resolvedProfileFields = resolveProfileFields(
+    profileFields,
+    metadata,
+    student,
+    creator
+  );
 
-  // Get TAT info if available
-  const tatInfo = details?.tatDate ? {
-    date: new Date(details.tatDate),
-    isOverdue: new Date(details.tatDate).getTime() < new Date().getTime(),
-    daysRemaining: Math.ceil((new Date(details.tatDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
-  } : null;
+  // Build progress map from statuses
+  const progressMap = buildProgressMap(ticketStatuses);
+
+  // Calculate ticket progress
+  const normalizedStatus = normalizeStatusForComparison(ticket.status);
+  const ticketProgress = progressMap[normalizedStatus] || 0;
+
+  // Build timeline using factory function
+  const timelineEntries = buildTimeline(ticket, normalizedStatus);
 
   return (
-    <div className="max-w-5xl mx-auto p-6 space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="max-w-6xl mx-auto p-4 md:p-6 space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <Link href="/student/dashboard">
           <Button variant="ghost" className="gap-2">
             <ArrowLeft className="w-4 h-4" />
@@ -91,204 +96,281 @@ export default async function StudentTicketPage({ params }: { params: Promise<{ 
         </Link>
       </div>
 
+      {/* 1. Ticket Header */}
       <Card className="border-2 shadow-lg">
-        <CardHeader className="space-y-4">
-          <div className="flex items-start justify-between flex-wrap gap-4">
+        <CardHeader className="space-y-4 pb-4">
+          <div className="space-y-3">
+            <CardTitle className="text-3xl md:text-4xl font-bold">
+              Ticket #{ticket.id}
+            </CardTitle>
+
             <div className="space-y-2">
-              <CardTitle className="text-4xl font-bold bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text">
-                Ticket #{ticket.id}
-              </CardTitle>
-              {ticket.subcategory && (
-                <CardDescription className="text-base">
-                  {ticket.subcategory}
-                </CardDescription>
-              )}
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              {ticket.status && (
-                <Badge 
-                  variant={statusVariant(ticket.status)} 
-                  className="text-sm px-3 py-1.5 font-semibold"
-                >
-                  {ticket.status.replaceAll("_", " ")}
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-muted-foreground">Category:</span>
+                <Badge variant="outline" className="font-medium">
+                  {category?.name || "Unknown"}
                 </Badge>
-              )}
-              {ticket.escalationCount && ticket.escalationCount !== "0" && (
-                <Badge variant="destructive" className="animate-pulse">
-                  ⚠️ Escalated × {ticket.escalationCount}
-                </Badge>
-              )}
-              <Badge variant="outline" className="font-medium">
-                {ticket.category}
-              </Badge>
-            </div>
-          </div>
+              </div>
 
-          {/* Progress Bar */}
-          <div className="space-y-2 pt-2">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground font-medium">Ticket Progress</span>
-              <span className="font-semibold">{getTicketProgress()}%</span>
-            </div>
-            <Progress value={getTicketProgress()} className="h-2" />
-          </div>
-
-          {/* TAT Alert */}
-          {tatInfo && (
-            <Alert className={tatInfo.isOverdue ? "border-red-200 bg-red-50/50 dark:bg-red-950/20" : "border-blue-200 bg-blue-50/50 dark:bg-blue-950/20"}>
-              <Clock className={`h-4 w-4 ${tatInfo.isOverdue ? "text-red-600" : "text-blue-600"}`} />
-              <AlertDescription>
-                <div className="flex items-center justify-between">
-                  <span className={tatInfo.isOverdue ? "text-red-900 dark:text-red-100 font-medium" : "text-blue-900 dark:text-blue-100 font-medium"}>
-                    {tatInfo.isOverdue 
-                      ? `⚠️ TAT Overdue by ${Math.abs(tatInfo.daysRemaining)} day${Math.abs(tatInfo.daysRemaining) !== 1 ? 's' : ''}`
-                      : `⏰ TAT: ${tatInfo.daysRemaining > 0 ? `${tatInfo.daysRemaining} day${tatInfo.daysRemaining !== 1 ? 's' : ''} remaining` : 'Due today'}`
-                    }
-                  </span>
-                  <span className="text-sm text-muted-foreground">
-                    {tatInfo.date.toLocaleDateString()}
-                  </span>
+              {subcategory && (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-muted-foreground">Subcategory:</span>
+                  <Badge variant="outline" className="font-medium">
+                    Issue Type → {subcategory.name}
+                  </Badge>
                 </div>
-              </AlertDescription>
-            </Alert>
-          )}
+              )}
+
+              {subSubcategory && (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-muted-foreground">Sub-type:</span>
+                  <Badge variant="outline" className="font-medium">
+                    {subSubcategory.name}
+                  </Badge>
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm font-medium text-muted-foreground">Ticket Status:</span>
+                <TicketStatusBadge status={ticket.status} />
+              </div>
+            </div>
+          </div>
         </CardHeader>
 
         <CardContent className="space-y-6">
-          {/* Ticket Information Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Card className="border bg-muted/30">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-primary/10">
-                    <User className="w-5 h-5 text-primary" />
+          {/* 2. Student Information - Dynamic based on category profile fields */}
+          {resolvedProfileFields.length > 0 && (
+            <section className="rounded-lg border bg-muted/30 p-4">
+              <div className="flex items-center gap-2 mb-4">
+                <User className="w-4 h-4" />
+                <h3 className="text-base font-semibold">Student Information</h3>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {resolvedProfileFields.map((field) => (
+                  <div key={field.field_name}>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
+                      {field.label}
+                    </p>
+                    <p className="text-sm font-semibold">{field.value}</p>
                   </div>
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">User Number</p>
-                    <p className="text-lg font-semibold">{ticket.userNumber}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                ))}
+              </div>
+            </section>
+          )}
 
-            {ticket.location && (
-              <Card className="border bg-muted/30">
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-primary/10">
-                      <MapPin className="w-5 h-5 text-primary" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground">Location</p>
-                      <p className="text-lg font-semibold">{ticket.location}</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            <Card className="border bg-muted/30 md:col-span-2">
-              <CardContent className="p-4">
-                <div className="flex items-start gap-3">
-                  <div className="p-2 rounded-lg bg-primary/10">
-                    <FileText className="w-5 h-5 text-primary" />
-                  </div>
-                  <div className="flex-1 space-y-4">
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground mb-2">Description</p>
-                      <p className="text-base whitespace-pre-wrap leading-relaxed">
-                        {ticket.description || "No description provided"}
-                      </p>
-                    </div>
-                    
-                    {/* Display Images if available */}
-                    {details.images && Array.isArray(details.images) && details.images.length > 0 && (
-                      <div className="space-y-2 pt-4 border-t">
-                        <div className="flex items-center gap-2">
-                          <ImageIcon className="w-4 h-4 text-muted-foreground" />
-                          <span className="text-sm font-semibold text-muted-foreground">Attached Images</span>
-                        </div>
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                          {details.images.map((imageUrl: string, index: number) => (
-                            <a
-                              key={index}
-                              href={imageUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="relative group aspect-square rounded-lg overflow-hidden border-2 border-border hover:border-primary transition-colors"
-                            >
-                              <img
-                                src={imageUrl}
-                                alt={`Ticket image ${index + 1}`}
-                                className="w-full h-full object-cover"
-                              />
-                              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
-                            </a>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          <Separator />
-
-          {/* Comments Section */}
-          <Card className="border-2">
+          {/* 3. Submitted Information (All fields they submitted) */}
+          <Card className="border bg-card">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
+              <CardTitle className="flex items-center gap-2 text-xl">
+                <FileText className="w-5 h-5" />
+                Submitted Information
+              </CardTitle>
+              <CardDescription>
+                Details provided when creating this ticket
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Location */}
+              {ticket.location && (
+                <div className="space-y-2 p-3 rounded-lg bg-background/50 border border-border/50">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Location</p>
+                  <p className="text-base font-medium">{ticket.location}</p>
+                </div>
+              )}
+
+              {/* Issue Type (Subcategory) */}
+              {subcategory && (
+                <div className="space-y-2 p-3 rounded-lg bg-background/50 border border-border/50">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Issue Type</p>
+                  <p className="text-base font-medium">{subcategory.name}</p>
+                </div>
+              )}
+
+              {/* Sub-type (Sub-subcategory) */}
+              {subSubcategory && (
+                <div className="space-y-2 p-3 rounded-lg bg-background/50 border border-border/50">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Sub-type</p>
+                  <p className="text-base font-medium">{subSubcategory.name}</p>
+                </div>
+              )}
+
+              {/* Description */}
+              {ticket.description && (
+                <div className="space-y-2 p-3 rounded-lg bg-background/50 border border-border/50">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Description</p>
+                  <p className="text-base whitespace-pre-wrap leading-relaxed">{ticket.description}</p>
+                </div>
+              )}
+
+              {/* Attachments */}
+              {metadata.images && Array.isArray(metadata.images) && metadata.images.length > 0 && (
+                <div className="space-y-2 p-3 rounded-lg bg-background/50 border border-border/50">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Attachments</p>
+                  <ImageLightbox images={metadata.images} />
+                </div>
+              )}
+
+              {/* Additional Dynamic Fields */}
+              {dynamicFields.length > 0 && (
+                <div className="space-y-2">
+                  {dynamicFields.map((field) => (
+                    <DynamicFieldDisplay key={field.key} field={field} />
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* 4. Assignment Information */}
+          <section className="rounded-lg border bg-muted/30 p-4">
+            <div className="flex items-center gap-2 mb-4">
+              <UserCheck className="w-4 h-4" />
+              <h3 className="text-base font-semibold">Assignment Information</h3>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Assigned To</p>
+                <p className="text-sm font-semibold">
+                  {assignedStaff ? assignedStaff.name : "Not assigned yet"}
+                </p>
+              </div>
+              {spoc && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">SPOC (Point of Contact)</p>
+                  <p className="text-sm font-semibold">{spoc.name}</p>
+                </div>
+              )}
+              {sla.expectedAckTime && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Expected Acknowledgement Time</p>
+                  <p className="text-sm font-semibold">{sla.expectedAckTime}</p>
+                </div>
+              )}
+              {sla.expectedResolutionTime && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Expected Resolution Time</p>
+                  <p className="text-sm font-semibold">{sla.expectedResolutionTime}</p>
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* 5. Ticket Progress */}
+          <section className="rounded-lg border bg-muted/30 p-4">
+            <div className="flex items-center gap-2 mb-4">
+              <TrendingUp className="w-4 h-4" />
+              <h3 className="text-base font-semibold">Ticket Progress</h3>
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground font-medium">Progress</span>
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold">{ticketProgress}%</span>
+                  <TicketStatusBadge status={ticket.status} />
+                </div>
+              </div>
+              <Progress value={ticketProgress} className="h-2.5" />
+              <div className="flex items-center justify-between text-xs text-muted-foreground mt-2 flex-wrap gap-2">
+                <span>10% – OPEN</span>
+                <span>30% – ACKNOWLEDGED</span>
+                <span>50% – IN PROGRESS</span>
+                <span>70% – AWAITING STUDENT</span>
+                <span>100% – RESOLVED</span>
+              </div>
+            </div>
+          </section>
+
+          {/* 6. Timeline */}
+          <section className="rounded-lg border bg-muted/30 p-4">
+            <div className="flex items-center gap-2 mb-4">
+              <CalendarCheck className="w-4 h-4" />
+              <h3 className="text-base font-semibold">Timeline</h3>
+            </div>
+            <div className="space-y-3">
+              {timelineEntries.map((entry: any, index: number) => {
+                // Safeguard against missing icon - fallback to AlertCircle
+                const IconComponent = ICON_MAP[entry.icon] ?? AlertCircle;
+                return (
+                  <div key={index} className="flex items-start gap-3">
+                    <div className={`p-2 rounded-lg ${entry.color}`}>
+                      <IconComponent className={`w-4 h-4 ${entry.textColor}`} />
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
+                        {entry.title}
+                      </p>
+                      {entry.date && (
+                        <>
+                          <p className="text-sm font-semibold">
+                            {format(entry.date, 'MMM d, yyyy')}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {format(entry.date, 'h:mm a')}
+                          </p>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* 7. Comments / Conversation */}
+          <Card className="border-2">
+            <CardHeader className="pb-4">
+              <CardTitle className="flex items-center gap-2 text-xl">
                 <MessageSquare className="w-5 h-5" />
-                Comments
-                {visibleComments.length > 0 && (
+                Comments / Conversation
+                {comments.length > 0 && (
                   <Badge variant="secondary" className="ml-2">
-                    {visibleComments.length}
+                    {comments.length}
                   </Badge>
                 )}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {visibleComments.length > 0 ? (
-                <div className="space-y-3">
-                  {visibleComments.map((comment, idx) => (
-                    <Card key={idx} className="border bg-muted/30">
-                      <CardContent className="p-4">
-                        <p className="text-base whitespace-pre-wrap leading-relaxed mb-3">
+              {comments.length > 0 ? (
+                <ScrollArea className="max-h-[400px] pr-4">
+                  <div className="space-y-4">
+                    {comments.map((comment: any, idx: number) => (
+                      <div key={idx} className="rounded-lg border bg-gradient-to-br from-muted/50 to-muted/30 p-4">
+                        <p className="text-base whitespace-pre-wrap leading-relaxed mb-3 text-foreground">
                           {comment.text}
                         </p>
-                        <Separator className="my-2" />
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Separator className="my-3" />
+                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
                           {comment.author && (
-                            <div className="flex items-center gap-1">
-                              <User className="w-3 h-3" />
+                            <div className="flex items-center gap-1.5">
+                              <User className="w-3.5 h-3.5" />
                               <span className="font-medium">{comment.author}</span>
                             </div>
                           )}
-                          {comment.createdAt && (
+                          {comment.created_at && (
                             <>
-                              <span>•</span>
-                              <div className="flex items-center gap-1">
-                                <Calendar className="w-3 h-3" />
-                                <span>{new Date(comment.createdAt).toLocaleString()}</span>
+                              <span className="text-muted-foreground/50">•</span>
+                              <div className="flex items-center gap-1.5">
+                                <Calendar className="w-3.5 h-3.5" />
+                                <span>{format(comment.created_at, 'MMM d, yyyy h:mm a')}</span>
                               </div>
                             </>
                           )}
                         </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
               ) : (
-                <div className="text-center py-8 text-muted-foreground">
-                  <MessageSquare className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                  <p>No comments yet</p>
+                <div className="text-center py-12 text-muted-foreground">
+                  <MessageSquare className="w-16 h-16 mx-auto mb-3 opacity-30" />
+                  <p className="text-sm font-medium">No comments yet</p>
+                  <p className="text-xs mt-1">Updates and responses will appear here</p>
                 </div>
               )}
 
               {/* Students can reply only when admin asked a question */}
-              {ticket.status === "awaiting_student_response" && (
+              {normalizedStatus === "awaiting_student_response" && (
                 <div className="pt-4 border-t">
                   <Alert className="border-amber-200 bg-amber-50/50 dark:bg-amber-950/20 mb-4">
                     <AlertCircle className="h-4 w-4 text-amber-600" />
@@ -305,7 +387,7 @@ export default async function StudentTicketPage({ params }: { params: Promise<{ 
           </Card>
 
           {/* Rating after closed/resolved */}
-          {(ticket.status === "closed" || ticket.status === "resolved") && (
+          {(normalizedStatus === "closed" || normalizedStatus === "resolved") && (
             <Card className="border-2 border-emerald-200 dark:border-emerald-900 bg-emerald-50/50 dark:bg-emerald-950/20">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -317,33 +399,63 @@ export default async function StudentTicketPage({ params }: { params: Promise<{ 
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <RatingForm ticketId={ticket.id} currentRating={ticket.rating || undefined} />
+                <RatingForm ticketId={ticket.id} currentRating={ticket.rating ? ticket.rating.toString() : undefined} />
               </CardContent>
             </Card>
           )}
 
+          {/* 8. Actions Available to Student */}
           <StudentActions
             ticketId={ticket.id}
             currentStatus={ticket.status || "open"}
           />
 
-          <Separator />
-
-          <div className="flex items-center justify-between text-sm text-muted-foreground">
-            <div className="flex items-center gap-2">
-              <Calendar className="w-4 h-4" />
-              <span>Created {ticket.createdAt?.toLocaleDateString()}</span>
-            </div>
-            {ticket.updatedAt && ticket.updatedAt.getTime() !== ticket.createdAt?.getTime() && (
-              <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4" />
-                <span>Last updated {ticket.updatedAt.toLocaleDateString()}</span>
+          {/* 9. Attachments */}
+          {ticket.attachments && Array.isArray(ticket.attachments) && ticket.attachments.length > 0 && (
+            <section className="rounded-lg border bg-card p-4">
+              <div className="flex items-center gap-2 mb-4">
+                <AlertCircle className="w-4 h-4" />
+                <h3 className="text-base font-semibold">Attachments</h3>
               </div>
-            )}
-          </div>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {ticket.attachments.map((attachment: any, index: number) => (
+                  <div key={index} className="relative group">
+                    <img
+                      src={attachment.url}
+                      alt={`Attachment ${index + 1}`}
+                      className="w-full h-32 object-cover rounded-lg border cursor-pointer hover:opacity-80 transition-opacity"
+                      onClick={() => window.open(attachment.url, '_blank')}
+                    />
+                    <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 rounded-lg transition-all duration-200 flex items-center justify-center">
+                      <div className="opacity-0 group-hover:opacity-100 text-white text-sm font-medium">
+                        View Full Size
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* 10. System Information */}
+          <section className="rounded-lg border bg-muted/30 p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <AlertCircle className="w-4 h-4" />
+              <h3 className="text-base font-semibold">System Information</h3>
+            </div>
+            <p className="text-xs text-muted-foreground mb-4">
+              Internal details visible to student
+            </p>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Current Escalation Level</span>
+                <span className="text-sm font-semibold">{ticket.escalation_level ?? 0}</span>
+              </div>
+            </div>
+          </section>
+
         </CardContent>
       </Card>
     </div>
   );
 }
-

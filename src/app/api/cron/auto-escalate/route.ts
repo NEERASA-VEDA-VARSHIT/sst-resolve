@@ -4,6 +4,7 @@ import { and, lt, or, eq, isNull, ne } from "drizzle-orm";
 import { postThreadReply } from "@/lib/slack";
 import { sendEmail, getEscalationEmail, getStudentEmail } from "@/lib/email";
 import { appConfig, cronConfig } from "@/conf/config";
+import { TICKET_STATUS, DEFAULTS } from "@/conf/constants";
 
 // Auto-escalate tickets that haven't been updated in n days
 // This should be called by a cron job (e.g., Vercel Cron, GitHub Actions, etc.)
@@ -38,34 +39,71 @@ export async function GET(request: NextRequest) {
 				)
 			);
 
-		// Filter for inactive tickets OR TAT violations
+		// PRD v3.0: Filter for tickets that need auto-escalation:
+		// 1. Inactive tickets (not updated in n days)
+		// 2. TAT violations (TAT date has passed)
+		// 3. Tickets with 3+ TAT extensions
+		// 4. Tickets exceeding lifecycle (total time since creation)
 		const now = new Date();
-		const inactiveTickets = allPendingTickets.filter(ticket => {
+		const ticketsToEscalate = allPendingTickets.map(ticket => {
 			// Check inactivity
 			const lastUpdate = ticket.updatedAt || ticket.createdAt;
 			const isInactive = lastUpdate && new Date(lastUpdate).getTime() < cutoffDate.getTime();
 
 			// Check TAT violation
 			let hasTATViolation = false;
+			let hasTATExtensionLimit = false;
+			let hasLifecycleBreach = false;
+			let slaBreachedAt: Date | null = null;
+			
+			// Check if due_at (SLA) has been breached
+			if (ticket.due_at) {
+				const dueAt = new Date(ticket.due_at);
+				if (dueAt.getTime() < now.getTime()) {
+					hasTATViolation = true;
+					slaBreachedAt = dueAt; // Use due_at as SLA breach time
+				}
+			}
+			
 			if (ticket.details) {
 				try {
 					const details = JSON.parse(ticket.details);
+					
+					// Check TAT date violation (legacy field in details)
 					const tatDate = details.tatDate ? new Date(details.tatDate) : null;
 					if (tatDate && tatDate.getTime() < now.getTime()) {
 						hasTATViolation = true;
+						// Use earlier of due_at or tatDate as SLA breach time
+						if (!slaBreachedAt || tatDate.getTime() < slaBreachedAt.getTime()) {
+							slaBreachedAt = tatDate;
+						}
+					}
+					
+					// PRD v3.0: Check for 3+ TAT extensions
+					const tatExtensionCount = details.tatExtensionCount || 0;
+					if (tatExtensionCount >= DEFAULTS.MAX_TAT_EXTENSIONS) {
+						hasTATExtensionLimit = true;
+					}
+					
+					// PRD v3.0: Check lifecycle breach (tickets exceeding total lifecycle)
+					// Lifecycle breach: ticket created more than AUTO_ESCALATION_DAYS ago
+					const createdAt = ticket.createdAt ? new Date(ticket.createdAt) : null;
+					if (createdAt && createdAt.getTime() < cutoffDate.getTime()) {
+						hasLifecycleBreach = true;
 					}
 				} catch (e) {
 					// Ignore parse errors
 				}
 			}
 
-			return isInactive || hasTATViolation;
-		});
+			const shouldEscalate = isInactive || hasTATViolation || hasTATExtensionLimit || hasLifecycleBreach;
+			return { ticket, shouldEscalate, slaBreachedAt };
+		}).filter(item => item.shouldEscalate);
 
 		const escalated = [];
 		const errors = [];
 
-		for (const ticket of inactiveTickets) {
+		for (const { ticket, slaBreachedAt } of ticketsToEscalate) {
 			try {
 				// Check if already escalated recently (within cooldown period)
 				const lastEscalation = ticket.escalatedAt;
@@ -102,12 +140,20 @@ export async function GET(request: NextRequest) {
 				}
 
 				// Update ticket
+				// PRD v3.0: Set status to "escalated" when auto-escalating
 				const updateData: any = {
 					escalationCount: newEscalationCount.toString(),
 					escalatedAt: new Date(),
 					escalatedTo: escalatedTo,
+					status: TICKET_STATUS.ESCALATED, // Set status to escalated
 					updatedAt: new Date(),
 				};
+				
+				// Set sla_breached_at if SLA was breached (for reporting and analytics)
+				// Only set if not already set (preserve first breach time)
+				if (slaBreachedAt) {
+					updateData.sla_breached_at = slaBreachedAt;
+				}
 
 				// If we have a next escalation target, assign the ticket to them
 				if (assignedTo) {
@@ -133,13 +179,25 @@ export async function GET(request: NextRequest) {
 					const slackMessageTs = details.slackMessageTs;
 					if (slackMessageTs) {
 						try {
-							// Determine escalation reason
+							// Determine escalation reason (PRD v3.0)
 							let reason = `inactivity (${daysInactive} days)`;
-							if (details.tatDate) {
+							const tatExtensionCount = details.tatExtensionCount || 0;
+							
+							if (tatExtensionCount >= DEFAULTS.MAX_TAT_EXTENSIONS) {
+								reason = `exceeded TAT extension limit (${tatExtensionCount} extensions)`;
+							} else if (details.tatDate) {
 								const tatDate = new Date(details.tatDate);
 								if (tatDate.getTime() < now.getTime()) {
 									const hoursOverdue = (now.getTime() - tatDate.getTime()) / (1000 * 60 * 60);
 									reason = `TAT violation (overdue by ${Math.floor(hoursOverdue)} hours)`;
+								}
+							}
+							
+							// Check lifecycle breach
+							const createdAt = ticket.createdAt ? new Date(ticket.createdAt) : null;
+							if (createdAt && createdAt.getTime() < cutoffDate.getTime()) {
+								if (reason === `inactivity (${daysInactive} days)`) {
+									reason = `lifecycle breach (ticket open for ${daysInactive}+ days)`;
 								}
 							}
 

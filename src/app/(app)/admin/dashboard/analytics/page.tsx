@@ -1,551 +1,352 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { db, tickets } from "@/db";
-import { eq, or, isNull } from "drizzle-orm";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { TrendingUp, FileText, Clock, CheckCircle2, ArrowLeft, AlertCircle, BarChart3, Activity, Target, Calendar } from "lucide-react";
+import { db } from "@/db";
+import { tickets, categories, staff, users } from "@/db/schema";
+import { eq, or, isNull, desc, sql, and, isNotNull, gte } from "drizzle-orm";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { TrendingUp, FileText, Clock, CheckCircle2, ArrowLeft, AlertCircle, BarChart3, Activity, Target, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { getOrCreateUser } from "@/lib/user-sync";
 
-export default async function AdminAnalyticsPage() {
-  const { userId, sessionClaims } = await auth();
+export default async function AdminAnalyticsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string; period?: string }>;
+}) {
+  const { userId } = await auth();
   if (!userId) redirect("/");
 
-  const role = sessionClaims?.metadata?.role || "student";
-  const isSuperAdmin = role === "super_admin";
-  if (role === "student") redirect("/student/dashboard");
-  if (isSuperAdmin) redirect("/superadmin/dashboard");
+  const dbUser = await getOrCreateUser(userId);
+  if (!dbUser) redirect("/");
 
-  const adminUserId = userId;
+  // Await searchParams (Next.js 15 requirement)
+  const { page: pageParam, period: periodParam } = await searchParams;
+  const period = periodParam || "all";
+  const page = Number(pageParam) || 1;
 
-  // Get admin's domain/scope assignment
-  const { getAdminAssignment, ticketMatchesAdminAssignment } = await import("@/lib/admin-assignment");
-  const adminAssignment = await getAdminAssignment(adminUserId);
-
-  // Fetch tickets: assigned to this admin OR unassigned tickets that match admin's domain/scope
-  let allTickets = await db
+  // Get Staff ID
+  const [currentStaff] = await db
     .select()
-    .from(tickets)
-    .where(
-      or(
-        eq(tickets.assignedTo, adminUserId),
-        isNull(tickets.assignedTo)
-      )
-    );
+    .from(staff)
+    .where(eq(staff.user_id, dbUser.id))
+    .limit(1);
 
-  // Filter unassigned tickets to only show those matching admin's domain/scope
-  if (adminAssignment.domain) {
-    allTickets = allTickets.filter(t => {
-      // If assigned to this admin, always show
-      if (t.assignedTo === adminUserId) {
-        return true;
-      }
-      // If unassigned, only show if matches admin's domain/scope
-      if (!t.assignedTo) {
-        return ticketMatchesAdminAssignment(
-          { category: t.category, location: t.location },
-          adminAssignment
-        );
-      }
-      return false;
-    });
-  }
-
-  const now = new Date();
-  const totalTickets = allTickets.length;
-
-  // Calculate metrics
-  const openTickets = allTickets.filter(
-    (t) => t.status && ["open", "in_progress", "awaiting_student_response", "reopened"].includes(t.status)
-  ).length;
-
-  const inProgressTickets = allTickets.filter((t) => t.status === "in_progress").length;
-  const awaitingResponseTickets = allTickets.filter((t) => t.status === "awaiting_student_response").length;
-  const acknowledgedTickets = allTickets.filter((t) => t.acknowledgedAt).length;
-  const resolvedTickets = allTickets.filter((t) =>
-    ["closed", "resolved"].includes(t.status || "")
-  ).length;
-  const escalatedTickets = allTickets.filter((t) => (Number(t.escalationCount) || 0) > 0).length;
-
-  // Calculate percentages
-  const openPercentage = totalTickets > 0 ? (openTickets / totalTickets) * 100 : 0;
-  const acknowledgedPercentage = totalTickets > 0 ? (acknowledgedTickets / totalTickets) * 100 : 0;
-  const resolvedPercentage = totalTickets > 0 ? (resolvedTickets / totalTickets) * 100 : 0;
-  const escalatedPercentage = totalTickets > 0 ? (escalatedTickets / totalTickets) * 100 : 0;
-
-  // Category breakdown
-  const hostelTickets = allTickets.filter((t) => t.category === "Hostel").length;
-  const collegeTickets = allTickets.filter((t) => t.category === "College").length;
-
-  // Status breakdown with colors
-  const statusBreakdown = [
-    { label: "Open", value: allTickets.filter((t) => t.status === "open").length, color: "bg-blue-500" },
-    { label: "In Progress", value: inProgressTickets, color: "bg-amber-500" },
-    { label: "Awaiting Response", value: awaitingResponseTickets, color: "bg-indigo-500" },
-    { label: "Resolved", value: allTickets.filter((t) => t.status === "resolved").length, color: "bg-emerald-500" },
-    { label: "Closed", value: allTickets.filter((t) => t.status === "closed").length, color: "bg-gray-500" },
-  ];
-
-  // Calculate TAT on acknowledgement
-  const acknowledgedWithTimestamps = allTickets.filter(
-    (t) => t.acknowledgedAt && t.createdAt
-  );
-
-  let avgAcknowledgementTat = 0;
-  if (acknowledgedWithTimestamps.length > 0) {
-    const totalHours = acknowledgedWithTimestamps.reduce((sum, t) => {
-      const created = new Date(t.createdAt!);
-      const acknowledged = new Date(t.acknowledgedAt!);
-      const hours = (acknowledged.getTime() - created.getTime()) / (1000 * 60 * 60);
-      return sum + hours;
-    }, 0);
-    avgAcknowledgementTat = totalHours / acknowledgedWithTimestamps.length;
-  }
-
-  // Format TAT
-  const formatTAT = (hours: number) => {
-    if (hours < 1) {
-      return `${Math.round(hours * 60)} min`;
-    } else if (hours < 24) {
-      return `${hours.toFixed(1)} hrs`;
-    } else {
-      return `${(hours / 24).toFixed(1)} days`;
-    }
-  };
-
-  // Calculate resolution time
-  const resolvedWithTimestamps = allTickets.filter(
-    (t) => t.status && ["closed", "resolved"].includes(t.status) && t.createdAt && t.updatedAt
-  );
-
-  let avgResolutionTime = 0;
-  if (resolvedWithTimestamps.length > 0) {
-    const totalHours = resolvedWithTimestamps.reduce((sum, t) => {
-      const created = new Date(t.createdAt!);
-      const updated = new Date(t.updatedAt!);
-      const hours = (updated.getTime() - created.getTime()) / (1000 * 60 * 60);
-      return sum + hours;
-    }, 0);
-    avgResolutionTime = totalHours / resolvedWithTimestamps.length;
-  }
-
-  // Calculate response time
-  const ticketsWithResponse = allTickets.filter((t) => {
-    if (!t.acknowledgedAt && !t.details) return false;
-    try {
-      const d = t.details ? JSON.parse(String(t.details)) : {};
-      const hasComments = Array.isArray(d.comments) && d.comments.length > 0;
-      return t.acknowledgedAt || hasComments;
-    } catch {
-      return !!t.acknowledgedAt;
-    }
-  });
-
-  let avgResponseTime = 0;
-  if (ticketsWithResponse.length > 0) {
-    const totalHours = ticketsWithResponse.reduce((sum, t) => {
-      const created = new Date(t.createdAt!);
-      let responseTime = 0;
-      if (t.acknowledgedAt) {
-        const acknowledged = new Date(t.acknowledgedAt);
-        responseTime = (acknowledged.getTime() - created.getTime()) / (1000 * 60 * 60);
-      } else {
-        try {
-          const d = t.details ? JSON.parse(String(t.details)) : {};
-          if (Array.isArray(d.comments) && d.comments.length > 0) {
-            const firstComment = d.comments[0];
-            const commentDate = new Date(firstComment.createdAt);
-            responseTime = (commentDate.getTime() - created.getTime()) / (1000 * 60 * 60);
-          }
-        } catch {}
-      }
-      return sum + responseTime;
-    }, 0);
-    avgResponseTime = totalHours / ticketsWithResponse.length;
-  }
-
-  // Time-based metrics
-  const sevenDaysAgo = new Date(now);
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-  const thirtyDaysAgo = new Date(now);
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-  const ticketsLast7Days = allTickets.filter((t) => {
-    const created = new Date(t.createdAt!);
-    return created.getTime() >= sevenDaysAgo.getTime();
-  }).length;
-
-  const ticketsLast30Days = allTickets.filter((t) => {
-    const created = new Date(t.createdAt!);
-    return created.getTime() >= thirtyDaysAgo.getTime();
-  }).length;
-
-  const resolvedLast7Days = allTickets.filter((t) => {
-    if (!["closed", "resolved"].includes(t.status || "")) return false;
-    const updated = t.updatedAt ? new Date(t.updatedAt) : null;
-    return updated && updated.getTime() >= sevenDaysAgo.getTime();
-  }).length;
-
-  const resolvedLast30Days = allTickets.filter((t) => {
-    if (!["closed", "resolved"].includes(t.status || "")) return false;
-    const updated = t.updatedAt ? new Date(t.updatedAt) : null;
-    return updated && updated.getTime() >= thirtyDaysAgo.getTime();
-  }).length;
-
-  // Calculate average tickets per day
-  const avgTicketsPerDay7 = ticketsLast7Days / 7;
-  const avgTicketsPerDay30 = ticketsLast30Days / 30;
-  const resolutionRate7Days = ticketsLast7Days > 0 ? (resolvedLast7Days / ticketsLast7Days) * 100 : 0;
-  const resolutionRate30Days = ticketsLast30Days > 0 ? (resolvedLast30Days / ticketsLast30Days) * 100 : 0;
-
-  // Helper function to create enhanced bar chart
-  const EnhancedBarChart = ({ label, value, max, color, showPercentage = true }: { 
-    label: string; 
-    value: number; 
-    max: number; 
-    color: string;
-    showPercentage?: boolean;
-  }) => {
-    const percentage = max > 0 ? (value / max) * 100 : 0;
+  if (!currentStaff) {
     return (
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-medium">{label}</span>
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold">{value}</span>
-            {showPercentage && (
-              <Badge variant="secondary" className="text-xs">
-                {percentage.toFixed(0)}%
-              </Badge>
-            )}
-          </div>
-        </div>
-        <div className="h-3 bg-muted rounded-full overflow-hidden">
-          <div 
-            className={`h-full ${color} transition-all duration-500 rounded-full`}
-            style={{ width: `${percentage}%` }}
-          />
-        </div>
+      <div className="p-8 space-y-4">
+        <h1 className="text-2xl font-bold text-red-600">Access Denied</h1>
+        <p>You are not registered as a staff member.</p>
+        <Button asChild variant="outline">
+          <Link href="/">Go Home</Link>
+        </Button>
       </div>
     );
-  };
+  }
+
+  // --- Time Filter Logic ---
+  let timeFilter = undefined;
+  const now = new Date();
+
+  if (period === "7d") {
+    const date = new Date(now);
+    date.setDate(date.getDate() - 7);
+    timeFilter = gte(tickets.created_at, date);
+  } else if (period === "30d") {
+    const date = new Date(now);
+    date.setDate(date.getDate() - 30);
+    timeFilter = gte(tickets.created_at, date);
+  }
+
+  // Define the filter condition for this admin
+  const whereClause = and(
+    or(
+      eq(tickets.assigned_to, currentStaff.id),
+      // Include unassigned tickets in their domain
+      and(isNull(tickets.assigned_to), eq(categories.name, currentStaff.domain))
+    ),
+    timeFilter
+  );
+
+  // 1. Total Count
+  const [totalRes] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(tickets)
+    .leftJoin(categories, eq(tickets.category_id, categories.id))
+    .where(whereClause);
+  const totalTickets = Number(totalRes?.count || 0);
+
+  // 2. Status Counts
+  const statusRes = await db
+    .select({
+      status: tickets.status,
+      count: sql<number>`count(*)`
+    })
+    .from(tickets)
+    .leftJoin(categories, eq(tickets.category_id, categories.id))
+    .where(whereClause)
+    .groupBy(tickets.status);
+
+  const openTickets = statusRes
+    .filter(r => ['OPEN', 'IN_PROGRESS', 'REOPENED', 'AWAITING_STUDENT'].includes(r.status))
+    .reduce((acc, r) => acc + Number(r.count), 0);
+
+  const resolvedTickets = statusRes
+    .filter(r => ['RESOLVED', 'CLOSED'].includes(r.status))
+    .reduce((acc, r) => acc + Number(r.count), 0);
+
+  const resolutionRate = totalTickets > 0 ? (resolvedTickets / totalTickets) * 100 : 0;
+
+  // 3. Escalated Count
+  const [escalatedRes] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(tickets)
+    .leftJoin(categories, eq(tickets.category_id, categories.id))
+    .where(and(whereClause, sql`${tickets.escalation_level} > 0`));
+  const escalatedTickets = Number(escalatedRes?.count || 0);
+
+  // 4. Subcategory Stats (Grouped by Subcategory from Metadata or Category Name)
+  const catRes = await db
+    .select({
+      name: sql<string>`COALESCE(${tickets.metadata}->>'subcategory', ${categories.name})`,
+      status: tickets.status,
+      count: sql<number>`count(*)`
+    })
+    .from(tickets)
+    .leftJoin(categories, eq(tickets.category_id, categories.id))
+    .where(whereClause)
+    .groupBy(sql`COALESCE(${tickets.metadata}->>'subcategory', ${categories.name})`, tickets.status);
+
+  const categoryStatsMap: Record<string, { name: string; total: number; resolved: number; open: number; inProgress: number }> = {};
+  catRes.forEach(r => {
+    const name = r.name || "Unknown";
+    if (!categoryStatsMap[name]) categoryStatsMap[name] = { name, total: 0, resolved: 0, open: 0, inProgress: 0 };
+    const count = Number(r.count);
+    categoryStatsMap[name].total += count;
+
+    if (['RESOLVED', 'CLOSED'].includes(r.status)) {
+      categoryStatsMap[name].resolved += count;
+    } else if (r.status === 'OPEN') {
+      categoryStatsMap[name].open += count;
+    } else {
+      // IN_PROGRESS, REOPENED, AWAITING_STUDENT
+      categoryStatsMap[name].inProgress += count;
+    }
+  });
+  const categoryStats = Object.values(categoryStatsMap).sort((a, b) => b.total - a.total);
+
+  // 5. Paginated Ticket List
+  const pageSize = 10;
+  const offset = (page - 1) * pageSize;
+
+  const paginatedTickets = await db
+    .select({
+      id: tickets.id,
+      title: tickets.title,
+      status: tickets.status,
+      created_at: tickets.created_at,
+      category_name: categories.name,
+    })
+    .from(tickets)
+    .leftJoin(categories, eq(tickets.category_id, categories.id))
+    .where(whereClause)
+    .limit(pageSize)
+    .offset(offset)
+    .orderBy(desc(tickets.created_at));
+
+  const totalPages = Math.ceil(totalTickets / pageSize);
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold mb-1">Analytics</h1>
           <p className="text-muted-foreground text-sm">
-            Performance metrics and insights
+            Performance metrics for {currentStaff.full_name}
           </p>
         </div>
-        <Button variant="outline" asChild>
-          <Link href="/admin/dashboard">
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back
-          </Link>
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant={period === '7d' ? 'default' : 'outline'} size="sm" asChild>
+            <Link href="?period=7d">7 Days</Link>
+          </Button>
+          <Button variant={period === '30d' ? 'default' : 'outline'} size="sm" asChild>
+            <Link href="?period=30d">30 Days</Link>
+          </Button>
+          <Button variant={period === 'all' ? 'default' : 'outline'} size="sm" asChild>
+            <Link href="?period=all">All Time</Link>
+          </Button>
+          <Button variant="outline" size="sm" asChild className="ml-2">
+            <Link href="/admin/dashboard">
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Back
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {/* Key Metrics Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
-              <FileText className="w-4 h-4" />
-              Total Tickets
+              <FileText className="w-4 h-4" /> Total Tickets
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">{totalTickets}</div>
-            <div className="text-xs text-muted-foreground mt-1">All assigned tickets</div>
+            <div className="text-xs text-muted-foreground mt-1">In selected period</div>
           </CardContent>
         </Card>
-
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
-              <TrendingUp className="w-4 h-4" />
-              Open
+              <Activity className="w-4 h-4" /> Open
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-blue-600 dark:text-blue-400">{openTickets}</div>
-            <div className="text-xs text-muted-foreground mt-1">{openPercentage.toFixed(1)}% of total</div>
-            <Progress value={openPercentage} className="h-1.5 mt-2" />
+            <div className="text-3xl font-bold text-blue-600">{openTickets}</div>
           </CardContent>
         </Card>
-
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4" />
-              Acknowledged
+              <CheckCircle2 className="w-4 h-4" /> Resolved
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-purple-600 dark:text-purple-400">{acknowledgedTickets}</div>
-            <div className="text-xs text-muted-foreground mt-1">{acknowledgedPercentage.toFixed(1)}% of total</div>
-            <Progress value={acknowledgedPercentage} className="h-1.5 mt-2" />
+            <div className="text-3xl font-bold text-green-600">{resolvedTickets}</div>
+            <div className="text-xs text-muted-foreground mt-1">{resolutionRate.toFixed(1)}% rate</div>
           </CardContent>
         </Card>
-
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4" />
-              Resolved
+              <AlertCircle className="w-4 h-4" /> Escalated
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-emerald-600 dark:text-emerald-400">{resolvedTickets}</div>
-            <div className="text-xs text-muted-foreground mt-1">{resolvedPercentage.toFixed(1)}% of total</div>
-            <Progress value={resolvedPercentage} className="h-1.5 mt-2" />
+            <div className="text-3xl font-bold text-red-600">{escalatedTickets}</div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Charts Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Status Breakdown Chart */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <BarChart3 className="w-5 h-5" />
-              Status Distribution
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {statusBreakdown.map((status) => (
-              <EnhancedBarChart
-                key={status.label}
-                label={status.label}
-                value={status.value}
-                max={totalTickets}
-                color={status.color}
-              />
-            ))}
-          </CardContent>
-        </Card>
-
-        {/* Category Breakdown Chart */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Activity className="w-5 h-5" />
-              Category Distribution
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <EnhancedBarChart
-              label="Hostel"
-              value={hostelTickets}
-              max={totalTickets}
-              color="bg-blue-500"
-            />
-            <EnhancedBarChart
-              label="College"
-              value={collegeTickets}
-              max={totalTickets}
-              color="bg-purple-500"
-            />
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Performance Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Target className="w-4 h-4 text-primary" />
-              TAT on Acknowledgement
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {acknowledgedWithTimestamps.length > 0 ? (
-              <div>
-                <div className="text-3xl font-bold mb-2">{formatTAT(avgAcknowledgementTat)}</div>
-                <div className="text-xs text-muted-foreground mb-3">Average time to acknowledgement</div>
-                <div className="flex items-center justify-between text-xs pt-2 border-t">
-                  <span className="text-muted-foreground">Sample size</span>
-                  <Badge variant="secondary">{acknowledgedWithTimestamps.length}</Badge>
-                </div>
-              </div>
-            ) : (
-              <div className="text-sm text-muted-foreground py-4">No data available</div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Clock className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-              Avg Response Time
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {ticketsWithResponse.length > 0 ? (
-              <div>
-                <div className="text-3xl font-bold mb-2 text-emerald-600 dark:text-emerald-400">{formatTAT(avgResponseTime)}</div>
-                <div className="text-xs text-muted-foreground mb-3">Time to first response</div>
-                <div className="flex items-center justify-between text-xs pt-2 border-t">
-                  <span className="text-muted-foreground">Sample size</span>
-                  <Badge variant="secondary">{ticketsWithResponse.length}</Badge>
-                </div>
-              </div>
-            ) : (
-              <div className="text-sm text-muted-foreground py-4">No data available</div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-              Avg Resolution Time
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {resolvedWithTimestamps.length > 0 ? (
-              <div>
-                <div className="text-3xl font-bold mb-2 text-blue-600 dark:text-blue-400">{formatTAT(avgResolutionTime)}</div>
-                <div className="text-xs text-muted-foreground mb-3">Time to resolution</div>
-                <div className="flex items-center justify-between text-xs pt-2 border-t">
-                  <span className="text-muted-foreground">Sample size</span>
-                  <Badge variant="secondary">{resolvedWithTimestamps.length}</Badge>
-                </div>
-              </div>
-            ) : (
-              <div className="text-sm text-muted-foreground py-4">No data available</div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Time Period Analysis */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Calendar className="w-4 h-4" />
-              Last 7 Days
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <div className="text-xs text-muted-foreground mb-1">Created</div>
-                <div className="text-2xl font-bold">{ticketsLast7Days}</div>
-                <div className="text-xs text-muted-foreground mt-1">
-                  ~{avgTicketsPerDay7.toFixed(1)}/day
-                </div>
-              </div>
-              <div>
-                <div className="text-xs text-muted-foreground mb-1">Resolved</div>
-                <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{resolvedLast7Days}</div>
-                <div className="text-xs text-muted-foreground mt-1">
-                  {resolutionRate7Days.toFixed(1)}% rate
-                </div>
-              </div>
-            </div>
-            <Progress 
-              value={resolutionRate7Days} 
-              className="h-2"
-            />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Calendar className="w-4 h-4" />
-              Last 30 Days
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <div className="text-xs text-muted-foreground mb-1">Created</div>
-                <div className="text-2xl font-bold">{ticketsLast30Days}</div>
-                <div className="text-xs text-muted-foreground mt-1">
-                  ~{avgTicketsPerDay30.toFixed(1)}/day
-                </div>
-              </div>
-              <div>
-                <div className="text-xs text-muted-foreground mb-1">Resolved</div>
-                <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{resolvedLast30Days}</div>
-                <div className="text-xs text-muted-foreground mt-1">
-                  {resolutionRate30Days.toFixed(1)}% rate
-                </div>
-              </div>
-            </div>
-            <Progress 
-              value={resolutionRate30Days} 
-              className="h-2"
-            />
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Performance Rates */}
+      {/* Category Breakdown (Subcategories Only) - Matching Super Admin Style */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            <TrendingUp className="w-5 h-5" />
-            Key Performance Indicators
-          </CardTitle>
+          <CardTitle>Category Breakdown</CardTitle>
+          <CardDescription>Ticket distribution by category</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                Resolution Rate
-              </span>
-              <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
-                {resolvedPercentage.toFixed(1)}%
-              </span>
+        <CardContent>
+          {categoryStats.length > 0 ? (
+            <div className="space-y-4">
+              {categoryStats.map(cat => {
+                const catResolutionRate = cat.total > 0 ? Math.round((cat.resolved / cat.total) * 100) : 0;
+                return (
+                  <div key={cat.name} className="p-4 border rounded-lg">
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="font-semibold">{cat.name}</p>
+                      <Badge variant="outline">{cat.total} tickets</Badge>
+                    </div>
+                    <div className="grid grid-cols-3 gap-4 mb-2">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Open</p>
+                        <p className="text-lg font-semibold">{cat.open}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">In Progress</p>
+                        <p className="text-lg font-semibold">{cat.inProgress}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Resolved</p>
+                        <p className="text-lg font-semibold">{cat.resolved}</p>
+                      </div>
+                    </div>
+                    <Progress value={catResolutionRate} className="h-2" />
+                    <p className="text-xs text-muted-foreground mt-1">{catResolutionRate}% resolution rate</p>
+                  </div>
+                );
+              })}
             </div>
-            <Progress value={resolvedPercentage} className="h-2.5" />
-            <div className="text-xs text-muted-foreground mt-1">
-              {resolvedTickets} of {totalTickets} tickets resolved
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <p>No subcategory data available for this period.</p>
+              <p className="text-xs mt-1">Tickets might be assigned to parent categories only.</p>
             </div>
-          </div>
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium flex items-center gap-2">
-                <Target className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                Acknowledgement Rate
-              </span>
-              <span className="text-sm font-bold text-purple-600 dark:text-purple-400">
-                {acknowledgedPercentage.toFixed(1)}%
-              </span>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Ticket List with Pagination */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Ticket History</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>ID</TableHead>
+                <TableHead>Title</TableHead>
+                <TableHead>Category</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Date</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {paginatedTickets.length > 0 ? (
+                paginatedTickets.map(t => (
+                  <TableRow key={t.id}>
+                    <TableCell className="font-mono">#{t.id}</TableCell>
+                    <TableCell>{t.title || "No Title"}</TableCell>
+                    <TableCell>{t.category_name}</TableCell>
+                    <TableCell>
+                      <Badge variant={['RESOLVED', 'CLOSED'].includes(t.status) ? "default" : "secondary"}>
+                        {t.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{t.created_at?.toLocaleDateString()}</TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center py-4 text-muted-foreground">
+                    No tickets found.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-4">
+              <div className="text-sm text-muted-foreground">
+                Page {page} of {totalPages}
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" disabled={page <= 1} asChild>
+                  <Link href={`?page=${page - 1}&period=${period}`}>
+                    <ChevronLeft className="w-4 h-4 mr-1" /> Previous
+                  </Link>
+                </Button>
+                <Button variant="outline" size="sm" disabled={page >= totalPages} asChild>
+                  <Link href={`?page=${page + 1}&period=${period}`}>
+                    Next <ChevronRight className="w-4 h-4 ml-1" />
+                  </Link>
+                </Button>
+              </div>
             </div>
-            <Progress value={acknowledgedPercentage} className="h-2.5" />
-            <div className="text-xs text-muted-foreground mt-1">
-              {acknowledgedTickets} of {totalTickets} tickets acknowledged
-            </div>
-          </div>
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
-                Escalation Rate
-              </span>
-              <span className="text-sm font-bold text-red-600 dark:text-red-400">
-                {escalatedPercentage.toFixed(1)}%
-              </span>
-            </div>
-            <Progress value={escalatedPercentage} className="h-2.5" />
-            <div className="text-xs text-muted-foreground mt-1">
-              {escalatedTickets} of {totalTickets} tickets escalated
-            </div>
-          </div>
+          )}
         </CardContent>
       </Card>
     </div>

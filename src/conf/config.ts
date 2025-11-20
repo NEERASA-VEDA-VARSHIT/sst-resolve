@@ -30,24 +30,31 @@ export const emailConfig = {
 /**
  * Slack Configuration
  */
+const hostelChannelsMap = (() => {
+  try {
+    const raw = process.env.SLACK_HOSTEL_CHANNELS_JSON; // e.g., {"Velankani":"#tickets-velankani","Neeladri":"#tickets-neeladri"}
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return {
+    Velankani: process.env.SLACK_HOSTEL_VELANKANI_CHANNEL || "#tickets-velankani",
+    Neeladri: process.env.SLACK_HOSTEL_NEELADRI_CHANNEL || "#tickets-neeladri",
+  } as Record<string, string>;
+})();
+
+const defaultHostelChannel =
+  process.env.SLACK_HOSTEL_CHANNEL ||
+  Object.values(hostelChannelsMap)[0] ||
+  "#tickets-hostel";
+
 export const slackConfig = {
   enabled: !!(process.env.SLACK_BOT_TOKEN || process.env.SLACK_WEBHOOK_URL),
   botToken: process.env.SLACK_BOT_TOKEN,
   webhookUrl: process.env.SLACK_WEBHOOK_URL,
   channels: {
-    hostel: process.env.SLACK_HOSTEL_CHANNEL || "#tickets-hostel",
+    hostel: defaultHostelChannel,
     college: process.env.SLACK_COLLEGE_CHANNEL || "#tickets-college",
     committee: process.env.SLACK_COMMITTEE_CHANNEL || "#tickets-committee",
-    hostels: (() => {
-      try {
-        const raw = process.env.SLACK_HOSTEL_CHANNELS_JSON; // e.g., {"Velankani":"#tickets-velankani","Neeladri":"#tickets-neeladri"}
-        if (raw) return JSON.parse(raw);
-      } catch {}
-      return {
-        Velankani: process.env.SLACK_HOSTEL_VELANKANI_CHANNEL || "#tickets-velankani",
-        Neeladri: process.env.SLACK_HOSTEL_NEELADRI_CHANNEL || "#tickets-neeladri",
-      } as Record<string, string>;
-    })(),
+    hostels: hostelChannelsMap,
   },
   // Comma-separated Slack user IDs, e.g. "U0123ABCD,U0456EFGH". Defaults to the provided CC.
   defaultCc: (process.env.SLACK_DEFAULT_CC || "U09NQH3MRM2")

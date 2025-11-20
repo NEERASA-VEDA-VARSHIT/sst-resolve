@@ -54,10 +54,21 @@ interface ClerkUser {
   email?: string;
 }
 
+interface MasterData {
+  hostels: Array<{ id: number; name: string; code: string | null }>;
+  batches: Array<{ id: number; batch_year: number; display_name: string | null }>;
+  class_sections: Array<{ id: number; name: string }>;
+  domains: Array<{ value: string; label: string }>;
+  roles: Array<{ value: string; label: string; description: string | null }>;
+  scopes: Array<{ value: string; label: string }>; // Dynamic scopes from staff data
+}
+
 export default function StaffManagementPage() {
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [clerkUsers, setClerkUsers] = useState<ClerkUser[]>([]);
+  const [masterData, setMasterData] = useState<MasterData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMasterData, setLoadingMasterData] = useState(true);
   const [saving, setSaving] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -71,10 +82,12 @@ export default function StaffManagementPage() {
     slackUserId: "",
     whatsappNumber: "",
   });
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     fetchStaff();
     fetchClerkUsers();
+    fetchMasterData();
   }, []);
 
   const fetchStaff = async () => {
@@ -100,10 +113,35 @@ export default function StaffManagementPage() {
       const response = await fetch("/api/admin/list");
       if (response.ok) {
         const data = await response.json();
-        setClerkUsers(data.admins || []);
+        // Deduplicate users by ID (in case API returns duplicates)
+        const uniqueUsers = (data.admins || []).reduce((acc: ClerkUser[], user: ClerkUser) => {
+          if (!acc.find(u => u.id === user.id)) {
+            acc.push(user);
+          }
+          return acc;
+        }, []);
+        setClerkUsers(uniqueUsers);
       }
     } catch (error) {
       console.error("Error fetching Clerk users:", error);
+    }
+  };
+
+  const fetchMasterData = async () => {
+    try {
+      setLoadingMasterData(true);
+      const response = await fetch("/api/admin/master-data");
+      if (response.ok) {
+        const data = await response.json();
+        setMasterData(data);
+      } else {
+        toast.error("Failed to fetch master data");
+      }
+    } catch (error) {
+      console.error("Error fetching master data:", error);
+      toast.error("Failed to fetch master data");
+    } finally {
+      setLoadingMasterData(false);
     }
   };
 
@@ -135,6 +173,7 @@ export default function StaffManagementPage() {
   const handleCloseDialog = () => {
     setIsDialogOpen(false);
     setEditingStaff(null);
+    setErrors({});
     setFormData({
       clerkUserId: "",
       domain: "",
@@ -148,8 +187,39 @@ export default function StaffManagementPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    // Clear previous errors
+    setErrors({});
+    
+    // Validation
+    const newErrors: Record<string, string> = {};
+    
     if (!formData.clerkUserId || formData.clerkUserId === "none") {
-      toast.error("Please select a user");
+      newErrors.clerkUserId = "Please select a user";
+    }
+
+    if (!formData.domain) {
+      newErrors.domain = "Please select a domain";
+    }
+
+    if (formData.domain === "Hostel" && !formData.scope) {
+      newErrors.scope = "Please select a hostel (scope) for Hostel domain";
+    }
+
+    if (formData.domain === "College" && formData.scope) {
+      newErrors.scope = "Scope should be empty for College domain";
+    }
+
+    if (!formData.role) {
+      newErrors.role = "Please select a role";
+    }
+
+    if (formData.role && formData.role !== "admin" && formData.role !== "super_admin") {
+      newErrors.role = "Role must be 'admin' or 'super_admin'";
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      toast.error("Please fix the validation errors");
       return;
     }
 
@@ -217,11 +287,20 @@ export default function StaffManagementPage() {
         fetchStaff();
       } else {
         const error = await response.json();
-        toast.error(error.error || "Failed to delete staff member");
+        // Show detailed message for foreign key constraint errors
+        if (response.status === 409 && error.message) {
+          toast.error(error.message, { duration: 6000 }); // Show longer for important messages
+        } else {
+          toast.error(error.error || "Failed to delete staff member");
+        }
+        setIsDeleteDialogOpen(false);
+        setDeletingStaffId(null);
       }
     } catch (error) {
       console.error("Error deleting staff:", error);
       toast.error("Failed to delete staff member");
+      setIsDeleteDialogOpen(false);
+      setDeletingStaffId(null);
     }
   };
 
@@ -233,10 +312,15 @@ export default function StaffManagementPage() {
     return domain === "Hostel" ? "text-blue-600 dark:text-blue-400" : "text-purple-600 dark:text-purple-400";
   };
 
-  if (loading) {
+  if (loading || loadingMasterData) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        <div className="text-center space-y-3">
+          <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto" />
+          <p className="text-sm text-muted-foreground">
+            {loading ? "Loading staff..." : "Loading master data..."}
+          </p>
+        </div>
       </div>
     );
   }
@@ -246,11 +330,27 @@ export default function StaffManagementPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-4xl font-bold tracking-tight mb-2 bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
-            Staff Management
+            SPOC Management
           </h1>
           <p className="text-muted-foreground">
-            Manage admin assignments and domain/scope assignments
+            Manage admin assignments to categories and locations. Admins assigned here will automatically receive tickets based on domain and scope.
           </p>
+          {masterData && (
+            <div className="flex gap-2 mt-2">
+              <Badge variant="outline" className="text-xs">
+                {masterData.hostels.length} Hostel{masterData.hostels.length !== 1 ? 's' : ''} Available
+              </Badge>
+              <Badge variant="outline" className="text-xs">
+                {masterData.scopes.length} Location{masterData.scopes.length !== 1 ? 's' : ''} (From Staff Data)
+              </Badge>
+              <Badge variant="outline" className="text-xs">
+                {masterData.domains.length} Domain{masterData.domains.length !== 1 ? 's' : ''}
+              </Badge>
+              <Badge variant="outline" className="text-xs">
+                {masterData.roles.length} Role{masterData.roles.length !== 1 ? 's' : ''}
+              </Badge>
+            </div>
+          )}
         </div>
         <div className="flex gap-3">
           <Button variant="outline" asChild>
@@ -270,18 +370,35 @@ export default function StaffManagementPage() {
               <DialogHeader>
                 <DialogTitle>{editingStaff ? "Edit Staff Member" : "Add New Staff Member"}</DialogTitle>
                 <DialogDescription>
-                  {editingStaff ? "Update staff member details" : "Create a new staff member and assign them to a domain/scope"}
+                  {editingStaff ? "Update staff member details" : "Assign an admin to a domain and location. This determines which tickets they will automatically receive."}
                 </DialogDescription>
+                {!editingStaff && (
+                  <ul className="mt-2 ml-4 list-disc text-sm space-y-1 text-muted-foreground">
+                    <li><strong>Domain:</strong> Select the category (Hostel/College)</li>
+                    <li><strong>Scope:</strong> For Hostel domain, select specific hostel. For College, no scope needed.</li>
+                  </ul>
+                )}
               </DialogHeader>
+              {loadingMasterData ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="text-center space-y-3">
+                    <Loader2 className="w-6 h-6 animate-spin text-primary mx-auto" />
+                    <p className="text-sm text-muted-foreground">Loading form data...</p>
+                  </div>
+                </div>
+              ) : (
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="clerkUserId">Select User *</Label>
                   <Select
                     value={formData.clerkUserId || undefined}
-                    onValueChange={(value) => setFormData({ ...formData, clerkUserId: value === "none" ? "" : value })}
+                    onValueChange={(value) => {
+                      setFormData({ ...formData, clerkUserId: value === "none" ? "" : value });
+                      setErrors({ ...errors, clerkUserId: "" });
+                    }}
                     required
                   >
-                    <SelectTrigger id="clerkUserId">
+                    <SelectTrigger id="clerkUserId" className={errors.clerkUserId ? "border-destructive" : ""}>
                       <SelectValue placeholder="Select a user" />
                     </SelectTrigger>
                     <SelectContent>
@@ -297,7 +414,7 @@ export default function StaffManagementPage() {
                           }
                           return true;
                         })
-                        .map((user) => {
+                        .map((user, index) => {
                           const displayName = user.name || 
                             (user.firstName && user.lastName 
                               ? `${user.firstName} ${user.lastName}` 
@@ -305,7 +422,7 @@ export default function StaffManagementPage() {
                                 user.email || 
                                 user.id);
                           return (
-                            <SelectItem key={user.id} value={user.id}>
+                            <SelectItem key={`user-${user.id}-${index}`} value={user.id}>
                               {displayName}
                             </SelectItem>
                           );
@@ -323,6 +440,9 @@ export default function StaffManagementPage() {
                   <p className="text-xs text-muted-foreground">
                     Select a user from Clerk. Their name and email will be automatically used.
                   </p>
+                  {errors.clerkUserId && (
+                    <p className="text-sm text-destructive">{errors.clerkUserId}</p>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -336,34 +456,94 @@ export default function StaffManagementPage() {
                           domain: value,
                           scope: value === "College" ? "" : formData.scope,
                         });
+                        setErrors({ ...errors, domain: "", scope: "" });
                       }}
                       required
                     >
-                      <SelectTrigger id="domain">
-                        <SelectValue placeholder="Select domain" />
+                      <SelectTrigger id="domain" className={errors.domain ? "border-destructive" : ""}>
+                        <SelectValue placeholder={masterData ? "Select domain" : "Loading..."} />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Hostel">Hostel</SelectItem>
-                        <SelectItem value="College">College</SelectItem>
+                        {!masterData ? (
+                          <SelectItem value="loading" disabled>Loading domains...</SelectItem>
+                        ) : masterData.domains.length === 0 ? (
+                          <SelectItem value="empty" disabled>No domains available</SelectItem>
+                        ) : (
+                          masterData.domains.map((domain) => (
+                            <SelectItem key={domain.value} value={domain.value}>
+                              {domain.label}
+                            </SelectItem>
+                          ))
+                        )}
                       </SelectContent>
                     </Select>
+                    {errors.domain && (
+                      <p className="text-sm text-destructive">{errors.domain}</p>
+                    )}
                   </div>
                   {formData.domain === "Hostel" && (
                     <div className="space-y-2">
-                      <Label htmlFor="scope">Scope (Hostel) *</Label>
+                      <Label htmlFor="scope">Scope (Hostel/Location) *</Label>
                       <Select
                         value={formData.scope}
-                        onValueChange={(value) => setFormData({ ...formData, scope: value })}
+                        onValueChange={(value) => {
+                          setFormData({ ...formData, scope: value });
+                          setErrors({ ...errors, scope: "" });
+                        }}
                         required
+                        disabled={!masterData || (masterData.scopes.length === 0 && masterData.hostels.length === 0)}
                       >
-                        <SelectTrigger id="scope">
-                          <SelectValue placeholder="Select hostel" />
+                        <SelectTrigger id="scope" className={errors.scope ? "border-destructive" : ""}>
+                          <SelectValue placeholder={masterData ? "Select location/hostel" : "Loading..."} />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="Velankani">Velankani</SelectItem>
-                          <SelectItem value="Neeladri">Neeladri</SelectItem>
+                          {!masterData ? (
+                            <SelectItem value="loading" disabled>Loading locations...</SelectItem>
+                          ) : masterData.scopes.length === 0 && masterData.hostels.length === 0 ? (
+                            <SelectItem value="empty" disabled>No locations available</SelectItem>
+                          ) : (
+                            <>
+                              {/* Show existing scopes from staff data (dynamic) */}
+                              {masterData.scopes.length > 0 && (
+                                <>
+                                  {masterData.scopes.map((scope) => (
+                                    <SelectItem key={`scope-${scope.value}`} value={scope.value}>
+                                      {scope.label}
+                                    </SelectItem>
+                                  ))}
+                                  {masterData.hostels.length > 0 && (
+                                    <SelectItem value="divider" disabled>
+                                      ──── From Hostels Table ────
+                                    </SelectItem>
+                                  )}
+                                </>
+                              )}
+                              {/* Also show hostels from hostels table, but only if not already in scopes */}
+                              {masterData.hostels
+                                .filter(hostel => !masterData.scopes.some(scope => scope.value === hostel.name))
+                                .map((hostel) => (
+                                  <SelectItem key={`hostel-${hostel.id}`} value={hostel.name}>
+                                    {hostel.name} {hostel.code ? `(${hostel.code})` : ''}
+                                  </SelectItem>
+                                ))}
+                            </>
+                          )}
                         </SelectContent>
                       </Select>
+                      {masterData && masterData.scopes.length === 0 && masterData.hostels.length === 0 && (
+                        <p className="text-xs text-amber-600 dark:text-amber-400">
+                          ⚠️ No locations configured. Please add staff with locations or configure hostels first.
+                        </p>
+                      )}
+                      {masterData && masterData.scopes.length > 0 && (
+                        <p className="text-xs text-muted-foreground">
+                          📍 Showing {masterData.scopes.length} existing location{masterData.scopes.length !== 1 ? 's' : ''} from staff data
+                          {masterData.hostels.length > 0 && ` + ${masterData.hostels.length} from hostels table`}
+                        </p>
+                      )}
+                      {errors.scope && (
+                        <p className="text-sm text-destructive">{errors.scope}</p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -372,17 +552,38 @@ export default function StaffManagementPage() {
                   <Label htmlFor="role">Role *</Label>
                   <Select
                     value={formData.role}
-                    onValueChange={(value) => setFormData({ ...formData, role: value })}
+                    onValueChange={(value) => {
+                      setFormData({ ...formData, role: value });
+                      setErrors({ ...errors, role: "" });
+                    }}
                     required
+                    disabled={!masterData || masterData.roles.length === 0}
                   >
-                    <SelectTrigger id="role">
-                      <SelectValue placeholder="Select role" />
+                    <SelectTrigger id="role" className={errors.role ? "border-destructive" : ""}>
+                      <SelectValue placeholder={masterData ? "Select role" : "Loading..."} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="admin">Admin</SelectItem>
-                      <SelectItem value="super_admin">Super Admin</SelectItem>
+                      {!masterData ? (
+                        <SelectItem value="loading" disabled>Loading roles...</SelectItem>
+                      ) : masterData.roles.length === 0 ? (
+                        <SelectItem value="empty" disabled>No roles available</SelectItem>
+                      ) : (
+                        masterData.roles.map((role) => (
+                          <SelectItem key={role.value} value={role.value}>
+                            {role.label}
+                          </SelectItem>
+                        ))
+                      )}
                     </SelectContent>
                   </Select>
+                  {masterData && masterData.roles.length === 0 && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400">
+                      ⚠️ No staff roles configured. Please configure roles in the system.
+                    </p>
+                  )}
+                  {errors.role && (
+                    <p className="text-sm text-destructive">{errors.role}</p>
+                  )}
                 </div>
 
 
@@ -423,6 +624,7 @@ export default function StaffManagementPage() {
                   </Button>
                 </DialogFooter>
               </form>
+              )}
             </DialogContent>
           </Dialog>
         </div>

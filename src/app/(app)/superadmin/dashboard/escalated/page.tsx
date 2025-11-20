@@ -8,20 +8,26 @@ import { AlertTriangle, TrendingUp, Calendar, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { getUserRoleFromDB } from "@/lib/db-roles";
+import { getOrCreateUser } from "@/lib/user-sync";
 
 export default async function SuperAdminEscalatedPage() {
-  const { userId, sessionClaims } = await auth();
+  const { userId } = await auth();
   if (!userId) redirect("/");
 
-  const role = sessionClaims?.metadata?.role || "student";
+  // Ensure user exists in database
+  await getOrCreateUser(userId);
+
+  // Get role from database (single source of truth)
+  const role = await getUserRoleFromDB(userId);
   if (role !== "super_admin") redirect("/student/dashboard");
 
   const allTickets = await db
     .select()
     .from(tickets)
-    .orderBy(desc(tickets.createdAt));
+    .orderBy(desc(tickets.created_at));
 
-  const escalated = allTickets.filter(t => (Number(t.escalationCount) || 0) > 0);
+  const escalated = allTickets.filter(t => (t.escalation_level || 0) > 0);
 
   const now = new Date();
   const startOfToday = new Date(now); startOfToday.setHours(0,0,0,0);
@@ -35,16 +41,17 @@ export default async function SuperAdminEscalatedPage() {
   const totalEscalated = escalated.length;
   const openEscalated = escalated.filter(t => isOpen(t.status)).length;
   const escalatedToday = escalated.filter(t => {
-    const dt = t.escalatedAt ? new Date(String(t.escalatedAt)) : null;
-    return dt ? (dt.getTime() >= startOfToday.getTime() && dt.getTime() <= endOfToday.getTime()) : false;
+    const dt = t.last_escalation_at ? new Date(t.last_escalation_at) : null;
+    if (!dt || isNaN(dt.getTime())) return false;
+    return dt.getTime() >= startOfToday.getTime() && dt.getTime() <= endOfToday.getTime();
   }).length;
 
   const sortedEscalated = [...escalated].sort((a, b) => {
-    const aCount = Number(a.escalationCount) || 0;
-    const bCount = Number(b.escalationCount) || 0;
+    const aCount = a.escalation_level || 0;
+    const bCount = b.escalation_level || 0;
     if (bCount !== aCount) return bCount - aCount;
-    const aDate = a.escalatedAt ? new Date(String(a.escalatedAt)) : null;
-    const bDate = b.escalatedAt ? new Date(String(b.escalatedAt)) : null;
+    const aDate = a.last_escalation_at ? new Date(a.last_escalation_at) : null;
+    const bDate = b.last_escalation_at ? new Date(b.last_escalation_at) : null;
     if (!aDate && !bDate) return 0;
     if (!aDate) return 1;
     if (!bDate) return -1;
@@ -126,7 +133,7 @@ export default async function SuperAdminEscalatedPage() {
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {sortedEscalated.map((t) => {
-              const escalationCount = Number(t.escalationCount) || 0;
+              const escalationCount = t.escalation_level || 0;
               return (
                 <div key={t.id} className="relative">
                   {escalationCount > 1 && (

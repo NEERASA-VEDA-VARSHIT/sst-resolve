@@ -4,8 +4,10 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Star } from "lucide-react";
+import { Star, Smile, Frown } from "lucide-react";
+import { RATING, FEEDBACK_TYPE } from "@/conf/constants";
 
 interface RatingFormProps {
 	ticketId: number;
@@ -34,7 +36,8 @@ export function RatingForm({ ticketId, currentRating }: RatingFormProps) {
 			});
 
             if (response.ok) {
-                toast.success(`Thank you! Your rating of ${rating}/5 has been recorded.`);
+				const feedbackType = rating >= RATING.HAPPY_THRESHOLD ? FEEDBACK_TYPE.HAPPY : FEEDBACK_TYPE.UNHAPPY;
+				toast.success(`Thank you! Your ${feedbackType === FEEDBACK_TYPE.HAPPY ? "Happy" : "Unhappy"} feedback has been recorded.`);
 				router.refresh();
 			} else {
 				const error = await response.json().catch(() => ({ error: "Failed to submit rating" }));
@@ -49,16 +52,20 @@ export function RatingForm({ ticketId, currentRating }: RatingFormProps) {
 	};
 
 	if (currentRating) {
+		const ratingNum = parseInt(currentRating, 10);
+		const feedbackType = ratingNum >= RATING.HAPPY_THRESHOLD ? FEEDBACK_TYPE.HAPPY : FEEDBACK_TYPE.UNHAPPY;
+		const isHappy = feedbackType === FEEDBACK_TYPE.HAPPY;
+		
 		return (
-			<div className="border rounded-lg p-4 bg-green-50 dark:bg-green-950">
-				<Label className="text-sm font-medium mb-2 block">Rating Submitted</Label>
-				<div className="flex items-center gap-2">
+			<div className={`border rounded-lg p-4 ${isHappy ? "bg-green-50 dark:bg-green-950" : "bg-red-50 dark:bg-red-950"}`}>
+				<Label className="text-sm font-medium mb-2 block">Feedback Submitted</Label>
+				<div className="flex items-center gap-3">
 					<div className="flex">
                         {[1, 2, 3, 4, 5].map((num) => (
 							<Star
 								key={num}
 								className={`w-5 h-5 ${
-									num <= parseInt(currentRating, 10)
+									num <= ratingNum
 										? "fill-yellow-400 text-yellow-400"
 										: "text-gray-300"
 								}`}
@@ -66,12 +73,28 @@ export function RatingForm({ ticketId, currentRating }: RatingFormProps) {
 						))}
 					</div>
                     <span className="text-lg font-semibold">{currentRating}/5</span>
+					<Badge variant={isHappy ? "default" : "destructive"} className="ml-2">
+						{isHappy ? (
+							<>
+								<Smile className="w-4 h-4 mr-1" />
+								Happy
+							</>
+						) : (
+							<>
+								<Frown className="w-4 h-4 mr-1" />
+								Unhappy
+							</>
+						)}
+					</Badge>
 				</div>
 				<p className="text-sm text-muted-foreground mt-2">Thank you for your feedback!</p>
 			</div>
 		);
 	}
 
+	const feedbackType = rating ? (rating >= RATING.HAPPY_THRESHOLD ? FEEDBACK_TYPE.HAPPY : FEEDBACK_TYPE.UNHAPPY) : null;
+	const isHappy = feedbackType === FEEDBACK_TYPE.HAPPY;
+	
 	return (
 		<form onSubmit={handleSubmit} className="border rounded-lg p-4 bg-muted/50">
             <Label className="text-sm font-medium mb-3 block">
@@ -97,11 +120,28 @@ export function RatingForm({ ticketId, currentRating }: RatingFormProps) {
 					</button>
 				))}
                 {rating && (
-                    <span className="ml-2 text-lg font-semibold">{rating}/5</span>
+					<>
+						<span className="ml-2 text-lg font-semibold">{rating}/5</span>
+						{feedbackType && (
+							<Badge variant={isHappy ? "default" : "destructive"} className="ml-2">
+								{isHappy ? (
+									<>
+										<Smile className="w-4 h-4 mr-1" />
+										Happy
+									</>
+								) : (
+									<>
+										<Frown className="w-4 h-4 mr-1" />
+										Unhappy
+									</>
+								)}
+							</Badge>
+						)}
+					</>
                 )}
 			</div>
 			<Button type="submit" disabled={!rating || loading}>
-				{loading ? "Submitting..." : "Submit Rating"}
+				{loading ? "Submitting..." : "Submit Feedback"}
 			</Button>
 		</form>
 	);

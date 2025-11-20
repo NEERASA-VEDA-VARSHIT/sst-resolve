@@ -2,13 +2,20 @@
 
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
-import { FileText, AlertCircle, Clock, CheckCircle2 } from "lucide-react";
+import {
+  FileText,
+  AlertCircle,
+  Clock,
+  CheckCircle2,
+  MessageSquare,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Stats {
   total: number;
   open: number;
   inProgress: number;
+  awaitingStudent: number;
   resolved: number;
   escalated: number;
 }
@@ -17,188 +24,200 @@ interface StatsCardsProps {
   stats: Stats;
 }
 
+/* -------------------------------------------------------
+   COLOR MAPS (centralized style control)
+-------------------------------------------------------- */
+
+const COLOR_STYLES = {
+  default: {
+    card: "bg-muted/20 border-muted",
+    icon: "text-muted-foreground",
+    text: "",
+  },
+  blue: {
+    card:
+      "border-blue-200 dark:border-blue-900 bg-blue-50/50 dark:bg-blue-950/20",
+    icon: "text-blue-600 dark:text-blue-400",
+    text: "text-blue-600 dark:text-blue-400",
+  },
+  amber: {
+    card:
+      "border-amber-200 dark:border-amber-900 bg-amber-50/50 dark:bg-amber-950/20",
+    icon: "text-amber-600 dark:text-amber-400",
+    text: "text-amber-600 dark:text-amber-400",
+  },
+  purple: {
+    card:
+      "border-purple-200 dark:border-purple-900 bg-purple-50/50 dark:bg-purple-950/20",
+    icon: "text-purple-600 dark:text-purple-400",
+    text: "text-purple-600 dark:text-purple-400",
+  },
+  emerald: {
+    card:
+      "border-emerald-200 dark:border-emerald-900 bg-emerald-50/50 dark:bg-emerald-950/20",
+    icon: "text-emerald-600 dark:text-emerald-400",
+    text: "text-emerald-600 dark:text-emerald-400",
+  },
+  red: {
+    card:
+      "border-red-200 dark:border-red-900 bg-red-50/50 dark:bg-red-950/20",
+    icon: "text-red-600 dark:text-red-400",
+    text: "text-red-600 dark:text-red-400",
+  },
+};
+
+/* -------------------------------------------------------
+   Component
+-------------------------------------------------------- */
+
 export function StatsCards({ stats }: StatsCardsProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const handleFilter = (type: "status" | "escalated" | "clear", value?: string) => {
+  /* -----------------------------------------------
+      FILTER HANDLER (clean, easy to extend)
+  ------------------------------------------------ */
+  const handleFilter = (
+    type: "status" | "escalated" | "clear",
+    value?: string
+  ) => {
     const params = new URLSearchParams();
-    
-    // Preserve all current params except status, escalated
+
+    // Preserve all params except status and escalated
     searchParams.forEach((val, key) => {
       if (!["status", "escalated"].includes(key)) {
         params.set(key, val);
       }
     });
-    
+
     if (type === "clear") {
-      // Clear all filters
       router.push(pathname);
       return;
     }
-    
-    // Handle special cases
+
     if (type === "escalated") {
-      // Toggle escalated filter
-      const currentValue = searchParams.get("escalated");
-      if (currentValue === "true") {
-        // Remove filter - don't add it to params
-      } else {
-        // Add filter
-        params.set("escalated", "true");
-      }
-    } else if (type === "status" && value) {
-      // Toggle status filter
-      const currentValue = searchParams.get("status");
-      if (currentValue === value) {
-        // Remove filter - don't add it to params
-      } else {
-        // Set new filter
-        params.set("status", value);
-      }
-      // Remove escalated when setting status
-      params.delete("escalated");
+      const current = searchParams.get("escalated");
+      if (current !== "true") params.set("escalated", "true");
     }
-    
-    router.push(`${pathname}${params.toString() ? `?${params.toString()}` : ""}`);
+
+    if (type === "status" && value) {
+      const current = searchParams.get("status");
+      if (current !== value) params.set("status", value);
+      params.delete("escalated"); // remove escalated filter when selecting a status
+    }
+
+    const query = params.toString();
+    router.push(query ? `${pathname}?${query}` : pathname);
   };
 
-  // Only show stats that are > 0 (except Total which always shows)
+  /* -----------------------------------------------
+      ITEMS (concise and clean structure)
+  ------------------------------------------------ */
   const statItems = [
-    { 
-      key: "total" as const, 
-      label: "Total", 
-      value: stats.total, 
-      icon: FileText, 
-      color: "default", 
-      alwaysShow: true,
+    {
+      key: "total",
+      label: "Total",
+      value: stats.total,
+      icon: FileText,
+      color: "default",
       onClick: () => handleFilter("clear"),
-      isActive: !searchParams.get("status") && searchParams.get("escalated") !== "true",
+      isActive:
+        !searchParams.get("status") &&
+        searchParams.get("escalated") !== "true",
+      alwaysShow: true,
     },
-    { 
-      key: "open" as const, 
-      label: "Open", 
-      value: stats.open, 
-      icon: AlertCircle, 
-      color: "blue", 
-      alwaysShow: false,
+    {
+      key: "open",
+      label: "Open",
+      value: stats.open,
+      icon: AlertCircle,
+      color: "blue",
       onClick: () => handleFilter("status", "open"),
       isActive: searchParams.get("status") === "open",
     },
-    { 
-      key: "inProgress" as const, 
-      label: "In Progress", 
-      value: stats.inProgress, 
-      icon: Clock, 
-      color: "amber", 
-      alwaysShow: false,
+    {
+      key: "inProgress",
+      label: "In Progress",
+      value: stats.inProgress,
+      icon: Clock,
+      color: "amber",
       onClick: () => handleFilter("status", "in_progress"),
       isActive: searchParams.get("status") === "in_progress",
     },
-    { 
-      key: "resolved" as const, 
-      label: "Resolved", 
-      value: stats.resolved, 
-      icon: CheckCircle2, 
-      color: "emerald", 
-      alwaysShow: false,
+    {
+      key: "awaitingStudent",
+      label: "Awaiting Student",
+      value: stats.awaitingStudent,
+      icon: MessageSquare,
+      color: "purple",
+      onClick: () => handleFilter("status", "awaiting_student_response"),
+      isActive:
+        searchParams.get("status") === "awaiting_student_response",
+    },
+    {
+      key: "resolved",
+      label: "Resolved",
+      value: stats.resolved,
+      icon: CheckCircle2,
+      color: "emerald",
       onClick: () => handleFilter("status", "resolved"),
       isActive: searchParams.get("status") === "resolved",
     },
-    { 
-      key: "escalated" as const, 
-      label: "Escalated", 
-      value: stats.escalated, 
-      icon: AlertCircle, 
-      color: "red", 
-      alwaysShow: false,
+    {
+      key: "escalated",
+      label: "Escalated",
+      value: stats.escalated,
+      icon: AlertCircle,
+      color: "red",
       onClick: () => handleFilter("escalated"),
       isActive: searchParams.get("escalated") === "true",
     },
-  ].filter(item => item.alwaysShow || item.value > 0);
+  ].filter((item) => item.alwaysShow || item.value > 0);
 
-  if (statItems.length === 0) {
-    return null;
-  }
+  if (statItems.length === 0) return null;
 
+  /* -----------------------------------------------
+      RENDER
+  ------------------------------------------------ */
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
       {statItems.map((item) => {
         const Icon = item.icon;
-        const isDefault = item.color === "default";
-
-        const getCardClasses = () => {
-          let baseClasses = "border-2 cursor-pointer transition-all hover:shadow-lg hover:scale-105 group";
-          if (item.isActive) {
-            baseClasses += " ring-2 ring-primary ring-offset-2 shadow-md";
-          }
-          
-          if (isDefault) return baseClasses + " bg-muted/20 border-muted";
-          switch (item.color) {
-            case "blue":
-              return baseClasses + " border-blue-200 dark:border-blue-900 bg-blue-50/50 dark:bg-blue-950/20";
-            case "amber":
-              return baseClasses + " border-amber-200 dark:border-amber-900 bg-amber-50/50 dark:bg-amber-950/20";
-            case "purple":
-              return baseClasses + " border-purple-200 dark:border-purple-900 bg-purple-50/50 dark:bg-purple-950/20";
-            case "emerald":
-              return baseClasses + " border-emerald-200 dark:border-emerald-900 bg-emerald-50/50 dark:bg-emerald-950/20";
-            case "red":
-              return baseClasses + " border-red-200 dark:border-red-900 bg-red-50/50 dark:bg-red-950/20";
-            default:
-              return baseClasses;
-          }
-        };
-
-        const getIconClasses = () => {
-          if (isDefault) return "text-muted-foreground";
-          switch (item.color) {
-            case "blue":
-              return "text-blue-600 dark:text-blue-400";
-            case "amber":
-              return "text-amber-600 dark:text-amber-400";
-            case "purple":
-              return "text-purple-600 dark:text-purple-400";
-            case "emerald":
-              return "text-emerald-600 dark:text-emerald-400";
-            case "red":
-              return "text-red-600 dark:text-red-400";
-            default:
-              return "text-muted-foreground";
-          }
-        };
-
-        const getTextClasses = () => {
-          if (isDefault) return "";
-          switch (item.color) {
-            case "blue":
-              return "text-blue-600 dark:text-blue-400";
-            case "amber":
-              return "text-amber-600 dark:text-amber-400";
-            case "purple":
-              return "text-purple-600 dark:text-purple-400";
-            case "emerald":
-              return "text-emerald-600 dark:text-emerald-400";
-            case "red":
-              return "text-red-600 dark:text-red-400";
-            default:
-              return "";
-          }
-        };
+        const styles = COLOR_STYLES[item.color as keyof typeof COLOR_STYLES];
 
         return (
-          <Card key={item.key} className={getCardClasses()} onClick={item.onClick}>
+          <Card
+            key={item.key}
+            className={cn(
+              "border-2 cursor-pointer transition-all hover:shadow-lg hover:scale-105 group",
+              styles.card,
+              item.isActive && "ring-2 ring-primary ring-offset-2 shadow-md"
+            )}
+            onClick={item.onClick}
+          >
             <CardContent className="p-4">
+              {/* Icon + active dot */}
               <div className="flex items-center justify-between mb-2">
-                <Icon className={cn("w-4 h-4 transition-transform group-hover:scale-110", getIconClasses())} />
+                <Icon
+                  className={cn(
+                    "w-4 h-4 transition-transform group-hover:scale-110",
+                    styles.icon
+                  )}
+                />
                 {item.isActive && (
                   <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
                 )}
               </div>
-              <p className="text-xs font-medium text-muted-foreground mb-1">{item.label}</p>
-              <p className={cn("text-2xl font-bold transition-colors", getTextClasses())}>
-                {item.value}
+
+              {/* Label */}
+              <p className="text-xs font-medium text-muted-foreground mb-1">
+                {item.label}
+              </p>
+
+              {/* Value */}
+              <p className={cn("text-2xl font-bold", styles.text)}>
+                {item.value ?? 0}
               </p>
             </CardContent>
           </Card>
@@ -207,4 +226,4 @@ export function StatsCards({ stats }: StatsCardsProps) {
     </div>
   );
 }
-
+export default StatsCards;

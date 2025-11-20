@@ -185,6 +185,26 @@ export function formatStatus(status: string | null | undefined): string {
 }
 
 /**
+ * Normalize status value for comparison (handles both uppercase enum and lowercase constants)
+ * Converts uppercase enum values (OPEN, IN_PROGRESS) to lowercase constants (open, in_progress)
+ * for consistent comparison across the application
+ */
+export function normalizeStatusForComparison(status: string | null | undefined): string {
+  if (!status) return "";
+  const upper = status.toUpperCase();
+  const mapping: Record<string, string> = {
+    "OPEN": "open",
+    "IN_PROGRESS": "in_progress",
+    "AWAITING_STUDENT": "awaiting_student_response",
+    "AWAITING_STUDENT_RESPONSE": "awaiting_student_response",
+    "REOPENED": "reopened",
+    "ESCALATED": "escalated",
+    "RESOLVED": "resolved",
+  };
+  return mapping[upper] || status.toLowerCase();
+}
+
+/**
  * Parse JSON safely
  */
 export function safeJsonParse<T>(json: string | null | undefined, fallback: T): T {

@@ -10,6 +10,24 @@
 !.yarn/releases
 !.yarn/versions
 
+#docs
+/doc/*.md
+/docs/*.md
+/docs/
+docs/*.md
+doc/*.md
+doc/
+#mds
+*.mds
+*.md
+*.txt
+*.pdf
+*.docx
+*.doc
+*.xls
+*.xlsx
+*.pptx
+*.ppt
 # testing
 /coverage
 

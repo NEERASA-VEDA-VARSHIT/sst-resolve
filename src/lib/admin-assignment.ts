@@ -3,8 +3,8 @@
  * Handles determining which tickets an admin can see based on their domain/scope assignment
  */
 
-import { db, staff } from "@/db";
-import { eq, and } from "drizzle-orm";
+import { db, staff, users, roles, user_roles } from "@/db";
+import { eq, and, or } from "drizzle-orm";
 
 export interface AdminAssignment {
   domain: string | null; // "Hostel" | "College" | null
@@ -13,16 +13,29 @@ export interface AdminAssignment {
 
 /**
  * Get admin's domain and scope assignment from staff table
+ * Role is checked via user_roles table (multi-role support)
  */
 export async function getAdminAssignment(clerkUserId: string): Promise<AdminAssignment> {
   try {
     const staffMember = await db
-      .select()
+      .select({
+        domain: staff.domain,
+        scope: staff.scope,
+        roleName: roles.name,
+      })
       .from(staff)
+      .innerJoin(users, eq(staff.user_id, users.id))
+      .innerJoin(user_roles, eq(users.id, user_roles.user_id))
+      .innerJoin(roles, eq(user_roles.role_id, roles.id))
       .where(
         and(
-          eq(staff.clerkUserId, clerkUserId),
-          eq(staff.role, "admin")
+          eq(users.clerk_id, clerkUserId),
+          // Support admin, committee, and super_admin roles
+          or(
+            eq(roles.name, "admin"),
+            eq(roles.name, "committee"),
+            eq(roles.name, "super_admin")
+          )
         )
       )
       .limit(1);
@@ -86,6 +99,7 @@ export function ticketMatchesAdminAssignment(
 
 /**
  * Get all admin clerk user IDs for a specific domain/scope
+ * Role is checked via user_roles table (multi-role support)
  */
 export async function getAdminsForDomainScope(
   domain: string,
@@ -93,12 +107,23 @@ export async function getAdminsForDomainScope(
 ): Promise<string[]> {
   try {
     let query = db
-      .select()
+      .select({
+        clerk_id: users.clerk_id,
+        scope: staff.scope,
+      })
       .from(staff)
+      .innerJoin(users, eq(staff.user_id, users.id))
+      .innerJoin(user_roles, eq(users.id, user_roles.user_id))
+      .innerJoin(roles, eq(user_roles.role_id, roles.id))
       .where(
         and(
           eq(staff.domain, domain),
-          eq(staff.role, "admin")
+          // Support admin, committee, and super_admin roles
+          or(
+            eq(roles.name, "admin"),
+            eq(roles.name, "committee"),
+            eq(roles.name, "super_admin")
+          )
         )
       );
 
@@ -110,7 +135,7 @@ export async function getAdminsForDomainScope(
       : staffMembers.filter((s) => !s.scope || s.scope === null);
 
     return filtered
-      .map((s) => s.clerkUserId)
+      .map((s) => s.clerk_id)
       .filter((id): id is string => id !== null && id !== undefined);
   } catch (error) {
     console.error("Error fetching admins for domain/scope:", error);

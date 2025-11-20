@@ -1,7 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { db, tickets } from "@/db";
-import { desc, eq, or, isNull } from "drizzle-orm";
+import { db, tickets, users, staff, categories } from "@/db";
+import { desc, eq, or, isNull, inArray } from "drizzle-orm";
 import { TicketCard } from "@/components/layout/TicketCard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,139 +10,205 @@ import { clerkClient } from "@clerk/nextjs/server";
 import { AdminTicketFilters } from "@/components/admin/AdminTicketFilters";
 import { StatsCards } from "@/components/dashboard/StatsCards";
 import { Button } from "@/components/ui/button";
-import { FileText, Clock, CheckCircle2, AlertCircle, TrendingUp, Calendar, Users, Globe } from "lucide-react";
+import { FileText, Clock, CheckCircle2, AlertCircle, TrendingUp, Calendar, Users } from "lucide-react";
+import { getUserRoleFromDB } from "@/lib/db-roles";
+import { getOrCreateUser } from "@/lib/user-sync";
+import { isAdminLevel } from "@/conf/constants";
 
-export default async function AdminDashboardPage({ searchParams }: { searchParams?: Record<string, string | undefined> }) {
-  const { userId, sessionClaims } = await auth();
+export default async function AdminDashboardPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> | Record<string, string | string[] | undefined> }) {
+  const { userId } = await auth();
 
   if (!userId) {
     redirect("/");
   }
 
-  const role = sessionClaims?.metadata?.role || 'student';
-  const isSuperAdmin = role === 'super_admin';
+  // Ensure user exists in database
+  await getOrCreateUser(userId);
 
-  if (isSuperAdmin) {
+  // Get role from database (single source of truth)
+  const role = await getUserRoleFromDB(userId);
+
+  // Redirect super_admin to superadmin dashboard
+  if (role === 'super_admin') {
     redirect('/superadmin/dashboard');
   }
 
-  if (role === 'student') {
+  // Only allow admin-level roles (admin, committee, super_admin)
+  if (!isAdminLevel(role)) {
     redirect('/student/dashboard');
   }
 
-  const params = searchParams || {};
-  const activeTab = params["tab"] || "tickets";
-  const searchQuery = params["search"] || "";
-  const category = params["category"] || "";
-  const subcategory = params["subcategory"] || "";
-  const location = params["location"] || "";
-  const tat = params["tat"] || "";
-  const status = params["status"] || "";
-  const createdFrom = params["from"] || "";
-  const createdTo = params["to"] || "";
-  const user = params["user"] || "";
-  const sort = params["sort"] || "newest";
-  const escalated = params["escalated"] || "";
+  // Get admin's staff record to find staff.id
+  let adminStaffId: number | null = null;
+  try {
+    const dbUser = await getOrCreateUser(userId);
 
-  const adminUserId = userId;
+    if (!dbUser) {
+      console.error('[Admin Dashboard] Failed to create/fetch user');
+      throw new Error('Failed to load user profile');
+    }
+
+    const [staffMember] = await db
+      .select({ id: staff.id })
+      .from(staff)
+      .where(eq(staff.user_id, dbUser.id))
+      .limit(1);
+
+    adminStaffId = staffMember?.id || null;
+  } catch (error) {
+    console.error('[Admin Dashboard] Error fetching user/staff info:', error);
+    throw new Error('Failed to load admin profile');
+  }
+
+  // Await searchParams if it's a Promise (Next.js 15)
+  const resolvedSearchParams = searchParams instanceof Promise ? await searchParams : (searchParams || {});
+  const params = resolvedSearchParams || {};
+  const activeTab = (typeof params["tab"] === "string" ? params["tab"] : params["tab"]?.[0]) || "tickets";
+  const searchQuery = (typeof params["search"] === "string" ? params["search"] : params["search"]?.[0]) || "";
+  const category = (typeof params["category"] === "string" ? params["category"] : params["category"]?.[0]) || "";
+  const subcategory = (typeof params["subcategory"] === "string" ? params["subcategory"] : params["subcategory"]?.[0]) || "";
+  const location = (typeof params["location"] === "string" ? params["location"] : params["location"]?.[0]) || "";
+  const tat = (typeof params["tat"] === "string" ? params["tat"] : params["tat"]?.[0]) || "";
+  const status = (typeof params["status"] === "string" ? params["status"] : params["status"]?.[0]) || "";
+  const createdFrom = (typeof params["from"] === "string" ? params["from"] : params["from"]?.[0]) || "";
+  const createdTo = (typeof params["to"] === "string" ? params["to"] : params["to"]?.[0]) || "";
+  const user = (typeof params["user"] === "string" ? params["user"] : params["user"]?.[0]) || "";
+  const sort = (typeof params["sort"] === "string" ? params["sort"] : params["sort"]?.[0]) || "newest";
+  const escalated = (typeof params["escalated"] === "string" ? params["escalated"] : params["escalated"]?.[0]) || "";
 
   // Get admin's domain/scope assignment
-  const { getAdminAssignment, ticketMatchesAdminAssignment } = await import("@/lib/admin-assignment");
-  const adminAssignment = await getAdminAssignment(adminUserId);
-  const hasAssignment = !!adminAssignment.domain;
+    const { getAdminAssignment, ticketMatchesAdminAssignment } = await import("@/lib/admin-assignment");
+    const adminAssignment = await getAdminAssignment(userId);
+    const hasAssignment = !!adminAssignment.domain;
 
-  // Fetch tickets
-  let allTickets = await db
-    .select()
-    .from(tickets)
-    .where(
-      hasAssignment
-        ? eq(tickets.assignedTo, adminUserId)
-        : or(eq(tickets.assignedTo, adminUserId), isNull(tickets.assignedTo))
-    )
-    .orderBy(desc(tickets.createdAt));
+    // Fetch all tickets first
+    let allTickets = await db
+      .select()
+      .from(tickets)
+      .orderBy(desc(tickets.created_at));
 
-  if (hasAssignment) {
-    allTickets = allTickets.filter(t =>
-      t.assignedTo === adminUserId &&
-      ticketMatchesAdminAssignment(
-        { category: t.category, location: t.location },
-        adminAssignment
-      )
-    );
-  }
-
-  // If admin has no assignment, allow viewing matching unassigned tickets (legacy behaviour)
-  if (!hasAssignment) {
-    allTickets = allTickets.filter(t => {
-      if (t.assignedTo === adminUserId) return true;
-      if (!t.assignedTo) {
-        return ticketMatchesAdminAssignment(
-          { category: t.category, location: t.location },
-          adminAssignment
-        );
+    // Get category names for all tickets (batch query for performance)
+    const categoryIds = [...new Set(allTickets.map(t => t.category_id).filter(Boolean) as number[])];
+    const categoryMap = new Map<number, string>();
+    if (categoryIds.length > 0) {
+      const categoryRecords = await db
+        .select({ id: categories.id, name: categories.name })
+        .from(categories)
+        .where(inArray(categories.id, categoryIds));
+      for (const cat of categoryRecords) {
+        categoryMap.set(cat.id, cat.name);
       }
-      return false;
-    });
-  }
-
-  // Search filter (searches across ID, description, user number, and subcategory)
-  if (searchQuery) {
-    const query = searchQuery.toLowerCase();
-    allTickets = allTickets.filter(t => {
-      const idMatch = t.id.toString().includes(query);
-      const descMatch = (t.description || "").toLowerCase().includes(query);
-      const userMatch = (t.userNumber || "").toLowerCase().includes(query);
-      const subcatMatch = (t.subcategory || "").toLowerCase().includes(query);
-      return idMatch || descMatch || userMatch || subcatMatch;
-    });
-  }
-
-  if (category) {
-    allTickets = allTickets.filter(t => (t.category || "").toLowerCase() === category.toLowerCase());
-  }
-  if (subcategory) {
-    allTickets = allTickets.filter(t => (t.subcategory || "").toLowerCase().includes(subcategory.toLowerCase()));
-  }
-  if (location) {
-    allTickets = allTickets.filter(t => (t.location || "").toLowerCase().includes(location.toLowerCase()));
-  }
-  if (status) {
-    if (status.toLowerCase() === "resolved") {
-      allTickets = allTickets.filter(t => t.status === "resolved" || t.status === "closed");
-    } else {
-      allTickets = allTickets.filter(t => (t.status || "").toLowerCase() === status.toLowerCase());
     }
-  }
-  if (escalated === "true") {
-    allTickets = allTickets.filter(t => (Number(t.escalationCount) || 0) > 0);
-  }
-  if (user) {
-    allTickets = allTickets.filter(t => (t.userNumber || "").toLowerCase().includes(user.toLowerCase()));
-  }
-  if (createdFrom) {
-    const from = new Date(createdFrom);
-    from.setHours(0,0,0,0);
-    allTickets = allTickets.filter(t => t.createdAt ? new Date(t.createdAt).getTime() >= from.getTime() : false);
-  }
-  if (createdTo) {
-    const to = new Date(createdTo);
-    to.setHours(23,59,59,999);
-    allTickets = allTickets.filter(t => t.createdAt ? new Date(t.createdAt).getTime() <= to.getTime() : false);
-  }
 
-  if (tat) {
-    const now = new Date();
-    const startOfToday = new Date(now);
-    startOfToday.setHours(0, 0, 0, 0);
-    const endOfToday = new Date(now);
-    endOfToday.setHours(23, 59, 59, 999);
-    allTickets = allTickets.filter(t => {
-      if (!t.details) return tat === "none";
-      try {
-        const d = JSON.parse(t.details as any);
-        const hasTat = !!d.tat;
-        const tatDate = d.tatDate ? new Date(d.tatDate) : null;
+    // Filter by assignment (now synchronous since we have categoryMap)
+    if (adminStaffId) {
+      allTickets = allTickets.filter(t => {
+        // Show tickets assigned to this admin
+        if (t.assigned_to === adminStaffId) {
+          if (hasAssignment) {
+            // If admin has domain assignment, check if ticket matches
+            const ticketCategory = t.category_id 
+              ? categoryMap.get(t.category_id) || null
+              : t.category; // Fallback to legacy category field
+            return ticketMatchesAdminAssignment(
+              { category: ticketCategory, location: t.location },
+              adminAssignment
+            );
+          }
+          return true;
+        }
+        // Show unassigned tickets that match admin's domain/scope
+        if (!t.assigned_to && hasAssignment) {
+          const ticketCategory = t.category_id 
+            ? categoryMap.get(t.category_id) || null
+            : t.category;
+          return ticketMatchesAdminAssignment(
+            { category: ticketCategory, location: t.location },
+            adminAssignment
+          );
+        }
+        return false;
+      });
+    } else {
+      // If not a staff member, show no tickets (committee members might not have staff record)
+      allTickets = [];
+    }
+
+    // Search filter (searches across ID, description, user info, and subcategory)
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      allTickets = allTickets.filter(t => {
+        const idMatch = t.id.toString().includes(query);
+        const descMatch = (t.description || "").toLowerCase().includes(query);
+        // Get user info for search
+        const userMatch = false; // Will be populated if needed from users table
+        // Get subcategory from metadata
+        const metadata = (t.metadata as any) || {};
+        const subcatName = metadata.subcategory || t.subcategory || "";
+        const subcatMatch = subcatName.toLowerCase().includes(query);
+        return idMatch || descMatch || subcatMatch;
+      });
+    }
+
+    if (category) {
+      allTickets = allTickets.filter(t => {
+        const ticketCategory = t.category_id ? categoryMap.get(t.category_id) : t.category;
+        return (ticketCategory || "").toLowerCase() === category.toLowerCase();
+      });
+    }
+    if (subcategory) {
+      allTickets = allTickets.filter(t => {
+        const metadata = (t.metadata as any) || {};
+        const subcatName = metadata.subcategory || t.subcategory || "";
+        return subcatName.toLowerCase().includes(subcategory.toLowerCase());
+      });
+    }
+    if (location) {
+      allTickets = allTickets.filter(t => (t.location || "").toLowerCase().includes(location.toLowerCase()));
+    }
+    if (status) {
+      if (status.toLowerCase() === "resolved") {
+        allTickets = allTickets.filter(t => t.status === "RESOLVED" || t.status === "CLOSED");
+      } else {
+        allTickets = allTickets.filter(t => (t.status || "").toLowerCase() === status.toLowerCase());
+      }
+    }
+    if (escalated === "true") {
+      allTickets = allTickets.filter(t => (t.escalation_level || 0) > 0);
+    }
+    if (user) {
+      // Search by user - would need to join with users table for full search
+      // For now, filter by user_number (legacy) or skip
+      allTickets = allTickets.filter(t => {
+        const userNumber = t.user_number || "";
+        return userNumber.toLowerCase().includes(user.toLowerCase());
+      });
+    }
+    if (createdFrom) {
+      const from = new Date(createdFrom);
+      from.setHours(0,0,0,0);
+      allTickets = allTickets.filter(t => t.created_at ? new Date(t.created_at).getTime() >= from.getTime() : false);
+    }
+    if (createdTo) {
+      const to = new Date(createdTo);
+      to.setHours(23,59,59,999);
+      allTickets = allTickets.filter(t => t.created_at ? new Date(t.created_at).getTime() <= to.getTime() : false);
+    }
+
+    if (tat) {
+      const now = new Date();
+      const startOfToday = new Date(now);
+      startOfToday.setHours(0, 0, 0, 0);
+      const endOfToday = new Date(now);
+      endOfToday.setHours(23, 59, 59, 999);
+      allTickets = allTickets.filter(t => {
+        // Use authoritative due_at field first, fallback to metadata.tatDate
+        const dueDate = t.due_at ? new Date(t.due_at) : null;
+        const metadata = (t.metadata as any) || {};
+        const metadataTatDate = metadata.tatDate ? new Date(metadata.tatDate) : null;
+        const tatDate = dueDate || metadataTatDate;
+        const hasTat = !!tatDate;
+        
         if (tat === "has") return hasTat;
         if (tat === "none") return !hasTat;
         if (tat === "due") return hasTat && tatDate && tatDate.getTime() < now.getTime();
@@ -151,11 +217,8 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
           return hasTat && tatDate && tatDate.getTime() >= startOfToday.getTime() && tatDate.getTime() <= endOfToday.getTime();
         }
         return true;
-      } catch {
-        return tat === "none";
-      }
-    });
-  }
+      });
+    }
 
   if (sort === "oldest") {
     allTickets = [...allTickets].reverse();
@@ -163,7 +226,7 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
 
   const client = await clerkClient();
   const userList = await client.users.getUserList();
-  const users = userList.data.map(user => ({
+  const clerkUsers = userList.data.map(user => ({
     id: String(user.id || ''),
     firstName: user.firstName || null,
     lastName: user.lastName || null,
@@ -175,35 +238,34 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
       : { role: undefined },
   }));
 
-  const stats = {
-    total: allTickets.length,
-    open: allTickets.filter(t => t.status === 'open').length,
-    inProgress: allTickets.filter(t => t.status === 'in_progress').length,
-    resolved: allTickets.filter(t => t.status === 'resolved' || t.status === 'closed').length,
-    escalated: allTickets.filter(t => (Number(t.escalationCount) || 0) > 0).length,
-  };
+    const stats = {
+      total: allTickets.length,
+      open: allTickets.filter(t => t.status === 'OPEN').length,
+      inProgress: allTickets.filter(t => t.status === 'IN_PROGRESS').length,
+      resolved: allTickets.filter(t => t.status === 'RESOLVED' || t.status === 'CLOSED').length,
+      escalated: allTickets.filter(t => (t.escalation_level || 0) > 0).length,
+    };
 
-  // Calculate today pending count
-  const now = new Date();
-  const startOfToday = new Date(now);
-  startOfToday.setHours(0, 0, 0, 0);
-  const endOfToday = new Date(now);
-  endOfToday.setHours(23, 59, 59, 999);
-  const todayPending = allTickets.filter(t => {
-    const status = (t.status || "").toLowerCase();
-    if (!["open", "in_progress", "awaiting_student_response", "reopened"].includes(status)) return false;
-    try {
-      const d = t.details ? JSON.parse(String(t.details)) : {};
-      const tatDate = d.tatDate ? new Date(d.tatDate) : null;
-      if (!tatDate) return false;
+    // Calculate today pending count
+    const now = new Date();
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+    const endOfToday = new Date(now);
+    endOfToday.setHours(23, 59, 59, 999);
+    const todayPending = allTickets.filter(t => {
+      const status = (t.status || "").toUpperCase();
+      if (!["OPEN", "IN_PROGRESS", "AWAITING_STUDENT", "REOPENED"].includes(status)) return false;
+      // Use authoritative due_at field first, fallback to metadata.tatDate
+      const dueDate = t.due_at ? new Date(t.due_at) : null;
+      const metadata = (t.metadata as any) || {};
+      const metadataTatDate = metadata.tatDate ? new Date(metadata.tatDate) : null;
+      const tatDate = dueDate || metadataTatDate;
+      if (!tatDate || isNaN(tatDate.getTime())) return false;
       return tatDate.getTime() >= startOfToday.getTime() && tatDate.getTime() <= endOfToday.getTime();
-    } catch {
-      return false;
-    }
-  }).length;
+    }).length;
 
-  return (
-    <div className="space-y-8">
+    return (
+      <div className="space-y-8">
       <div>
         <div className="flex items-center justify-between mb-6">
           <div>
@@ -214,13 +276,7 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
               Manage and monitor all assigned tickets
             </p>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" asChild>
-              <Link href="/public">
-                <Globe className="w-4 h-4 mr-2" />
-                Public Dashboard
-              </Link>
-            </Button>
+          <div className="flex gap-2 flex-wrap">
             <Button variant="outline" asChild>
               <Link href="/admin/dashboard/today">
                 <Calendar className="w-4 h-4 mr-2" />

@@ -1,76 +1,220 @@
 import { auth } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
-import { db, tickets } from "@/db";
-import { desc, eq, or, like } from "drizzle-orm";
+import { db, tickets, users, categories, subcategories, sub_subcategories } from "@/db";
+import { eq, ilike, and, or, sql, asc, desc } from "drizzle-orm";
+
 import { TicketCard } from "@/components/layout/TicketCard";
-import { TicketSearch } from "@/components/student/TicketSearch";
 import { Card, CardContent } from "@/components/ui/card";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Plus, Search } from "lucide-react";
+import { Plus } from "lucide-react";
 import { StatsCards } from "@/components/dashboard/StatsCards";
+import { getOrCreateUser } from "@/lib/user-sync";
+import { TicketSearchWrapper } from "@/components/student/TicketSearchWrapper";
+import { getCategoriesHierarchy } from "@/lib/filters/getCategoriesHierarchy";
+import { getTicketStatuses } from "@/lib/status/getTicketStatuses";
 
-export default async function StudentDashboardPage({ 
-  searchParams 
-}: { 
-  searchParams?: Record<string, string | undefined> 
+export default async function StudentDashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  const { userId, sessionClaims } = await auth();
+  // -----------------------------
+  // 1. Auth + Get DB User
+  // -----------------------------
+  const { userId } = await auth();
+  const dbUser = await getOrCreateUser(userId!);
 
-  if (!userId) {
-    redirect("/");
-  }
-
-  const userNumber = (sessionClaims?.metadata as { userNumber?: string } | undefined)?.userNumber;
-  
-  if (!userNumber) {
-    redirect("/profile");
-  }
-
-  const params = searchParams || {};
-  const search = params.search || "";
-  const statusFilter = params.status || "";
-  const categoryFilter = params.category || "";
-
-  let allTickets = await db
-    .select()
-    .from(tickets)
-    .where(eq(tickets.userNumber, userNumber))
-    .orderBy(desc(tickets.createdAt));
-
-  // Apply filters
-  if (search) {
-    const searchLower = search.toLowerCase();
-    allTickets = allTickets.filter(t => 
-      t.id.toString().includes(search) ||
-      (t.description || "").toLowerCase().includes(searchLower) ||
-      (t.subcategory || "").toLowerCase().includes(searchLower)
+  if (!dbUser) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center space-y-4">
+          <h2 className="text-2xl font-bold text-destructive">Account Error</h2>
+          <p className="text-muted-foreground">
+            Your account could not be found. Please contact support.
+          </p>
+        </div>
+      </div>
     );
   }
 
-  if (statusFilter) {
-    if (statusFilter === "resolved") {
-      allTickets = allTickets.filter(t => t.status === "resolved" || t.status === "closed");
-    } else {
-      allTickets = allTickets.filter(t => t.status === statusFilter);
+  // -----------------------------
+  // 2. Parse URL params
+  // -----------------------------
+  const params = (await searchParams) ?? {};
+  const search = params.search ?? "";
+  const statusFilter = params.status ?? "";
+  const categoryFilter = params.category ?? "";
+  const subcategoryFilter = params.subcategory ?? "";
+  const subSubcategoryFilter = params.sub_subcategory ?? "";
+  const sortBy = params.sort ?? "newest";
+
+  // -----------------------------
+  // 3. Build SQL conditions
+  // -----------------------------
+  const conditions = [eq(tickets.created_by, dbUser.id)];
+
+  // Search
+  if (search) {
+    const value = `%${search}%`;
+    const searchConditions = [
+      ilike(tickets.description, value),
+      ilike(categories.name, value),
+      sql`tickets.id::text ILIKE ${value}`,
+    ].filter(Boolean);
+
+    if (searchConditions.length > 0) {
+      conditions.push(or(...searchConditions)!);
     }
   }
 
-  if (categoryFilter) {
-    allTickets = allTickets.filter(t => t.category === categoryFilter);
+  // Status Filter
+  if (statusFilter) {
+    const s = statusFilter.toUpperCase();
+
+    if (s === "ESCALATED") {
+      conditions.push(sql`${tickets.escalation_level} > 0`);
+    } else if (s === "RESOLVED") {
+      conditions.push(eq(tickets.status, "RESOLVED"));
+    } else {
+      conditions.push(eq(tickets.status, s as any));
+    }
   }
 
-  // Calculate stats
-  const stats = {
-    total: allTickets.length,
-    open: allTickets.filter(t => t.status === "open").length,
-    inProgress: allTickets.filter(t => t.status === "in_progress").length,
-    resolved: allTickets.filter(t => t.status === "resolved" || t.status === "closed").length,
-    escalated: allTickets.filter(t => (Number(t.escalationCount) || 0) > 0).length,
-  };
+  // Category Filter (slug-based)
+  if (categoryFilter) {
+    conditions.push(ilike(categories.slug, categoryFilter.toLowerCase()));
+  }
 
+  // Subcategory Filter (slug-based -> metadata ID)
+  if (subcategoryFilter) {
+    const [sub] = await db
+      .select({ id: subcategories.id })
+      .from(subcategories)
+      .where(eq(subcategories.slug, subcategoryFilter))
+      .limit(1);
+
+    if (sub) {
+      conditions.push(sql`metadata->>'subcategoryId' = ${String(sub.id)}`);
+    }
+  }
+
+  // Sub-subcategory Filter (slug-based -> metadata ID)
+  if (subSubcategoryFilter) {
+    const [subSub] = await db
+      .select({ id: sub_subcategories.id })
+      .from(sub_subcategories)
+      .where(eq(sub_subcategories.slug, subSubcategoryFilter))
+      .limit(1);
+
+    if (subSub) {
+      conditions.push(sql`metadata->>'subSubcategoryId' = ${String(subSub.id)}`);
+    }
+  }
+
+  // Dynamic Field Filters (f_ prefix)
+  const dynamicFilters = Object.entries(params).filter(([key]) => key.startsWith("f_"));
+
+  for (const [key, value] of dynamicFilters) {
+    if (typeof value === 'string' && value) {
+      const fieldSlug = key.replace("f_", "");
+      // Query: metadata->'dynamic_fields'->fieldSlug->>'value' = value
+      // We use sql injection safe parameterization
+      conditions.push(sql`metadata->'dynamic_fields'->${fieldSlug}->>'value' = ${value}`);
+    }
+  }
+
+  // -----------------------------
+  // 4. SQL Sorting
+  // -----------------------------
+  let orderBy: any;
+
+  switch (sortBy) {
+    case "oldest":
+      orderBy = asc(tickets.created_at);
+      break;
+
+    case "due-date":
+      orderBy = asc(tickets.due_at);
+      break;
+
+    case "status":
+      orderBy = sql`
+        CASE 
+          WHEN ${tickets.status}='OPEN' THEN 1
+          WHEN ${tickets.status}='IN_PROGRESS' THEN 2
+          WHEN ${tickets.status}='AWAITING_STUDENT' THEN 3
+          WHEN ${tickets.status}='REOPENED' THEN 4
+          WHEN ${tickets.status}='ESCALATED' THEN 5
+          WHEN ${tickets.status}='RESOLVED' THEN 6
+        END
+      `;
+      break;
+
+    default:
+      orderBy = desc(tickets.created_at);
+  }
+
+  // -----------------------------
+  // 5. Fetch Filtered Tickets
+  // -----------------------------
+  const allTickets = await db
+    .select({
+      id: tickets.id,
+      description: tickets.description,
+      status: tickets.status,
+      location: tickets.location,
+      created_by: tickets.created_by,
+      category_id: tickets.category_id,
+      created_at: tickets.created_at,
+      updated_at: tickets.updated_at,
+      due_at: tickets.due_at,
+      escalation_level: tickets.escalation_level,
+      metadata: tickets.metadata,
+      resolved_at: tickets.resolved_at,
+      rating: tickets.rating,
+      feedback: tickets.feedback,
+
+      category_name: categories.name,
+      creator_name: users.name,
+      creator_email: users.email,
+    })
+    .from(tickets)
+    .leftJoin(categories, eq(tickets.category_id, categories.id))
+    .leftJoin(users, eq(tickets.created_by, users.id))
+    .where(and(...conditions))
+    .orderBy(orderBy);
+
+  // -----------------------------
+  // 6. Stats Query (Optimized)
+  // -----------------------------
+  const statsResult = await db
+    .select({
+      total: sql<number>`COUNT(*)`,
+      open: sql<number>`SUM(CASE WHEN ${tickets.status}='OPEN' THEN 1 ELSE 0 END)`,
+      inProgress: sql<number>`SUM(CASE WHEN ${tickets.status} IN ('IN_PROGRESS','ESCALATED') THEN 1 ELSE 0 END)`,
+      awaitingStudent: sql<number>`SUM(CASE WHEN ${tickets.status}='AWAITING_STUDENT' THEN 1 ELSE 0 END)`,
+      resolved: sql<number>`SUM(CASE WHEN ${tickets.status}='RESOLVED' THEN 1 ELSE 0 END)`,
+      escalated: sql<number>`SUM(CASE WHEN ${tickets.escalation_level} > 0 THEN 1 ELSE 0 END)`,
+    })
+    .from(tickets)
+    .where(eq(tickets.created_by, dbUser.id));
+
+  const stats = statsResult[0];
+
+  // -----------------------------
+  // Fetch categories hierarchy and statuses for search UI
+  // -----------------------------
+  const [categoryList, ticketStatuses] = await Promise.all([
+    getCategoriesHierarchy(),
+    getTicketStatuses(),
+  ]);
+
+  // -----------------------------
+  // 7. UI Render
+  // -----------------------------
   return (
     <div className="space-y-8">
+      {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-4xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text">
@@ -81,11 +225,6 @@ export default async function StudentDashboardPage({
           </p>
         </div>
         <div className="flex gap-3">
-          <Link href="/public">
-            <Button variant="outline" className="shadow-sm">
-              Public Dashboard
-            </Button>
-          </Link>
           <Link href="/student/dashboard/ticket/new">
             <Button className="shadow-md hover:shadow-lg transition-shadow">
               <Plus className="w-4 h-4 mr-2" />
@@ -95,16 +234,21 @@ export default async function StudentDashboardPage({
         </div>
       </div>
 
-      {/* Stats Cards */}
-      {allTickets.length > 0 && <StatsCards stats={stats} />}
+      {/* Stats */}
+      {stats.total > 0 && <StatsCards stats={stats} />}
 
-      {/* Search and Filters */}
+      {/* Search + Filters */}
       <Card className="border-2">
         <CardContent className="p-6">
-          <TicketSearch />
+          <TicketSearchWrapper
+            categories={categoryList}
+            currentSort={sortBy}
+            statuses={ticketStatuses}
+          />
         </CardContent>
       </Card>
 
+      {/* No Tickets */}
       {allTickets.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 px-4 border-2 border-dashed rounded-lg bg-muted/30">
           <div className="text-center space-y-3">
@@ -113,9 +257,13 @@ export default async function StudentDashboardPage({
             </div>
             <h3 className="text-lg font-semibold">No tickets yet</h3>
             <p className="text-muted-foreground max-w-sm">
-              Get started by creating your first support ticket. We're here to help!
+              Get started by creating your first support ticket. We're here to
+              help!
             </p>
-            <Link href="/student/dashboard/ticket/new" className="inline-block mt-4">
+            <Link
+              href="/student/dashboard/ticket/new"
+              className="inline-block mt-4"
+            >
               <Button>
                 <Plus className="w-4 h-4 mr-2" />
                 Create Your First Ticket
@@ -126,11 +274,10 @@ export default async function StudentDashboardPage({
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {allTickets.map((ticket) => (
-            <TicketCard key={ticket.id} ticket={ticket} />
+            <TicketCard key={ticket.id} ticket={ticket as any} />
           ))}
         </div>
       )}
     </div>
   );
 }
-

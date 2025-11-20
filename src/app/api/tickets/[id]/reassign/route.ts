@@ -5,20 +5,39 @@ import { eq } from "drizzle-orm";
 import { postThreadReply } from "@/lib/slack";
 import { sendEmail, getStudentEmail } from "@/lib/email";
 import { ReassignTicketSchema } from "@/schema/ticket.schema";
+import { getUserRoleFromDB } from "@/lib/db-roles";
+import { getOrCreateUser } from "@/lib/user-sync";
+
+/**
+ * ============================================
+ * /api/tickets/[id]/reassign
+ * ============================================
+ * 
+ * POST → Reassign Ticket
+ *   - Auth: Required (Admin only)
+ *   - Reassign ticket to different staff member
+ *   - Body: { staffId: string (UUID), reason: string (optional) }
+ *   - Notifies both old and new assignee
+ *   - Returns: 200 OK with updated ticket
+ * ============================================
+ */
 
 export async function POST(
 	request: NextRequest,
 	{ params }: { params: Promise<{ id: string }> }
 ) {
 	try {
-		const { userId, sessionClaims } = await auth();
+		const { userId } = await auth();
 		
 		if (!userId) {
 			return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 		}
 
-		// Check if user is admin
-		const role = sessionClaims?.metadata?.role;
+		// Ensure user exists in database
+		await getOrCreateUser(userId);
+
+		// Get role from database (single source of truth)
+		const role = await getUserRoleFromDB(userId);
 		const isAdmin = role === "admin" || role === "super_admin";
 		
 		if (!isAdmin) {

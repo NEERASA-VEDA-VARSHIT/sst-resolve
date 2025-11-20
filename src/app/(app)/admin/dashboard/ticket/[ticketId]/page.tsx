@@ -4,335 +4,455 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Calendar, ArrowLeft, User, MapPin, FileText, Clock, AlertTriangle, Image as ImageIcon, MessageSquare } from "lucide-react";
-import { db, tickets } from "@/db";
-import { eq, or, isNull, and } from "drizzle-orm";
+import { db, tickets, categories, users, staff } from "@/db";
+import { eq } from "drizzle-orm";
 import { AdminActions } from "@/components/tickets/AdminActions";
+import { CommitteeTagging } from "@/components/admin/CommitteeTagging";
+import { SlackThreadView } from "@/components/tickets/SlackThreadView";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { getUserRoleFromDB } from "@/lib/db-roles";
+import { getOrCreateUser } from "@/lib/user-sync";
+import { enumToStatus } from "@/db/status-mapper";
+import { normalizeStatusForComparison, formatStatus } from "@/lib/utils";
+import { getAdminAssignment, ticketMatchesAdminAssignment } from "@/lib/admin-assignment";
 
 export default async function AdminTicketPage({ params }: { params: Promise<{ ticketId: string }> }) {
-  const { userId, sessionClaims } = await auth();
-  if (!userId) redirect("/");
-  const role = sessionClaims?.metadata?.role;
-  if (role !== "admin" && role !== "super_admin") redirect("/student/dashboard");
+  try {
+    const { userId } = await auth();
+    if (!userId) redirect("/");
 
-  const { ticketId } = await params;
-  const id = Number(ticketId);
-  if (!Number.isFinite(id)) notFound();
+    // Ensure user exists in database
+    const dbUser = await getOrCreateUser(userId);
+    if (!dbUser) {
+      console.error("[AdminTicketPage] Failed to create/fetch user");
+      redirect("/");
+    }
 
-  // Admin can view tickets assigned to them or unassigned that match their domain/scope; super_admin can view any
-  let row;
-  if (role === "super_admin") {
-    row = await db.select().from(tickets).where(eq(tickets.id, id)).limit(1);
-  } else {
-    // Get admin's domain/scope assignment
-    const { getAdminAssignment, ticketMatchesAdminAssignment } = await import("@/lib/admin-assignment");
-    const adminAssignment = await getAdminAssignment(userId);
+    // Get role from database (single source of truth)
+    const role = await getUserRoleFromDB(userId);
+    if (role !== "admin" && role !== "super_admin") {
+      redirect("/student/dashboard");
+    }
 
-    // Fetch ticket
-    row = await db
-      .select()
+    const { ticketId } = await params;
+    const id = Number(ticketId);
+    if (!Number.isFinite(id) || id <= 0 || !Number.isInteger(id)) {
+      notFound();
+    }
+
+    // Fetch ticket with joins for category, creator, and assigned staff
+    const ticketRows = await db
+      .select({
+        id: tickets.id,
+        status: tickets.status,
+        description: tickets.description,
+        location: tickets.location,
+        created_by: tickets.created_by,
+        category_id: tickets.category_id,
+        assigned_to: tickets.assigned_to,
+        escalation_level: tickets.escalation_level,
+        metadata: tickets.metadata,
+        due_at: tickets.due_at,
+        created_at: tickets.created_at,
+        updated_at: tickets.updated_at,
+        resolved_at: tickets.resolved_at,
+        category_name: categories.name,
+        creator_name: users.name,
+        creator_email: users.email,
+        assigned_staff_id: staff.id,
+      })
       .from(tickets)
+      .leftJoin(categories, eq(tickets.category_id, categories.id))
+      .leftJoin(users, eq(tickets.created_by, users.id))
+      .leftJoin(staff, eq(tickets.assigned_to, staff.id))
       .where(eq(tickets.id, id))
       .limit(1);
 
-    if (row.length === 0) notFound();
-    const ticket = row[0];
+    if (ticketRows.length === 0) notFound();
+    const ticket = ticketRows[0];
 
     // Check if admin can view this ticket
-    const canView = 
-      ticket.assignedTo === userId || // Assigned to this admin
-      (!ticket.assignedTo && (!adminAssignment.domain || ticketMatchesAdminAssignment(
-        { category: ticket.category, location: ticket.location },
-        adminAssignment
-      ))); // Unassigned and matches admin's domain/scope
+    if (role !== "super_admin") {
+      // Get admin's staff record
+      const dbUser = await getOrCreateUser(userId);
+      const adminStaff = await db
+        .select({ id: staff.id })
+        .from(staff)
+        .where(eq(staff.user_id, dbUser.id))
+        .limit(1);
 
-    if (!canView) {
-      notFound(); // Admin cannot view this ticket
+      if (adminStaff.length === 0) {
+        notFound(); // Admin not found in staff table
+      }
+
+      const adminStaffId = adminStaff[0].id;
+
+      // Get admin's domain/scope assignment
+      const adminAssignment = await getAdminAssignment(userId);
+
+      // Check authorization:
+      // 1. Can view if ticket is assigned to them
+      // 2. Can view if ticket is unassigned AND matches their domain/scope
+      // 3. Cannot view tickets assigned to other admins
+      const isAssignedToAdmin = ticket.assigned_to === adminStaffId;
+      const isUnassigned = ticket.assigned_to === null;
+
+      let canView = false;
+
+      if (isAssignedToAdmin) {
+        // Ticket assigned to this admin - always allow
+        canView = true;
+      } else if (isUnassigned) {
+        // Unassigned ticket - check if it matches admin's domain/scope
+        const ticketCategory = ticket.category_name || null;
+        const ticketLocation = ticket.location || null;
+        canView = ticketMatchesAdminAssignment(
+          { category: ticketCategory, location: ticketLocation },
+          adminAssignment
+        );
+      } else {
+        // Ticket assigned to another admin - deny access
+        canView = false;
+      }
+
+      if (!canView) {
+        notFound(); // Admin cannot view this ticket
+      }
     }
-  }
-  if (row.length === 0) notFound();
-  const ticket = row[0];
 
-  // Parse details JSON
-  let details: any = {};
-  try {
-    details = ticket.details ? JSON.parse(ticket.details) : {};
-  } catch {
-    details = {};
-  }
+    // Parse metadata (JSONB) with error handling
+    let metadata: Record<string, any> = {};
+    let subcategory: string | null = null;
+    let comments: any[] = [];
 
-  const getStatusBadgeClass = (status: string | null | undefined) => {
-    if (!status) return "bg-muted text-foreground";
-    switch (status) {
-      case "open":
-        return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 border-transparent";
-      case "reopened":
-        return "bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200 border-transparent";
-      case "in_progress":
-        return "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200 border-transparent";
-      case "awaiting_student_response":
-        return "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200 border-transparent";
-      case "resolved":
-        return "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200 border-transparent";
-      case "closed":
-        return "bg-gray-200 text-gray-800 dark:bg-gray-800 dark:text-gray-200 border-transparent";
-      default:
-        return "bg-muted text-foreground";
+    try {
+      if (ticket.metadata && typeof ticket.metadata === "object") {
+        metadata = ticket.metadata as Record<string, any>;
+        subcategory = typeof metadata?.subcategory === "string" ? metadata.subcategory : null;
+        comments = Array.isArray(metadata?.comments) ? metadata.comments : [];
+      }
+    } catch (error) {
+      console.error("[AdminTicketPage] Error parsing metadata:", error);
+      // Continue with empty metadata on error
     }
-  };
 
-  // Check for TAT
-  const tatDate = details.tatDate ? new Date(details.tatDate) : null;
-  const hasTATDue = tatDate && tatDate.getTime() < new Date().getTime();
-  const isTATToday = tatDate && tatDate.toDateString() === new Date().toDateString();
+    // Normalize status for comparisons
+    const normalizedStatus = normalizeStatusForComparison(ticket.status);
 
-  return (
-    <div className="max-w-5xl mx-auto p-6 space-y-6">
-      <Link href="/admin/dashboard">
-        <Button variant="ghost" className="mb-4">
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Back to Tickets
-        </Button>
-      </Link>
+    const getStatusBadgeClass = (status: string | null | undefined) => {
+      const normalized = normalizeStatusForComparison(status);
+      if (!normalized) return "bg-muted text-foreground";
+      switch (normalized) {
+        case "open":
+          return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 border-transparent";
+        case "reopened":
+          return "bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200 border-transparent";
+        case "in_progress":
+          return "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200 border-transparent";
+        case "awaiting_student_response":
+          return "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200 border-transparent";
+        case "resolved":
+          return "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200 border-transparent";
+        case "closed":
+          return "bg-gray-200 text-gray-800 dark:bg-gray-800 dark:text-gray-200 border-transparent";
+        default:
+          return "bg-muted text-foreground";
+      }
+    };
 
-      {/* Header Card */}
-      <Card className="border-2">
-        <CardHeader>
-          <div className="flex items-center justify-between flex-wrap gap-4">
-            <div>
-              <CardTitle className="text-3xl font-bold mb-2">Ticket #{ticket.id}</CardTitle>
-              {ticket.subcategory && (
-                <p className="text-muted-foreground">{ticket.subcategory}</p>
-              )}
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              {ticket.status && (
-                <Badge variant="outline" className={`${getStatusBadgeClass(ticket.status)} text-sm px-3 py-1`}>
-                  {ticket.status.replaceAll("_", " ")}
-                </Badge>
-              )}
-              {ticket.escalationCount && ticket.escalationCount !== "0" && (
-                <Badge variant="destructive" className="text-sm px-3 py-1">
-                  <AlertTriangle className="w-3 h-3 mr-1" />
-                  Escalated × {ticket.escalationCount}
-                </Badge>
-              )}
-              <Badge variant="outline" className="text-sm px-3 py-1">{ticket.category}</Badge>
-            </div>
-          </div>
-        </CardHeader>
-      </Card>
+    // Check for TAT
+    const tatDate = ticket.due_at || (metadata?.tatDate ? new Date(metadata.tatDate) : null);
+    const hasTATDue = tatDate && tatDate.getTime() < new Date().getTime();
+    const isTATToday = tatDate && tatDate.toDateString() === new Date().toDateString();
 
-      {/* TAT Alert */}
-      {(hasTATDue || isTATToday) && (
-        <Card className={`border-2 ${hasTATDue ? 'border-red-200 dark:border-red-900 bg-red-50/50 dark:bg-red-950/20' : 'border-amber-200 dark:border-amber-900 bg-amber-50/50 dark:bg-amber-950/20'}`}>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className={`w-5 h-5 ${hasTATDue ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'}`} />
+    return (
+      <div className="max-w-5xl mx-auto p-6 space-y-6">
+        <Link href="/admin/dashboard">
+          <Button variant="ghost" className="mb-4">
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to Tickets
+          </Button>
+        </Link>
+
+        {/* Header Card */}
+        <Card className="border-2">
+          <CardHeader>
+            <div className="flex items-center justify-between flex-wrap gap-4">
               <div>
-                <p className={`font-semibold ${hasTATDue ? 'text-red-700 dark:text-red-300' : 'text-amber-700 dark:text-amber-300'}`}>
-                  {hasTATDue ? 'TAT Overdue' : 'TAT Due Today'}
-                </p>
-                {tatDate && (
-                  <p className="text-sm text-muted-foreground">
-                    Target resolution date: {tatDate.toLocaleDateString()}
-                  </p>
+                <CardTitle className="text-3xl font-bold mb-2">Ticket #{ticket.id}</CardTitle>
+                {subcategory && (
+                  <p className="text-muted-foreground">{subcategory}</p>
                 )}
               </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Ticket Details */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
-          <Card className="border-2">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="w-5 h-5" />
-                Description
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="whitespace-pre-wrap text-base leading-relaxed">
-                {ticket.description || "No description provided"}
-              </p>
-              
-              {/* Display Images if available */}
-              {details.images && Array.isArray(details.images) && details.images.length > 0 && (
-                <div className="space-y-2 pt-4 border-t">
-                  <div className="flex items-center gap-2">
-                    <ImageIcon className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm font-semibold text-muted-foreground">Attached Images</span>
-                  </div>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                    {details.images.map((imageUrl: string, index: number) => (
-                      <a
-                        key={index}
-                        href={imageUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="relative group aspect-square rounded-lg overflow-hidden border-2 border-border hover:border-primary transition-colors"
-                      >
-                        <img
-                          src={imageUrl}
-                          alt={`Ticket image ${index + 1}`}
-                          className="w-full h-full object-cover"
-                        />
-                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
-                      </a>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Comments Section */}
-          <Card className="border-2">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <MessageSquare className="w-5 h-5" />
-                Comments
-                {Array.isArray(details?.comments) && details.comments.length > 0 && (
-                  <Badge variant="secondary" className="ml-2">
-                    {details.comments.length}
+              <div className="flex items-center gap-2 flex-wrap">
+                {ticket.status && (
+                  <Badge variant="outline" className={`${getStatusBadgeClass(ticket.status)} text-sm px-3 py-1`}>
+                    {formatStatus(enumToStatus(ticket.status))}
                   </Badge>
                 )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {Array.isArray(details?.comments) && details.comments.length > 0 ? (
-                <div className="space-y-3">
-                  {details.comments.map((comment: any, idx: number) => {
-                    const isInternal = comment.isInternal || comment.type === "internal_note" || comment.type === "super_admin_note";
-                    return (
-                      <Card key={idx} className={`border ${isInternal ? 'bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800' : 'bg-muted/30'}`}>
-                        <CardContent className="p-4">
-                          {isInternal && (
-                            <Badge variant="outline" className="mb-2 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-700">
-                              Internal Note
-                            </Badge>
-                          )}
-                          <p className="text-base whitespace-pre-wrap leading-relaxed mb-3">
-                            {comment.text}
-                          </p>
-                          <Separator className="my-2" />
-                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                            {comment.author && (
-                              <div className="flex items-center gap-1">
-                                <User className="w-3 h-3" />
-                                <span className="font-medium">{comment.author}</span>
-                              </div>
-                            )}
-                            {comment.createdAt && (
-                              <>
-                                <span>•</span>
-                                <div className="flex items-center gap-1">
-                                  <Calendar className="w-3 h-3" />
-                                  <span>{new Date(comment.createdAt).toLocaleString()}</span>
-                                </div>
-                              </>
-                            )}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="text-center py-8 text-muted-foreground">
-                  <MessageSquare className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                  <p>No comments yet</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Admin Actions */}
-          <Card className="border-2">
-            <CardHeader>
-              <CardTitle>Actions</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <AdminActions
-                ticketId={ticket.id}
-                currentStatus={ticket.status || "open"}
-                hasTAT={!!details.tat}
-                isPublic={ticket.isPublic === "true"}
-                isSuperAdmin={false}
-                ticketCategory={ticket.category}
-                ticketLocation={ticket.location}
-                currentAssignedTo={ticket.assignedTo}
-              />
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Sidebar */}
-        <div className="space-y-6">
-          <Card className="border-2">
-            <CardHeader>
-              <CardTitle>Ticket Information</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <label className="text-sm font-medium text-muted-foreground flex items-center gap-2 mb-1">
-                  <User className="w-4 h-4" />
-                  User Number
-                </label>
-                <p className="text-base font-medium">{ticket.userNumber}</p>
+                {ticket.escalation_level && ticket.escalation_level > 0 && (
+                  <Badge variant="destructive" className="text-sm px-3 py-1">
+                    <AlertTriangle className="w-3 h-3 mr-1" />
+                    Escalated × {ticket.escalation_level}
+                  </Badge>
+                )}
+                <Badge variant="outline" className="text-sm px-3 py-1">{ticket.category_name || "Unknown"}</Badge>
               </div>
-              {ticket.location && (
-                <>
-                  <Separator />
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground flex items-center gap-2 mb-1">
-                      <MapPin className="w-4 h-4" />
-                      Location
-                    </label>
-                    <p className="text-base font-medium">{ticket.location}</p>
-                  </div>
-                </>
-              )}
-              <Separator />
-              <div>
-                <label className="text-sm font-medium text-muted-foreground flex items-center gap-2 mb-1">
-                  <Calendar className="w-4 h-4" />
-                  Created
-                </label>
-                <p className="text-base font-medium">
-                  {ticket.createdAt?.toLocaleDateString('en-US', { 
-                    year: 'numeric', 
-                    month: 'long', 
-                    day: 'numeric' 
-                  })}
+            </div>
+          </CardHeader>
+        </Card>
+
+        {/* TAT Alert */}
+        {(hasTATDue || isTATToday) && (
+          <Card className={`border-2 ${hasTATDue ? 'border-red-200 dark:border-red-900 bg-red-50/50 dark:bg-red-950/20' : 'border-amber-200 dark:border-amber-900 bg-amber-50/50 dark:bg-amber-950/20'}`}>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className={`w-5 h-5 ${hasTATDue ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'}`} />
+                <div>
+                  <p className={`font-semibold ${hasTATDue ? 'text-red-700 dark:text-red-300' : 'text-amber-700 dark:text-amber-300'}`}>
+                    {hasTATDue ? 'TAT Overdue' : 'TAT Due Today'}
+                  </p>
+                  {tatDate && (
+                    <p className="text-sm text-muted-foreground">
+                      Target resolution date: {tatDate.toLocaleDateString()}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Ticket Details */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 space-y-6">
+            <Card className="border-2">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="w-5 h-5" />
+                  Description
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="whitespace-pre-wrap text-base leading-relaxed">
+                  {ticket.description || "No description provided"}
                 </p>
-              </div>
-              {details.tat && (
-                <>
-                  <Separator />
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground flex items-center gap-2 mb-1">
-                      <Clock className="w-4 h-4" />
-                      TAT
-                    </label>
-                    <p className="text-base font-medium">{details.tat}</p>
-                    {tatDate && (
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Due: {tatDate.toLocaleDateString()}
-                      </p>
-                    )}
+
+                {/* Display Images if available */}
+                {metadata.images && Array.isArray(metadata.images) && metadata.images.length > 0 && (
+                  <div className="space-y-2 pt-4 border-t">
+                    <div className="flex items-center gap-2">
+                      <ImageIcon className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-sm font-semibold text-muted-foreground">Attached Images</span>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      {metadata.images
+                        .filter((url: any) => typeof url === "string" && url.trim().length > 0)
+                        .map((imageUrl: string, index: number) => (
+                          <a
+                            key={index}
+                            href={imageUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="relative group aspect-square rounded-lg overflow-hidden border-2 border-border hover:border-primary transition-colors"
+                          >
+                            <img
+                              src={imageUrl}
+                              alt={`Ticket image ${index + 1}`}
+                              className="w-full h-full object-cover"
+                              loading="lazy"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = "none";
+                              }}
+                            />
+                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
+                          </a>
+                        ))}
+                    </div>
                   </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Comments Section */}
+            <Card className="border-2">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <MessageSquare className="w-5 h-5" />
+                  Comments
+                  {comments.length > 0 && (
+                    <Badge variant="secondary" className="ml-2">
+                      {comments.length}
+                    </Badge>
+                  )}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {comments.length > 0 ? (
+                  <div className="space-y-3">
+                    {comments.map((comment: any, idx: number) => {
+                      if (!comment || typeof comment !== "object") return null;
+                      const isInternal = comment.isInternal || comment.type === "internal_note" || comment.type === "super_admin_note";
+                      const commentText = typeof comment.text === "string" ? comment.text : "";
+                      const author = typeof comment.author === "string" ? comment.author : null;
+                      let createdAt: Date | null = null;
+
+                      try {
+                        if (comment.createdAt) {
+                          createdAt = new Date(comment.createdAt);
+                          if (isNaN(createdAt.getTime())) createdAt = null;
+                        }
+                      } catch {
+                        // Invalid date, continue without showing it
+                      }
+
+                      return (
+                        <Card key={idx} className={`border ${isInternal ? 'bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800' : 'bg-muted/30'}`}>
+                          <CardContent className="p-4">
+                            {isInternal && (
+                              <Badge variant="outline" className="mb-2 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-700">
+                                Internal Note
+                              </Badge>
+                            )}
+                            <p className="text-base whitespace-pre-wrap leading-relaxed mb-3">
+                              {commentText || "No comment text"}
+                            </p>
+                            <Separator className="my-2" />
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              {author && (
+                                <div className="flex items-center gap-1">
+                                  <User className="w-3 h-3" />
+                                  <span className="font-medium">{author}</span>
+                                </div>
+                              )}
+                              {createdAt && (
+                                <>
+                                  {author && <span>•</span>}
+                                  <div className="flex items-center gap-1">
+                                    <Calendar className="w-3 h-3" />
+                                    <span>{createdAt.toLocaleString()}</span>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <MessageSquare className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                    <p>No comments yet</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Admin Actions */}
+            <Card className="border-2">
+              <CardHeader>
+                <CardTitle>Actions</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <AdminActions
+                  ticketId={ticket.id}
+                  currentStatus={enumToStatus(ticket.status) || "open"}
+                  hasTAT={!!ticket.due_at || !!metadata?.tat}
+                  isSuperAdmin={role === "super_admin"}
+                  ticketCategory={ticket.category_name || null}
+                  ticketLocation={ticket.location}
+                  currentAssignedTo={ticket.assigned_staff_id || null}
+                />
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Sidebar */}
+          <div className="space-y-6">
+            <Card className="border-2">
+              <CardHeader>
+                <CardTitle>Ticket Information</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground flex items-center gap-2 mb-1">
+                    <User className="w-4 h-4" />
+                    Created By
+                  </label>
+                  <p className="text-base font-medium">{ticket.creator_name || ticket.creator_email || "Unknown"}</p>
+                  {ticket.creator_email && (
+                    <p className="text-xs text-muted-foreground mt-1">{ticket.creator_email}</p>
+                  )}
+                </div>
+                {ticket.location && (
+                  <>
+                    <Separator />
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground flex items-center gap-2 mb-1">
+                        <MapPin className="w-4 h-4" />
+                        Location
+                      </label>
+                      <p className="text-base font-medium">{ticket.location}</p>
+                    </div>
+                  </>
+                )}
+                <Separator />
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground flex items-center gap-2 mb-1">
+                    <Calendar className="w-4 h-4" />
+                    Created
+                  </label>
+                  <p className="text-base font-medium">
+                    {ticket.created_at?.toLocaleDateString('en-US', {
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric'
+                    })}
+                  </p>
+                </div>
+                {tatDate && (
+                  <>
+                    <Separator />
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground flex items-center gap-2 mb-1">
+                        <Clock className="w-4 h-4" />
+                        TAT Due Date
+                      </label>
+                      <p className="text-base font-medium">{tatDate.toLocaleDateString()}</p>
+                      {hasTATDue && (
+                        <p className="text-xs text-red-600 dark:text-red-400 mt-1 font-medium">
+                          Overdue
+                        </p>
+                      )}
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Committee Tagging */}
+            <Card className="border-2">
+              <CardHeader>
+                <CardTitle>Committee Tags</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <CommitteeTagging ticketId={ticket.id} />
+              </CardContent>
+            </Card>
+
+            {/* Slack Thread */}
+            <SlackThreadView
+              ticketId={ticket.id}
+              slackThreadId={ticket.slack_thread_id || undefined}
+            />
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  } catch (error) {
+    console.error("[AdminTicketPage] Error:", error);
+    notFound();
+  }
 }
-

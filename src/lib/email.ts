@@ -5,18 +5,31 @@ import { eq } from "drizzle-orm";
 
 import { escapeHtml } from "@/utils";
 
-// Helper function to get student email by user number
-export async function getStudentEmail(userNumber: string): Promise<string | null> {
+// Helper function to get student email by roll number or user_id
+export async function getStudentEmail(rollNoOrUserId: string): Promise<string | null> {
 	try {
+		// Try to find by roll_no first
 		const [student] = await db
-			.select({ email: students.email })
+			.select({ user_id: students.user_id })
 			.from(students)
-			.where(eq(students.userNumber, userNumber))
+			.where(eq(students.roll_no, rollNoOrUserId))
 			.limit(1);
 
-		return student?.email || null;
+		if (!student) {
+			return null;
+		}
+
+		// Get email from users table
+		const { users } = await import("@/db");
+		const [user] = await db
+			.select({ email: users.email })
+			.from(users)
+			.where(eq(users.id, student.user_id))
+			.limit(1);
+
+		return user?.email || null;
 	} catch (error) {
-		console.error(`Error fetching student email for ${userNumber}:`, error);
+		console.error(`Error fetching student email for ${rollNoOrUserId}:`, error);
 		return null;
 	}
 }
@@ -65,6 +78,7 @@ export interface EmailOptions {
 	html: string;
 	ticketId?: number; // Optional ticket ID for email threading
 	threadMessageId?: string; // Optional Message-ID to thread replies
+	originalSubject?: string; // Optional original subject for threading replies
 }
 
 // Generate a consistent Message-ID for a ticket
@@ -172,7 +186,28 @@ export async function sendEmail({ to, subject, html, ticketId, threadMessageId, 
 }
 
 // Email templates
-export function getTicketCreatedEmail(ticketId: number, category: string, subcategory: string, description?: string) {
+export function getTicketCreatedEmail(
+	ticketId: number, 
+	category: string, 
+	subcategory: string, 
+	description?: string,
+	contactName?: string,
+	contactPhone?: string,
+	roomNumber?: string,
+	batchYear?: number,
+	classSection?: string
+) {
+	const contactInfo = [];
+	if (contactName) contactInfo.push(`<p><strong>Name:</strong> ${escapeHtml(contactName)}</p>`);
+	if (contactPhone) contactInfo.push(`<p><strong>Phone:</strong> ${escapeHtml(contactPhone)}</p>`);
+	if (category === "Hostel" && roomNumber) {
+		contactInfo.push(`<p><strong>Room Number:</strong> ${escapeHtml(roomNumber)}</p>`);
+	}
+	if (category === "College") {
+		if (batchYear) contactInfo.push(`<p><strong>Batch Year:</strong> ${batchYear}</p>`);
+		if (classSection) contactInfo.push(`<p><strong>Class Section:</strong> ${escapeHtml(classSection)}</p>`);
+	}
+
 	return {
 		subject: `Ticket #${ticketId} Created - ${category}`,
 		html: `
@@ -185,6 +220,7 @@ export function getTicketCreatedEmail(ticketId: number, category: string, subcat
 					.header { background-color: #4F46E5; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
 					.content { background-color: #f9fafb; padding: 20px; border: 1px solid #e5e7eb; }
 					.ticket-info { background-color: white; padding: 15px; margin: 15px 0; border-radius: 5px; border-left: 4px solid #4F46E5; }
+					.contact-info { background-color: #f0f9ff; padding: 15px; margin: 15px 0; border-radius: 5px; border-left: 4px solid #0ea5e9; }
 					.footer { text-align: center; padding: 20px; color: #6b7280; font-size: 12px; }
 				</style>
 			</head>
@@ -202,6 +238,12 @@ export function getTicketCreatedEmail(ticketId: number, category: string, subcat
 							${description ? `<p><strong>Description:</strong> ${escapeHtml(description)}</p>` : ""}
 							<p><strong>Status:</strong> Open</p>
 						</div>
+						${contactInfo.length > 0 ? `
+						<div class="contact-info">
+							<h3 style="margin-top: 0;">Contact Information</h3>
+							${contactInfo.join('')}
+						</div>
+						` : ''}
 						<p>We'll keep you updated on the progress of your ticket.</p>
 					</div>
 					<div class="footer">

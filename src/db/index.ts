@@ -7,3 +7,5 @@ const client = postgres(connectionString, { ssl: 'require' });
 
 export const db = drizzle(client, { schema });
 export * from './schema';
+export * from './types';
+export * from './status-mapper';

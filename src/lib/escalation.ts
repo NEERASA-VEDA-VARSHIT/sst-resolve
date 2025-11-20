@@ -3,7 +3,7 @@
  * Handles category/location-specific escalation rules
  */
 
-import { db, escalationRules, staff } from "@/db";
+import { db, escalation_rules, staff } from "@/db";
 import { eq, and, or, isNull } from "drizzle-orm";
 
 export interface EscalationTarget {
@@ -25,20 +25,33 @@ export async function getEscalationTargets(
 ): Promise<EscalationTarget[]> {
   try {
     // Build query for escalation rules matching category and location
+    // Explicitly select only columns that exist to avoid migration issues
     let rulesQuery = db
-      .select()
-      .from(escalationRules)
-      .where(eq(escalationRules.domain, category));
+      .select({
+        id: escalation_rules.id,
+        domain: escalation_rules.domain,
+        scope: escalation_rules.scope,
+        level: escalation_rules.level,
+        staff_id: escalation_rules.staff_id,
+      })
+      .from(escalation_rules)
+      .where(eq(escalation_rules.domain, category));
 
     // For Hostel category, match by scope (location)
     if (category === "Hostel" && location) {
       rulesQuery = db
-        .select()
-        .from(escalationRules)
+        .select({
+          id: escalation_rules.id,
+          domain: escalation_rules.domain,
+          scope: escalation_rules.scope,
+          level: escalation_rules.level,
+          staff_id: escalation_rules.staff_id,
+        })
+        .from(escalation_rules)
         .where(
           and(
-            eq(escalationRules.domain, "Hostel"),
-            eq(escalationRules.scope, location)
+            eq(escalation_rules.domain, "Hostel"),
+            eq(escalation_rules.scope, location)
           )
         );
     }
@@ -48,12 +61,18 @@ export async function getEscalationTargets(
     // If no specific rules found for Hostel with location, try domain-wide
     if (rules.length === 0 && category === "Hostel") {
       const domainRules = await db
-        .select()
-        .from(escalationRules)
+        .select({
+          id: escalation_rules.id,
+          domain: escalation_rules.domain,
+          scope: escalation_rules.scope,
+          level: escalation_rules.level,
+          staff_id: escalation_rules.staff_id,
+        })
+        .from(escalation_rules)
         .where(
           and(
-            eq(escalationRules.domain, "Hostel"),
-            or(eq(escalationRules.scope, null), isNull(escalationRules.scope))
+            eq(escalation_rules.domain, "Hostel"),
+            or(eq(escalation_rules.scope, null), isNull(escalation_rules.scope))
           )
         );
       rules.push(...domainRules);
@@ -61,21 +80,21 @@ export async function getEscalationTargets(
 
     // Sort rules by level (ascending)
     rules.sort((a, b) => {
-      const levelA = parseInt(a.level || "0", 10);
-      const levelB = parseInt(b.level || "0", 10);
+      const levelA = parseInt(String(a.level || "0"), 10);
+      const levelB = parseInt(String(b.level || "0"), 10);
       return levelA - levelB;
     });
 
     // Get staff details for each rule
     const targets: EscalationTarget[] = [];
     for (const rule of rules) {
-      const level = parseInt(rule.level || "0", 10);
+      const level = parseInt(String(rule.level || "0"), 10);
       
       // Only include levels greater than current escalation level
       if (level > currentLevel) {
-        // staffId in escalation_rules is stored as string, but staff.id is number
-        const staffIdNum = parseInt(rule.staffId, 10);
-        if (isNaN(staffIdNum)) continue;
+        // staff_id in escalation_rules is an integer FK to staff.id
+        const staffIdNum = rule.staff_id;
+        if (!staffIdNum) continue;
         
         const staffMember = await db
           .select()
@@ -83,11 +102,11 @@ export async function getEscalationTargets(
           .where(eq(staff.id, staffIdNum))
           .limit(1);
 
-        if (staffMember.length > 0 && staffMember[0].clerkUserId) {
+        if (staffMember.length > 0 && staffMember[0].clerk_user_id) {
           targets.push({
-            clerkUserId: staffMember[0].clerkUserId,
+            clerkUserId: staffMember[0].clerk_user_id,
             staffId: staffMember[0].id,
-            fullName: staffMember[0].fullName,
+            fullName: staffMember[0].full_name,
             email: staffMember[0].email || null,
             level,
           });
