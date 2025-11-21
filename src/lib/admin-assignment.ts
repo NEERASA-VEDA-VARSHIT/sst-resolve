@@ -3,8 +3,8 @@
  * Handles determining which tickets an admin can see based on their domain/scope assignment
  */
 
-import { db, staff, users, roles, user_roles } from "@/db";
-import { eq, and, or } from "drizzle-orm";
+import { db, users, roles, admin_assignments, domains, scopes } from "@/db";
+import { eq, and, or, sql, isNull } from "drizzle-orm";
 
 export interface AdminAssignment {
   domain: string | null; // "Hostel" | "College" | null
@@ -12,42 +12,38 @@ export interface AdminAssignment {
 }
 
 /**
- * Get admin's domain and scope assignment from staff table
- * Role is checked via user_roles table (multi-role support)
+ * Get admin's domain and scope assignment from users table (primary)
+ * Role is checked via users.role_id
  */
 export async function getAdminAssignment(clerkUserId: string): Promise<AdminAssignment> {
   try {
-    const staffMember = await db
+    const user = await db
       .select({
-        domain: staff.domain,
-        scope: staff.scope,
+        primaryDomain: domains.name,
+        primaryScope: scopes.name,
         roleName: roles.name,
       })
-      .from(staff)
-      .innerJoin(users, eq(staff.user_id, users.id))
-      .innerJoin(user_roles, eq(users.id, user_roles.user_id))
-      .innerJoin(roles, eq(user_roles.role_id, roles.id))
-      .where(
-        and(
-          eq(users.clerk_id, clerkUserId),
-          // Support admin, committee, and super_admin roles
-          or(
-            eq(roles.name, "admin"),
-            eq(roles.name, "committee"),
-            eq(roles.name, "super_admin")
-          )
-        )
-      )
+      .from(users)
+      .leftJoin(roles, eq(users.role_id, roles.id))
+      .leftJoin(domains, eq(users.primary_domain_id, domains.id))
+      .leftJoin(scopes, eq(users.primary_scope_id, scopes.id))
+      .where(eq(users.clerk_id, clerkUserId))
       .limit(1);
 
-    if (staffMember.length === 0) {
-      // Admin not found in staff table, return null (will see all unassigned tickets)
+    if (user.length === 0 || !user[0].roleName) {
+      return { domain: null, scope: null };
+    }
+
+    const userData = user[0];
+    const validRoles = ["admin", "committee", "super_admin"];
+
+    if (!validRoles.includes(userData.roleName)) {
       return { domain: null, scope: null };
     }
 
     return {
-      domain: staffMember[0].domain || null,
-      scope: staffMember[0].scope || null,
+      domain: userData.primaryDomain || null,
+      scope: userData.primaryScope || null,
     };
   } catch (error) {
     console.error("Error fetching admin assignment:", error);
@@ -99,47 +95,107 @@ export function ticketMatchesAdminAssignment(
 
 /**
  * Get all admin clerk user IDs for a specific domain/scope
- * Role is checked via user_roles table (multi-role support)
+ * Checks both primary assignments and secondary admin_assignments
  */
 export async function getAdminsForDomainScope(
   domain: string,
   scope: string | null = null
 ): Promise<string[]> {
   try {
-    let query = db
+    // 1. Get admins with matching primary assignment
+    const primaryQuery = db
       .select({
         clerk_id: users.clerk_id,
-        scope: staff.scope,
       })
-      .from(staff)
-      .innerJoin(users, eq(staff.user_id, users.id))
-      .innerJoin(user_roles, eq(users.id, user_roles.user_id))
-      .innerJoin(roles, eq(user_roles.role_id, roles.id))
+      .from(users)
+      .leftJoin(roles, eq(users.role_id, roles.id))
+      .leftJoin(domains, eq(users.primary_domain_id, domains.id))
+      .leftJoin(scopes, eq(users.primary_scope_id, scopes.id))
       .where(
         and(
-          eq(staff.domain, domain),
-          // Support admin, committee, and super_admin roles
+          eq(domains.name, domain),
           or(
             eq(roles.name, "admin"),
             eq(roles.name, "committee"),
             eq(roles.name, "super_admin")
-          )
+          ),
+          scope ? eq(scopes.name, scope) : isNull(users.primary_scope_id)
         )
       );
 
-    const staffMembers = await query;
+    // 2. Get admins with matching secondary assignment
+    const secondaryQuery = db
+      .select({
+        clerk_id: users.clerk_id,
+      })
+      .from(admin_assignments)
+      .innerJoin(users, eq(admin_assignments.user_id, users.id))
+      .innerJoin(domains, eq(admin_assignments.domain_id, domains.id))
+      .leftJoin(scopes, eq(admin_assignments.scope_id, scopes.id))
+      .where(
+        and(
+          eq(domains.name, domain),
+          scope ? eq(scopes.name, scope) : isNull(admin_assignments.scope_id)
+        )
+      );
 
-    // Filter by scope if provided
-    const filtered = scope
-      ? staffMembers.filter((s) => s.scope === scope)
-      : staffMembers.filter((s) => !s.scope || s.scope === null);
+    const [primaryAdmins, secondaryAdmins] = await Promise.all([
+      primaryQuery,
+      secondaryQuery
+    ]);
 
-    return filtered
-      .map((s) => s.clerk_id)
-      .filter((id): id is string => id !== null && id !== undefined);
+    const allAdminIds = [
+      ...primaryAdmins.map(a => a.clerk_id),
+      ...secondaryAdmins.map(a => a.clerk_id)
+    ];
+
+    // Deduplicate
+    return Array.from(new Set(allAdminIds)).filter((id): id is string => id !== null);
+
   } catch (error) {
     console.error("Error fetching admins for domain/scope:", error);
     return [];
   }
 }
 
+/**
+ * Get domains for categories that an admin is assigned to
+ * Checks both category_assignments and categories.default_admin_id
+ */
+export async function getAdminAssignedCategoryDomains(
+  adminUserId: string
+): Promise<string[]> {
+  try {
+    const { category_assignments, categories: categoriesTable } = await import("@/db");
+    
+    // 1. Get domains from category_assignments
+    const assignedCategories = await db
+      .select({
+        domainName: domains.name,
+      })
+      .from(category_assignments)
+      .innerJoin(categoriesTable, eq(category_assignments.category_id, categoriesTable.id))
+      .innerJoin(domains, eq(categoriesTable.domain_id, domains.id))
+      .where(eq(category_assignments.user_id, adminUserId));
+
+    // 2. Get domains from categories where admin is default_admin_id
+    const defaultAdminCategories = await db
+      .select({
+        domainName: domains.name,
+      })
+      .from(categoriesTable)
+      .innerJoin(domains, eq(categoriesTable.domain_id, domains.id))
+      .where(eq(categoriesTable.default_admin_id, adminUserId));
+
+    // Combine and deduplicate
+    const allDomains = [
+      ...assignedCategories.map(c => c.domainName),
+      ...defaultAdminCategories.map(c => c.domainName)
+    ];
+
+    return Array.from(new Set(allDomains)).filter((name): name is string => name !== null);
+  } catch (error) {
+    console.error("Error fetching admin assigned category domains:", error);
+    return [];
+  }
+}

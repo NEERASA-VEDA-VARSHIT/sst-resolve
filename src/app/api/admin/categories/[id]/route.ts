@@ -43,8 +43,10 @@ export async function PATCH(
     if (body.sla_hours !== undefined) updateData.sla_hours = body.sla_hours;
     if (body.display_order !== undefined) updateData.display_order = body.display_order;
     if (body.active !== undefined) updateData.active = body.active;
-    if (body.default_authority !== undefined) {
-      updateData.default_authority = body.default_authority === null || body.default_authority === "" ? null : parseInt(String(body.default_authority));
+    if (body.domain_id !== undefined) updateData.domain_id = body.domain_id ? parseInt(String(body.domain_id)) : null;
+    if (body.scope_id !== undefined) updateData.scope_id = body.scope_id === null || body.scope_id === "" ? null : parseInt(String(body.scope_id));
+    if (body.default_admin_id !== undefined) {
+      updateData.default_admin_id = body.default_admin_id === null || body.default_admin_id === "" ? null : String(body.default_admin_id);
     }
 
     const [updated] = await db

@@ -31,15 +31,22 @@ interface Category {
   color: string | null;
   sla_hours: number;
   display_order: number;
-  default_authority?: number | null;
+  domain_id?: number | null;
+  scope_id?: number | null;
+  default_admin_id?: string | null;
 }
 
-interface StaffMember {
+interface Domain {
   id: number;
-  full_name: string;
-  email: string | null;
-  domain: string | null;
-  scope: string | null;
+  name: string;
+  description: string | null;
+}
+
+interface Scope {
+  id: number;
+  domain_id: number;
+  name: string;
+  description: string | null;
 }
 
 interface CategoryDialogProps {
@@ -50,8 +57,11 @@ interface CategoryDialogProps {
 
 export function CategoryDialog({ open, onClose, category }: CategoryDialogProps) {
   const [loading, setLoading] = useState(false);
-  const [staffMembers, setStaffMembers] = useState<StaffMember[]>([]);
-  const [loadingStaff, setLoadingStaff] = useState(false);
+  const [domains, setDomains] = useState<Domain[]>([]);
+  const [scopes, setScopes] = useState<Scope[]>([]);
+  const [admins, setAdmins] = useState<Admin[]>([]);
+  const [loadingDomains, setLoadingDomains] = useState(false);
+  const [loadingAdmins, setLoadingAdmins] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     slug: "",
@@ -60,27 +70,77 @@ export function CategoryDialog({ open, onClose, category }: CategoryDialogProps)
     color: "#3B82F6",
     sla_hours: 48,
     display_order: 0,
-    default_authority: null as number | null,
+    domain_id: 1,
+    scope_id: null as number | null,
+    default_admin_id: null as string | null,
   });
 
   useEffect(() => {
     if (open) {
-      fetchStaff();
+      fetchDomains();
+      fetchAdmins();
     }
   }, [open]);
 
-  const fetchStaff = async () => {
+  const fetchDomains = async () => {
     try {
-      setLoadingStaff(true);
-      const response = await fetch("/api/admin/staff");
+      setLoadingDomains(true);
+      const response = await fetch("/api/domains");
       if (response.ok) {
         const data = await response.json();
-        setStaffMembers(data.staff || []);
+        setDomains(data.domains || []);
+        setScopes(data.scopes || []);
       }
     } catch (error) {
-      console.error("Failed to fetch staff:", error);
+      console.error("Failed to fetch domains:", error);
     } finally {
-      setLoadingStaff(false);
+      setLoadingDomains(false);
+    }
+  };
+
+  const fetchAdmins = async () => {
+    try {
+      setLoadingAdmins(true);
+      const response = await fetch("/api/admin/staff");
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
+        console.error("[CategoryDialog] Failed to fetch admins:", response.status, errorData);
+        if (response.status === 403) {
+          console.warn("[CategoryDialog] Access denied - user may not be super_admin");
+        }
+        return;
+      }
+
+      const data = await response.json();
+      console.log("[CategoryDialog] Fetched staff data:", data);
+      
+      // API already returns only admin and super_admin roles
+      // Parse fullName back to first_name and last_name for display
+      const adminList = (data.staff || []).map((staff: any) => {
+        // Parse fullName if available, otherwise use email
+        const fullName = staff.fullName || "";
+        const nameParts = fullName.split(" ");
+        return {
+          id: staff.id,
+          first_name: nameParts[0] || null,
+          last_name: nameParts.slice(1).join(" ") || null,
+          email: staff.email || "",
+          fullName: fullName || staff.email || "Unknown",
+        };
+      });
+      
+      console.log("[CategoryDialog] Mapped admin list:", adminList);
+      setAdmins(adminList);
+      
+      if (adminList.length === 0) {
+        console.warn("[CategoryDialog] No admins found in response");
+      }
+    } catch (error) {
+      console.error("[CategoryDialog] Failed to fetch admins:", error);
+      toast.error("Failed to load admins. Please try again.");
+    } finally {
+      setLoadingAdmins(false);
     }
   };
 
@@ -94,7 +154,9 @@ export function CategoryDialog({ open, onClose, category }: CategoryDialogProps)
         color: category.color || "#3B82F6",
         sla_hours: category.sla_hours || 48,
         display_order: category.display_order || 0,
-        default_authority: category.default_authority || null,
+        domain_id: category.domain_id || 1,
+        scope_id: category.scope_id || null,
+        default_admin_id: category.default_admin_id || null,
       });
     } else {
       setFormData({
@@ -105,7 +167,9 @@ export function CategoryDialog({ open, onClose, category }: CategoryDialogProps)
         color: "#3B82F6",
         sla_hours: 48,
         display_order: 0,
-        default_authority: null,
+        domain_id: 1,
+        scope_id: null,
+        default_admin_id: null,
       });
     }
   }, [category, open]);
@@ -155,6 +219,9 @@ export function CategoryDialog({ open, onClose, category }: CategoryDialogProps)
       setLoading(false);
     }
   };
+
+  // Get filtered scopes for selected domain
+  const filteredScopes = scopes.filter(scope => scope.domain_id === formData.domain_id);
 
   return (
     <Dialog open={open} onOpenChange={(open) => !open && onClose(false)}>
@@ -215,6 +282,68 @@ export function CategoryDialog({ open, onClose, category }: CategoryDialogProps)
             />
           </div>
 
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="domain_id">
+                Domain <span className="text-destructive">*</span>
+              </Label>
+              <Select
+                value={formData.domain_id?.toString() || ""}
+                onValueChange={(value) => {
+                  const domainId = parseInt(value);
+                  setFormData((prev) => ({
+                    ...prev,
+                    domain_id: domainId,
+                    scope_id: null // Reset scope when domain changes
+                  }));
+                }}
+                disabled={loadingDomains}
+              >
+                <SelectTrigger id="domain_id">
+                  <SelectValue placeholder={loadingDomains ? "Loading..." : "Select domain"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {domains.map((domain) => (
+                    <SelectItem key={domain.id} value={domain.id.toString()}>
+                      {domain.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                The operational area this category belongs to
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="scope_id">Scope (Optional)</Label>
+              <Select
+                value={formData.scope_id?.toString() || "none"}
+                onValueChange={(value) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    scope_id: value === "none" ? null : parseInt(value)
+                  }))
+                }
+                disabled={loadingDomains || filteredScopes.length === 0}
+              >
+                <SelectTrigger id="scope_id">
+                  <SelectValue placeholder={filteredScopes.length === 0 ? "No scopes available" : "Select scope"} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No specific scope</SelectItem>
+                  {filteredScopes.map((scope) => (
+                    <SelectItem key={scope.id} value={scope.id.toString()}>
+                      {scope.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Specific scope within the domain (e.g., hostel buildings)
+              </p>
+            </div>
+          </div>
+
           <div className="grid grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label htmlFor="icon">Icon</Label>
@@ -269,57 +398,66 @@ export function CategoryDialog({ open, onClose, category }: CategoryDialogProps)
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="sla_hours">
-              Default SLA (Hours) <span className="text-destructive">*</span>
-            </Label>
-            <Input
-              id="sla_hours"
-              type="number"
-              value={formData.sla_hours}
-              onChange={(e) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  sla_hours: parseInt(e.target.value) || 48,
-                }))
-              }
-              min="1"
-              required
-            />
-            <p className="text-xs text-muted-foreground">
-              Default turnaround time for tickets in this category
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="default_authority">Default Admin Assignment</Label>
-            <Select
-              key={loadingStaff ? 'loading' : 'loaded'}
-              value={formData.default_authority?.toString() || "none"}
-              onValueChange={(value) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  default_authority: value === "none" ? null : parseInt(value),
-                }))
-              }
-              disabled={loadingStaff}
-            >
-              <SelectTrigger id="default_authority">
-                <SelectValue placeholder={loadingStaff ? "Loading staff..." : "No default admin (will use escalation rules)"} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">No default admin</SelectItem>
-                {staffMembers.map((staff) => (
-                  <SelectItem key={staff.id} value={staff.id.toString()}>
-                    {staff.full_name}
-                    {staff.domain && ` (${staff.domain}${staff.scope ? ` - ${staff.scope}` : ""})`}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              Default admin for tickets in this category. Can be overridden at subcategory or field level.
-            </p>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="sla_hours">
+                Default SLA (Hours) <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="sla_hours"
+                type="number"
+                value={formData.sla_hours}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    sla_hours: parseInt(e.target.value) || 48,
+                  }))
+                }
+                min="1"
+                required
+              />
+              <p className="text-xs text-muted-foreground">
+                Default turnaround time for tickets in this category
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="default_admin_id">Default Admin (Optional)</Label>
+              <Select
+                value={formData.default_admin_id || "none"}
+                onValueChange={(value) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    default_admin_id: value === "none" ? null : value,
+                  }))
+                }
+                disabled={loadingAdmins}
+              >
+                <SelectTrigger id="default_admin_id">
+                  <SelectValue placeholder={loadingAdmins ? "Loading admins..." : "Select default admin"} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No default admin</SelectItem>
+                  {admins.length === 0 ? (
+                    <SelectItem value="__no_admins" disabled>
+                      {loadingAdmins ? "Loading admins..." : "No admins found"}
+                    </SelectItem>
+                  ) : (
+                    admins.map((admin) => {
+                      const fullName = (admin as any).fullName || [admin.first_name, admin.last_name].filter(Boolean).join(' ').trim();
+                      const displayName = fullName || admin.email || "Unknown";
+                      return (
+                        <SelectItem key={admin.id} value={admin.id}>
+                          {displayName} {fullName && admin.email && <span className="text-muted-foreground">({admin.email})</span>}
+                        </SelectItem>
+                      );
+                    })
+                  )}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Fallback admin for tickets in this category (Priority #5 in assignment chain)
+              </p>
+            </div>
           </div>
 
           <DialogFooter>
@@ -335,4 +473,3 @@ export function CategoryDialog({ open, onClose, category }: CategoryDialogProps)
     </Dialog>
   );
 }
-

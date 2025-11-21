@@ -54,7 +54,8 @@ export async function GET(
 				batch_id: students.batch_id,
 				class_section_id: students.class_section_id,
 				email: users.email,
-				full_name: users.name,
+				first_name: users.first_name,
+				last_name: users.last_name,
 				phone: users.phone,
 				hostel_name: hostels.name,
 				batch_display: batches.display_name,
@@ -155,7 +156,11 @@ export async function PATCH(
 
 			// Update users table if name or phone changed
 			const userUpdate: any = {};
-			if (updateData.full_name) userUpdate.name = updateData.full_name;
+			if (updateData.full_name) {
+				const nameParts = updateData.full_name.trim().split(' ');
+				userUpdate.first_name = nameParts[0] || null;
+				userUpdate.last_name = nameParts.slice(1).join(' ') || null;
+			}
 			if (updateData.phone !== undefined) userUpdate.phone = updateData.phone;
 
 			if (Object.keys(userUpdate).length > 0) {

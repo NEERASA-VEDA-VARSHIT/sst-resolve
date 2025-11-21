@@ -4,16 +4,16 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Calendar, ArrowLeft, User, MapPin, FileText, Clock, AlertTriangle, Image as ImageIcon, MessageSquare } from "lucide-react";
-import { db, tickets, categories, users, staff } from "@/db";
-import { eq } from "drizzle-orm";
+import { db, tickets, categories, users, ticket_statuses } from "@/db";
+import { eq, aliasedTable } from "drizzle-orm";
 import { AdminActions } from "@/components/tickets/AdminActions";
 import { CommitteeTagging } from "@/components/admin/CommitteeTagging";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
-import { enumToStatus } from "@/db/status-mapper";
-import { normalizeStatusForComparison, formatStatus } from "@/lib/utils";
+import { normalizeStatusForComparison } from "@/lib/utils";
+import { TicketStatusBadge } from "@/components/tickets/TicketStatusBadge";
 
 // Force dynamic rendering for real-time ticket data
 export const dynamic = "force-dynamic";
@@ -21,10 +21,10 @@ export const dynamic = "force-dynamic";
 export default async function SuperAdminTicketPage({ params }: { params: Promise<{ ticketId: string }> }) {
   const { userId } = await auth();
   if (!userId) redirect("/");
-  
+
   // Ensure user exists in database
   await getOrCreateUser(userId);
-  
+
   // Get role from database (single source of truth)
   const role = await getUserRoleFromDB(userId);
   if (role !== "super_admin") redirect("/student/dashboard");
@@ -33,11 +33,15 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
   const id = Number(ticketId);
   if (!Number.isFinite(id)) notFound();
 
+  const assignedUser = aliasedTable(users, "assigned_user");
+
   // Fetch ticket with joins for category, creator, and assigned staff
   const ticketRows = await db
     .select({
       id: tickets.id,
-      status: tickets.status,
+      status_value: ticket_statuses.value,
+      status_label: ticket_statuses.label,
+      status_badge_color: ticket_statuses.badge_color,
       description: tickets.description,
       location: tickets.location,
       created_by: tickets.created_by,
@@ -45,30 +49,40 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
       assigned_to: tickets.assigned_to,
       escalation_level: tickets.escalation_level,
       metadata: tickets.metadata,
-      due_at: tickets.due_at,
+      due_at: tickets.resolution_due_at,
       created_at: tickets.created_at,
       updated_at: tickets.updated_at,
       resolved_at: tickets.resolved_at,
       category_name: categories.name,
-      creator_name: users.name,
+      creator_first_name: users.first_name,
+      creator_last_name: users.last_name,
       creator_email: users.email,
-      assigned_staff_id: staff.id,
+      assigned_staff_id: assignedUser.id,
     })
     .from(tickets)
     .leftJoin(categories, eq(tickets.category_id, categories.id))
     .leftJoin(users, eq(tickets.created_by, users.id))
-    .leftJoin(staff, eq(tickets.assigned_to, staff.id))
+    .leftJoin(assignedUser, eq(tickets.assigned_to, assignedUser.id))
+    .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
     .where(eq(tickets.id, id))
     .limit(1);
 
   if (ticketRows.length === 0) notFound();
-  const ticket = ticketRows[0];
+  const ticket = {
+    ...ticketRows[0],
+    creator_name: [ticketRows[0].creator_first_name, ticketRows[0].creator_last_name].filter(Boolean).join(' ').trim() || null,
+    status: ticketRows[0].status_value ? {
+      value: ticketRows[0].status_value,
+      label: ticketRows[0].status_label || ticketRows[0].status_value,
+      badge_color: ticketRows[0].status_badge_color,
+    } : null,
+  };
 
   // Parse metadata (JSONB) with error handling
   let metadata: any = {};
   let subcategory: string | null = null;
   let comments: any[] = [];
-  
+
   try {
     metadata = (ticket.metadata as any) || {};
     subcategory = metadata?.subcategory || null;
@@ -79,7 +93,8 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
   }
 
   // Normalize status for comparisons
-  const normalizedStatus = normalizeStatusForComparison(ticket.status);
+  const statusValue = ticket.status?.value || null;
+  const normalizedStatus = normalizeStatusForComparison(statusValue);
 
   const getStatusBadgeClass = (status: string | null | undefined) => {
     const normalized = normalizeStatusForComparison(status);
@@ -128,9 +143,7 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               {ticket.status && (
-                <Badge variant="outline" className={`${getStatusBadgeClass(ticket.status)} text-sm px-3 py-1`}>
-                  {formatStatus(enumToStatus(ticket.status))}
-                </Badge>
+                <TicketStatusBadge status={ticket.status} />
               )}
               {ticket.escalation_level && ticket.escalation_level > 0 && (
                 <Badge variant="destructive" className="text-sm px-3 py-1">
@@ -179,7 +192,7 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
               <p className="whitespace-pre-wrap text-base leading-relaxed">
                 {ticket.description || "No description provided"}
               </p>
-              
+
               {/* Display Images if available */}
               {metadata.images && Array.isArray(metadata.images) && metadata.images.length > 0 && (
                 <div className="space-y-2 pt-4 border-t">
@@ -237,7 +250,7 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
                     const commentText = comment.text || comment.message || '';
                     const commentAuthor = comment.author || comment.created_by || 'Unknown';
                     let commentDate: Date | null = null;
-                    
+
                     try {
                       if (comment.createdAt) {
                         commentDate = new Date(comment.createdAt);
@@ -246,7 +259,7 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
                     } catch {
                       commentDate = null;
                     }
-                    
+
                     return (
                       <Card key={idx} className={`border ${isInternal ? 'bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800' : 'bg-muted/30'}`}>
                         <CardContent className="p-4">
@@ -298,7 +311,7 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
             <CardContent>
               <AdminActions
                 ticketId={ticket.id}
-                currentStatus={enumToStatus(ticket.status) || "open"}
+                currentStatus={statusValue || "open"}
                 hasTAT={!!ticket.due_at || !!metadata?.tat}
                 isSuperAdmin={true}
                 ticketCategory={ticket.category_name || null}
@@ -355,10 +368,10 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
                   Created
                 </label>
                 <p className="text-base font-medium">
-                  {ticket.created_at?.toLocaleDateString('en-US', { 
-                    year: 'numeric', 
-                    month: 'long', 
-                    day: 'numeric' 
+                  {ticket.created_at?.toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
                   })}
                 </p>
               </div>

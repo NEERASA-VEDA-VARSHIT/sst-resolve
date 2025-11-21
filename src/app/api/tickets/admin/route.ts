@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import { tickets, users, staff, categories, hostels } from "@/db/schema";
-import { desc, eq, and, isNull, or, sql, count, leftJoin } from "drizzle-orm";
+import { tickets, users, categories, ticket_statuses } from "@/db/schema";
+import { desc, eq, and, isNull, or, sql, aliasedTable } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 
 /**
@@ -52,13 +52,19 @@ export async function GET(request: NextRequest) {
 
     // Only allow known ticket status enum values to satisfy Drizzle's typing
     const allowedStatuses = ['OPEN', 'IN_PROGRESS', 'AWAITING_STUDENT', 'REOPENED', 'ESCALATED', 'RESOLVED'] as const;
-    type TicketStatus = typeof allowedStatuses[number];
+
+    // Alias for assigned user
+    const assignedUser = aliasedTable(users, "assigned_user");
 
     if (status && (allowedStatuses as readonly string[]).includes(status)) {
-      filters.push(eq(tickets.status, status as TicketStatus));
+      // Join with ticket_statuses to filter by value
+      filters.push(eq(ticket_statuses.value, status));
     }
     if (category) filters.push(eq(tickets.category_id, Number(category)));
-    if (assignedTo) filters.push(eq(tickets.assigned_to, Number(assignedTo)));
+
+    // assignedTo is a UUID string for users.id
+    if (assignedTo) filters.push(eq(tickets.assigned_to, assignedTo));
+
     if (search) {
       filters.push(
         or(
@@ -79,18 +85,11 @@ export async function GET(request: NextRequest) {
 
       if (!userRow) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
-      const [staffRow] = await db
-        .select({ id: staff.id })
-        .from(staff)
-        .where(eq(staff.user_id, userRow.id))
-        .limit(1);
-
-      if (!staffRow) return NextResponse.json({ error: "Staff profile not found" }, { status: 404 });
-
       // Assigned to this admin OR unassigned
+      // Note: assigned_to in tickets table references users.id directly
       filters.push(
         or(
-          eq(tickets.assigned_to, staffRow.id),
+          eq(tickets.assigned_to, userRow.id),
           isNull(tickets.assigned_to)
         )
       );
@@ -104,32 +103,35 @@ export async function GET(request: NextRequest) {
       .select({
         // Ticket fields
         id: tickets.id,
-        status: tickets.status,
+        status: ticket_statuses.value, // Get status value from joined table
         description: tickets.description,
         location: tickets.location,
         created_at: tickets.created_at,
         updated_at: tickets.updated_at,
-        due_at: tickets.due_at,
+        due_at: tickets.resolution_due_at, // Map to resolution_due_at
         escalation_level: tickets.escalation_level,
         metadata: tickets.metadata,
-        attachments: tickets.attachments,
+        // attachments: tickets.attachments, // Attachments are in a separate table now
 
         // Creator info
-        creator_name: users.name,
+        creator_first_name: users.first_name,
+        creator_last_name: users.last_name,
         creator_email: users.email,
 
         // Category info
         category_name: categories.name,
         category_slug: categories.slug,
 
-        // Assigned staff info
-        assigned_staff_name: staff.full_name,
-        assigned_staff_email: staff.email,
+        // Assigned staff info (from aliased users table)
+        assigned_first_name: assignedUser.first_name,
+        assigned_last_name: assignedUser.last_name,
+        assigned_email: assignedUser.email,
       })
       .from(tickets)
       .leftJoin(users, eq(users.id, tickets.created_by))
       .leftJoin(categories, eq(categories.id, tickets.category_id))
-      .leftJoin(staff, eq(staff.id, tickets.assigned_to))
+      .leftJoin(ticket_statuses, eq(ticket_statuses.id, tickets.status_id))
+      .leftJoin(assignedUser, eq(assignedUser.id, tickets.assigned_to))
       .where(whereClause ?? undefined)
       .orderBy(desc(tickets.created_at))
       .limit(limit)
@@ -141,6 +143,7 @@ export async function GET(request: NextRequest) {
         total: sql<number>`COUNT(*)`,
       })
       .from(tickets)
+      .leftJoin(ticket_statuses, eq(ticket_statuses.id, tickets.status_id)) // Join needed if filtering by status
       .where(whereClause ?? undefined);
 
     // Transform data for frontend
@@ -154,18 +157,24 @@ export async function GET(request: NextRequest) {
       due_at: ticket.due_at,
       escalation_level: ticket.escalation_level,
       metadata: ticket.metadata,
-      attachments: ticket.attachments,
+      attachments: [], // Placeholder as attachments are separate now
       creator: {
-        name: ticket.creator_name,
+        name: [ticket.creator_first_name, ticket.creator_last_name]
+          .filter(Boolean)
+          .join(' ')
+          .trim() || null,
         email: ticket.creator_email,
       },
       category: {
         name: ticket.category_name,
         slug: ticket.category_slug,
       },
-      assigned_to: ticket.assigned_staff_name ? {
-        name: ticket.assigned_staff_name,
-        email: ticket.assigned_staff_email,
+      assigned_to: (ticket.assigned_first_name || ticket.assigned_last_name) ? {
+        name: [ticket.assigned_first_name, ticket.assigned_last_name]
+          .filter(Boolean)
+          .join(' ')
+          .trim(),
+        email: ticket.assigned_email,
       } : null,
     }));
 

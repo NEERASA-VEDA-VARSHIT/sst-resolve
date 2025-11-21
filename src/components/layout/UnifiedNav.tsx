@@ -23,6 +23,7 @@ import {
   Building2,
   Shield,
   BarChart3,
+  UserCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "./ThemeToggle";
@@ -197,6 +198,12 @@ export function UnifiedNav() {
                   icon: Settings,
                   show: true,
                 },
+                {
+                  title: "Ticket Assignment",
+                  href: "/superadmin/settings/ticket-assignment",
+                  icon: UserCheck,
+                  show: true,
+                },
               ]
             : []),
         ].filter((item) => item.show)
@@ -306,7 +313,7 @@ export function UnifiedNav() {
                             <DropdownMenuSeparator />
                             {(role === "student" || role === "committee") && (
                               <DropdownMenuItem asChild>
-                                <Link href={isCommittee ? "/committee/profile" : "/profile"} className="cursor-pointer">
+                                <Link href={isCommittee ? "/committee/profile" : "/student/profile"} className="cursor-pointer">
                                   <User className="mr-2 h-4 w-4" />
                                   <span>Profile</span>
                                 </Link>

@@ -32,9 +32,15 @@ export default async function NewTicketPage() {
   const studentHostel = hostelsList.find(h => h.id === student.hostel_id);
 
   // Normalize student - FIXED
+  // Construct full name from first_name and last_name
+  const fullName = [dbUser.first_name, dbUser.last_name]
+    .filter(Boolean)
+    .join(' ')
+    .trim() || "";
+
   const normalizedStudent = {
     userNumber: student.roll_no,
-    fullName: dbUser.name || "",
+    fullName: fullName,
     email: dbUser.email || "",
     mobile: dbUser.phone || "",
     hostel: studentHostel?.name || null,  // Use hostel name instead of ID

@@ -25,6 +25,7 @@ interface Category {
   display_order: number;
   active: boolean;
   default_authority?: number | null;
+  domain_id?: number | null;
   created_at: Date | null;
   updated_at: Date | null;
 }
@@ -214,7 +215,7 @@ export function CategoryManager({ initialCategories }: CategoryManagerProps) {
               </div>
               <EscalationManager
                 categoryName={selectedCategory.name}
-                categoryId={selectedCategory.id}
+                categoryId={selectedCategory.domain_id || 0}
               />
             </TabsContent>
           )}

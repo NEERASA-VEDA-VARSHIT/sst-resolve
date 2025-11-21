@@ -23,22 +23,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import { 
-  tickets, 
-  users, 
-  students, 
-  staff, 
+import {
+  tickets,
+  users,
+  students,
   categories,
-  category_profile_fields 
+  category_profile_fields,
+  ticket_statuses
 } from "@/db/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { getOrCreateUser } from "@/lib/user-sync";
-import { 
-  getCategorySchema, 
-  getSubcategoryById, 
+import {
+  getCategorySchema,
+  getSubcategoryById,
   getSubSubcategoryById,
   getCategoryById,
-  getCategoryProfileFields 
+  getCategoryProfileFields
 } from "@/lib/categories";
 import { extractDynamicFields } from "@/lib/ticket/formatDynamicFields";
 
@@ -54,7 +54,7 @@ export async function GET(
 
     const { id } = await params;
     const ticketId = Number(id);
-    
+
     if (!Number.isFinite(ticketId)) {
       return NextResponse.json({ error: "Invalid ticket ID" }, { status: 400 });
     }
@@ -70,7 +70,7 @@ export async function GET(
       .select({
         // Ticket fields
         ticket_id: tickets.id,
-        ticket_status: tickets.status,
+        ticket_status: ticket_statuses.value,
         ticket_description: tickets.description,
         ticket_location: tickets.location,
         ticket_created_by: tickets.created_by,
@@ -81,13 +81,14 @@ export async function GET(
         ticket_created_at: tickets.created_at,
         ticket_updated_at: tickets.updated_at,
         ticket_resolved_at: tickets.resolved_at,
-        ticket_due_at: tickets.due_at,
+        ticket_due_at: tickets.resolution_due_at,
         ticket_acknowledged_at: tickets.acknowledged_at,
         ticket_rating: tickets.rating,
         ticket_feedback: tickets.feedback,
         ticket_tat_extended_count: tickets.tat_extended_count,
         // User fields
-        user_name: users.name,
+        user_first_name: users.first_name,
+        user_last_name: users.last_name,
         user_email: users.email,
         // Student fields
         student_roll_no: students.roll_no,
@@ -97,6 +98,7 @@ export async function GET(
       .from(tickets)
       .leftJoin(users, eq(users.id, tickets.created_by))
       .leftJoin(students, eq(students.user_id, tickets.created_by))
+      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
       .where(eq(tickets.id, ticketId))
       .limit(1);
 
@@ -112,7 +114,7 @@ export async function GET(
     const metadata = (ticketData.ticket_metadata as any) || {};
 
     // 2. Fetch category with SLA info
-    const category = ticketData.ticket_category_id 
+    const category = ticketData.ticket_category_id
       ? await getCategoryById(ticketData.ticket_category_id)
       : null;
 
@@ -149,18 +151,21 @@ export async function GET(
     if (ticketData.ticket_assigned_to) {
       const [staffData] = await db
         .select({
-          staff_name: staff.full_name,
-          user_name: users.name,
+          user_first_name: users.first_name,
+          user_last_name: users.last_name,
           user_email: users.email,
         })
-        .from(staff)
-        .leftJoin(users, eq(staff.user_id, users.id))
-        .where(eq(staff.id, ticketData.ticket_assigned_to))
+        .from(users)
+        .where(eq(users.id, ticketData.ticket_assigned_to))
         .limit(1);
 
       if (staffData) {
+        const staffName = [staffData.user_first_name, staffData.user_last_name]
+          .filter(Boolean)
+          .join(' ')
+          .trim() || "Unknown";
         assignedStaff = {
-          name: staffData.user_name || staffData.staff_name || "Unknown",
+          name: staffName,
           email: staffData.user_email || null,
         };
       }
@@ -170,44 +175,32 @@ export async function GET(
     let spoc = null;
     if (ticketData.ticket_category_id) {
       try {
-        // Check if default_authority column exists
-        const columnCheck = await db.execute(sql`
-          SELECT EXISTS (
-            SELECT 1 FROM information_schema.columns 
-            WHERE table_schema = 'public' 
-            AND table_name = 'categories'
-            AND column_name = 'default_authority'
-          ) as exists;
-        `);
-        const columnExists = (columnCheck[0] as any)?.exists === true;
+        const [categoryData] = await db
+          .select({ default_admin_id: categories.default_admin_id })
+          .from(categories)
+          .where(eq(categories.id, ticketData.ticket_category_id))
+          .limit(1);
 
-        if (columnExists) {
-          const categoryResult = await db.execute(sql`
-            SELECT default_authority 
-            FROM categories 
-            WHERE id = ${ticketData.ticket_category_id}
-            LIMIT 1
-          `);
+        if (categoryData?.default_admin_id) {
+          const [spocData] = await db
+            .select({
+              user_first_name: users.first_name,
+              user_last_name: users.last_name,
+              user_email: users.email,
+            })
+            .from(users)
+            .where(eq(users.id, categoryData.default_admin_id))
+            .limit(1);
 
-          if (categoryResult.length > 0 && (categoryResult[0] as any)?.default_authority) {
-            const adminId = (categoryResult[0] as any).default_authority;
-            const [spocData] = await db
-              .select({
-                staff_name: staff.full_name,
-                user_name: users.name,
-                user_email: users.email,
-              })
-              .from(staff)
-              .leftJoin(users, eq(staff.user_id, users.id))
-              .where(eq(staff.id, adminId))
-              .limit(1);
-
-            if (spocData) {
-              spoc = {
-                name: spocData.user_name || spocData.staff_name || "Unknown",
-                email: spocData.user_email || null,
-              };
-            }
+          if (spocData) {
+            const spocName = [spocData.user_first_name, spocData.user_last_name]
+              .filter(Boolean)
+              .join(' ')
+              .trim() || "Unknown";
+            spoc = {
+              name: spocName,
+              email: spocData.user_email || null,
+            };
           }
         }
       } catch (error) {
@@ -265,8 +258,8 @@ export async function GET(
 
     // 11. Calculate SLA times
     const expectedAckTime = category?.sla_hours ? "1 hour" : null;
-    const expectedResolutionTime = category?.sla_hours 
-      ? `${category.sla_hours} hours` 
+    const expectedResolutionTime = category?.sla_hours
+      ? `${category.sla_hours} hours`
       : null;
 
     // Build the hydrated response
@@ -307,7 +300,10 @@ export async function GET(
         slug: subSubcategory.slug,
       } : null,
       creator: {
-        name: ticketData.user_name,
+        name: [ticketData.user_first_name, ticketData.user_last_name]
+          .filter(Boolean)
+          .join(' ')
+          .trim() || null,
         email: ticketData.user_email,
       },
       student: {

@@ -42,7 +42,8 @@ export async function GET(request: NextRequest) {
 		if (search) {
 			whereConditions.push(
 				or(
-					ilike(users.name, `%${search}%`),
+					ilike(users.first_name, `%${search}%`),
+					ilike(users.last_name, `%${search}%`),
 					ilike(users.email, `%${search}%`),
 					ilike(students.roll_no, `%${search}%`),
 				),
@@ -72,7 +73,8 @@ export async function GET(request: NextRequest) {
 				student_uid: students.student_uid,
 				user_id: users.id,
 				email: users.email,
-				full_name: users.name,
+				first_name: users.first_name,
+				last_name: users.last_name,
 				phone: users.phone,
 				roll_no: students.roll_no,
 				room_no: students.room_no,

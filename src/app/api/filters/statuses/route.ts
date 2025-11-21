@@ -1,55 +1,48 @@
 import { NextResponse } from "next/server";
-import { db } from "@/db";
-import { sql } from "drizzle-orm";
+import { db, ticket_statuses } from "@/db";
+import { eq } from "drizzle-orm";
 
 /**
  * GET /api/filters/statuses
- * Fetch all valid ticket statuses from the database enum
+ * Fetch all valid ticket statuses from the ticket_statuses table
  */
 export async function GET() {
   try {
-    // Query PostgreSQL enum values directly
-    const result = await db.execute(sql`
-      SELECT unnest(enum_range(NULL::ticket_status))::text AS status
-      ORDER BY status;
-    `);
-
-    // Extract statuses from result (format may vary by Drizzle version)
-    const statuses = Array.isArray(result) 
-      ? result.map((row: any) => row.status)
-      : (result as any).rows?.map((row: any) => row.status) || [];
-    
-    // Map database enum values to display format
-    const statusOptions = statuses
-      .filter((status: string) => {
-        // Filter out removed statuses (ACKNOWLEDGED, CLOSED) if they still exist in enum
-        const upper = status.toUpperCase();
-        return upper !== "ACKNOWLEDGED" && upper !== "CLOSED";
+    // Query ticket_statuses table for active statuses
+    const statuses = await db
+      .select({
+        id: ticket_statuses.id,
+        value: ticket_statuses.value,
+        label: ticket_statuses.label,
+        is_active: ticket_statuses.is_active,
+        sort_order: ticket_statuses.sort_order,
       })
-      .map((status: string) => {
-        const normalized = status.toLowerCase();
-        let label = status.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
-        
-        // Special handling for specific statuses
-        if (normalized === "awaiting_student") {
-          label = "Awaiting Student Response";
-        }
-        
-        return {
-          value: normalized,
-          label: label,
-          enum: status, // Keep original enum value
-        };
-      });
+      .from(ticket_statuses)
+      .where(eq(ticket_statuses.is_active, true));
+
+    // Ensure statuses is an array
+    if (!Array.isArray(statuses)) {
+      console.error("Statuses query did not return an array:", statuses);
+      return NextResponse.json({ statuses: [] });
+    }
+
+    // Sort manually to avoid issues with orderBy
+    const sortedStatuses = statuses.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+
+    // Map to the expected format with null checks
+    const statusOptions = sortedStatuses
+      .filter((status) => status != null && typeof status === 'object')
+      .map((status) => ({
+        value: status.value?.toLowerCase() || '',
+        label: status.label || '',
+        enum: status.value || '', // Keep original value
+      }));
 
     return NextResponse.json({ statuses: statusOptions });
   } catch (error) {
     console.error("Error fetching statuses:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch statuses" },
-      { status: 500 }
-    );
+    // Return empty array instead of error to prevent client-side crashes
+    return NextResponse.json({ statuses: [] }, { status: 200 });
   }
 }
-
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, tickets } from "@/db";
+import { db } from "@/db";
+import { tickets, ticket_statuses } from "@/db/schema";
 import { and, eq, ne } from "drizzle-orm";
 import { postThreadReply } from "@/lib/slack";
 import { sendEmail, getTATReminderEmail, getStudentEmail } from "@/lib/email";
@@ -30,26 +31,36 @@ export async function GET(request: NextRequest) {
 		const tomorrow = new Date(today);
 		tomorrow.setDate(tomorrow.getDate() + 1);
 
-		// Get all tickets with TAT dates
-		const allTickets = await db.select().from(tickets);
+		// Get all tickets with TAT dates and their status
+		const allTickets = await db
+			.select({
+				id: tickets.id,
+				metadata: tickets.metadata,
+				category_id: tickets.category_id,
+				status_value: ticket_statuses.value,
+				created_by: tickets.created_by,
+			})
+			.from(tickets)
+			.leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id));
 
 		const remindersSent = [];
 
 		for (const ticket of allTickets) {
-			if (!ticket.details) continue;
+			if (!ticket.metadata) continue;
+
+			const metadata = ticket.metadata as any;
 
 			try {
-				const details = JSON.parse(ticket.details);
-				if (!details.tatDate) continue;
+				if (!metadata.tatDate) continue;
 
-				const tatDate = new Date(details.tatDate);
+				const tatDate = new Date(metadata.tatDate);
 				tatDate.setHours(0, 0, 0, 0);
 
 				// Check if TAT date is today
 				if (tatDate.getTime() === today.getTime()) {
 					// Skip if already reminded today
-					if (details.lastReminderDate) {
-						const lastReminder = new Date(details.lastReminderDate);
+					if (metadata.lastReminderDate) {
+						const lastReminder = new Date(metadata.lastReminderDate);
 						lastReminder.setHours(0, 0, 0, 0);
 						if (lastReminder.getTime() === today.getTime()) {
 							continue; // Already reminded today
@@ -57,39 +68,66 @@ export async function GET(request: NextRequest) {
 					}
 
 					// Only send reminder for open or in_progress tickets
-					if (ticket.status !== "closed" && ticket.status !== null) {
+					if (ticket.status_value !== "RESOLVED" && ticket.status_value !== "CLOSED") {
+						// Get category name (we need to fetch it or assume from metadata if stored)
+						// For now, let's assume we can get it or just use "Ticket"
+						// Actually, we should probably join categories table too, but let's see if we can do without for now.
+						// The original code accessed ticket.category which was likely removed or changed.
+						// Let's fetch category name if needed.
+
+						// Wait, the original code had ticket.category. 
+						// If tickets table doesn't have category column (it has category_id), we need to join.
+
+						// Let's assume we need to join categories.
+						const { categories } = await import("@/db/schema");
+						const [categoryRow] = await db.select({ name: categories.name })
+							.from(categories)
+							.where(eq(categories.id, ticket.category_id || 0))
+							.limit(1);
+
+						const categoryName = categoryRow?.name || "Ticket";
+
 						// Send reminder to Slack
 						if (
-							ticket.category === "Hostel" ||
-							ticket.category === "College"
+							categoryName === "Hostel" ||
+							categoryName === "College"
 						) {
-							const reminderText = `⏰ *TAT Reminder*\n\nTicket #${ticket.id} has reached its TAT date (${details.tat}).\n\nPlease review and update the ticket status.`;
+							const reminderText = `⏰ *TAT Reminder*\n\nTicket #${ticket.id} has reached its TAT date (${metadata.tat}).\n\nPlease review and update the ticket status.`;
 
-							if (details.slackMessageTs) {
+							if (metadata.slackMessageTs) {
 								await postThreadReply(
-									ticket.category as "Hostel" | "College",
-									details.slackMessageTs,
+									categoryName as "Hostel" | "College",
+									metadata.slackMessageTs,
 									reminderText
 								);
 							}
 
 							// Send email reminder to student
 							try {
-								const studentEmail = await getStudentEmail(ticket.userNumber);
+								// We need userNumber to get student email?
+								// getStudentEmail takes userNumber.
+								// We have created_by (UUID). We should get email directly from users table.
+								const { users } = await import("@/db/schema");
+								const [creator] = await db.select({ email: users.email })
+									.from(users)
+									.where(eq(users.id, ticket.created_by))
+									.limit(1);
+
+								const studentEmail = creator?.email;
 								if (studentEmail) {
 									const emailTemplate = getTATReminderEmail(
 										ticket.id,
-										details.tat,
-										ticket.category
+										metadata.tat,
+										categoryName
 									);
-									
+
 									// Get original email Message-ID and subject for threading
-									const originalMessageId = details.originalEmailMessageId;
-									const originalSubject = details.originalEmailSubject;
+									const originalMessageId = metadata.originalEmailMessageId;
+									const originalSubject = metadata.originalEmailSubject;
 									if (!originalMessageId) {
 										console.warn(`⚠️ No originalEmailMessageId found for ticket #${ticket.id} - reminder email will not thread properly`);
 									}
-									
+
 									const emailResult = await sendEmail({
 										to: studentEmail,
 										subject: emailTemplate.subject,
@@ -98,7 +136,7 @@ export async function GET(request: NextRequest) {
 										threadMessageId: originalMessageId,
 										originalSubject: originalSubject,
 									});
-									
+
 									if (!emailResult) {
 										console.error(`❌ Failed to send TAT reminder email to ${studentEmail} for ticket #${ticket.id}`);
 									} else {
@@ -111,15 +149,15 @@ export async function GET(request: NextRequest) {
 							}
 
 							// Mark as reminded
-							details.lastReminderDate = new Date().toISOString();
+							metadata.lastReminderDate = new Date().toISOString();
 							await db
 								.update(tickets)
-								.set({ details: JSON.stringify(details) })
+								.set({ metadata: metadata })
 								.where(eq(tickets.id, ticket.id));
 
 							remindersSent.push({
 								ticketId: ticket.id,
-								category: ticket.category,
+								category: categoryName,
 							});
 						}
 					}
@@ -142,4 +180,3 @@ export async function GET(request: NextRequest) {
 		);
 	}
 }
-

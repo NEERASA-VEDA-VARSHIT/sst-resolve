@@ -32,8 +32,14 @@ export async function GET(request: NextRequest) {
 		const { searchParams } = new URL(request.url);
 		const activeOnly = searchParams.get("active") === "true";
 
-		let query = db.select().from(class_sections);
-		
+		let query = db.select({
+			id: class_sections.id,
+			name: class_sections.name,
+			is_active: class_sections.is_active,
+			created_at: class_sections.created_at,
+			updated_at: class_sections.updated_at,
+		}).from(class_sections);
+
 		if (activeOnly) {
 			query = query.where(eq(class_sections.is_active, true)) as any;
 		}
@@ -75,7 +81,10 @@ export async function POST(request: NextRequest) {
 
 		// Check if section with same name already exists
 		const [existing] = await db
-			.select()
+			.select({
+				id: class_sections.id,
+				name: class_sections.name,
+			})
 			.from(class_sections)
 			.where(eq(class_sections.name, name.trim().toUpperCase()))
 			.limit(1);

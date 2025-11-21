@@ -124,7 +124,7 @@ export async function POST(
       }
     } else if (action === "close") {
       // Close all tickets
-      const { statusToEnum } = await import("@/db/status-mapper");
+      const { statusToEnum } = await import("@/lib/status-helpers");
       const newStatus = statusToEnum(status || "resolved") as any; // Convert to uppercase enum
 
       for (const ticket of groupTickets) {

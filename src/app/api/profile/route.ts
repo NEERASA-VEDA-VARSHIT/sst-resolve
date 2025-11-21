@@ -67,10 +67,16 @@ export async function GET() {
       );
     }
 
+    // Construct full name from first_name and last_name
+    const full_name = [dbUser.first_name, dbUser.last_name]
+      .filter(Boolean)
+      .join(' ')
+      .trim() || null;
+
     return NextResponse.json({
       id: profile.id,
       user_number: profile.roll_no,
-      full_name: dbUser.name,
+      full_name: full_name,
       email: dbUser.email,
       mobile: dbUser.phone,
       room_number: profile.room_no,
@@ -175,10 +181,16 @@ export async function PATCH(request: NextRequest) {
     if (!profile)
       return NextResponse.json({ error: "Student profile not found" }, { status: 404 });
 
+    // Construct full name from first_name and last_name
+    const full_name = [dbUser.first_name, dbUser.last_name]
+      .filter(Boolean)
+      .join(' ')
+      .trim() || null;
+
     return NextResponse.json({
       id: profile.id,
       user_number: profile.roll_no,
-      full_name: dbUser.name,
+      full_name: full_name,
       email: dbUser.email,
       mobile: mobile !== undefined ? mobile.trim() : dbUser.phone,
       room_number: profile.room_no,

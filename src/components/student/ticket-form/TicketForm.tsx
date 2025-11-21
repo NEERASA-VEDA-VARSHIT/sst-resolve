@@ -558,8 +558,12 @@ export default function TicketForm(props: TicketFormProps) {
     setLoading(true);
     try {
       // Clean up profile data - remove undefined keys
+      // Safety check: ensure form.profile is a valid object before calling Object.entries
+      const profileData = form.profile && typeof form.profile === 'object' && !Array.isArray(form.profile) 
+        ? form.profile 
+        : {};
       const cleanProfile = Object.fromEntries(
-        Object.entries(form.profile || {}).filter(([key, value]) => key !== 'undefined' && value != null)
+        Object.entries(profileData).filter(([key, value]) => key !== 'undefined' && value != null)
       );
 
       // Extract images from details and clean up details

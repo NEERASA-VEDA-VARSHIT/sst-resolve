@@ -14,7 +14,7 @@ export interface TicketMetadata {
 	tatDate?: string; // ISO timestamp
 	tatSetAt?: string; // ISO timestamp
 	tatSetBy?: string; // Admin name or userId
-	
+
 	// TAT Extension tracking (PRD v3.0: auto-escalate after 3 extensions)
 	tatExtensions?: Array<{
 		previousTAT: string;
@@ -22,20 +22,20 @@ export interface TicketMetadata {
 		previousTATDate: string; // ISO timestamp
 		newTATDate: string; // ISO timestamp
 		extendedAt: string; // ISO timestamp
-		extendedBy: string; // Clerk userId or staff id
+		extendedBy: string; // Clerk userId or users.id
 	}>;
-	
+
 	// Email threading
 	originalEmailMessageId?: string; // For email threading
 	originalEmailSubject?: string; // Original email subject
-	
+
 	// Slack integration (legacy - now in slack_thread_id field)
 	slackMessageTs?: string; // Slack thread timestamp
 	slackChannel?: string; // Slack channel name
-	
+
 	// Last reminder date (for TAT reminders)
 	lastReminderDate?: string; // ISO timestamp
-	
+
 	// Browser/device info
 	browser?: string;
 	device?: string;
@@ -75,7 +75,7 @@ export interface EscalationRecord {
 	id?: number;
 	ticket_id: number;
 	escalated_by?: string;
-	escalated_to?: number; // staff.id
+	escalated_to?: string; // users.id
 	reason?: string;
 	level: number;
 	created_at?: string; // ISO timestamp

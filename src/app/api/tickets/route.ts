@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { db, tickets, users, staff, categories } from "@/db";
+import { db, tickets, users, categories } from "@/db";
 import { desc, eq } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 import { createTicket } from "@/lib/tickets/createTicket";
@@ -73,12 +73,28 @@ export async function POST(request: NextRequest) {
         .orderBy(desc(outboxTable.created_at))
         .limit(1);
       
-      if (outboxEvent) {
+      if (outboxEvent && outboxEvent.payload) {
+        // Ensure payload is a valid object
+        let payload: any = {};
+        try {
+          if (typeof outboxEvent.payload === 'object' && outboxEvent.payload !== null && !Array.isArray(outboxEvent.payload)) {
+            // Deep clone to avoid any reference issues
+            payload = JSON.parse(JSON.stringify(outboxEvent.payload));
+          } else {
+            console.warn("[Ticket API] Invalid outbox payload type, using empty object:", typeof outboxEvent.payload);
+            payload = {};
+          }
+        } catch (error) {
+          console.error("[Ticket API] Error processing outbox payload:", error);
+          payload = {};
+        }
+        
         // Process immediately (non-blocking to avoid delaying the response)
-        processTicketCreated(outboxEvent.id, outboxEvent.payload as any)
+        processTicketCreated(outboxEvent.id, payload as any)
           .then(() => markOutboxSuccess(outboxEvent.id))
           .catch((error) => {
             console.error("[Ticket API] Failed to process outbox immediately:", error);
+            console.error("[Ticket API] Error stack:", error instanceof Error ? error.stack : "No stack trace");
             markOutboxFailure(outboxEvent.id, error instanceof Error ? error.message : "Unknown error");
           });
       }
@@ -150,20 +166,14 @@ export async function GET(request: NextRequest) {
         .where(eq(users.clerk_id, userId))
         .limit(1);
 
-      if (!userRow) return NextResponse.json([], { status: 200 });
-
-      const [staffRow] = await db
-        .select({ id: staff.id })
-        .from(staff)
-        .where(eq(staff.user_id, userRow.id))
-        .limit(1);
-
-      if (!staffRow) return NextResponse.json([], { status: 200 });
+      if (!userRow) {
+        return NextResponse.json([], { status: 200 });
+      }
 
       results = await db
         .select()
         .from(tickets)
-        .where(eq(tickets.assigned_to, staffRow.id))
+        .where(eq(tickets.assigned_to, userRow.id))
         .orderBy(desc(tickets.created_at))
         .limit(limit)
         .offset(offset);

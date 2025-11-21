@@ -11,7 +11,16 @@ export async function GET() {
         }
 
         // Fetch settings (singleton row)
-        const settings = await db.select().from(notification_settings).limit(1);
+        const settings = await db.select({
+            id: notification_settings.id,
+            email_enabled: notification_settings.email_enabled,
+            slack_enabled: notification_settings.slack_enabled,
+            tat_reminders_enabled: notification_settings.tat_reminders_enabled,
+            committee_notifications_enabled: notification_settings.committee_notifications_enabled,
+            slack_config: notification_settings.slack_config,
+            updated_by: notification_settings.updated_by,
+            updated_at: notification_settings.updated_at,
+        }).from(notification_settings).limit(1);
 
         if (settings.length === 0) {
             // Return defaults if no settings exist
@@ -42,7 +51,9 @@ export async function PATCH(req: Request) {
         const { settings, slackConfig } = body;
 
         // Check if settings exist
-        const existingSettings = await db.select().from(notification_settings).limit(1);
+        const existingSettings = await db.select({
+            id: notification_settings.id,
+        }).from(notification_settings).limit(1);
 
         if (existingSettings.length === 0) {
             // Create new settings

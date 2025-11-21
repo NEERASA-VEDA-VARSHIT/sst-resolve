@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import { tickets, outbox, staff, users } from "@/db/schema";
+import { tickets, outbox, users, ticket_statuses } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getUserRoleFromDB } from "@/lib/db-roles";
@@ -25,7 +25,7 @@ import { TICKET_STATUS, isAdminLevel } from "@/conf/constants";
 
 // Body schema for POST
 const ForwardSchema = z.object({
-    targetAdminId: z.number(), // Required: admin to forward to
+    targetAdminId: z.string(), // Required: admin to forward to (UUID)
     reason: z.string().max(2000).optional(),
 });
 
@@ -77,8 +77,14 @@ export async function POST(
         // LOAD TICKET
         // --------------------------------------------------
         const [ticket] = await db
-            .select()
+            .select({
+                id: tickets.id,
+                status_id: tickets.status_id,
+                assigned_to: tickets.assigned_to,
+                status_value: ticket_statuses.value,
+            })
             .from(tickets)
+            .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
             .where(eq(tickets.id, ticketId))
             .limit(1);
 
@@ -86,7 +92,7 @@ export async function POST(
             return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
 
         // Cannot forward resolved tickets
-        if (ticket.status === TICKET_STATUS.RESOLVED) {
+        if (ticket.status_value === TICKET_STATUS.RESOLVED) {
             return NextResponse.json(
                 { error: "Cannot forward a resolved ticket" },
                 { status: 400 }
@@ -98,16 +104,13 @@ export async function POST(
         // --------------------------------------------------
         const [targetAdmin] = await db
             .select({
-                id: staff.id,
-                user_id: staff.user_id,
-                domain: staff.domain,
-                scope: staff.scope,
-                full_name: staff.full_name,
+                id: users.id,
+                first_name: users.first_name,
+                last_name: users.last_name,
                 email: users.email,
             })
-            .from(staff)
-            .innerJoin(users, eq(staff.user_id, users.id))
-            .where(eq(staff.id, targetAdminId))
+            .from(users)
+            .where(eq(users.id, targetAdminId))
             .limit(1);
 
         if (!targetAdmin) {
@@ -115,6 +118,23 @@ export async function POST(
                 { error: "Target admin not found" },
                 { status: 404 }
             );
+        }
+
+        const targetAdminName = [targetAdmin.first_name, targetAdmin.last_name]
+            .filter(Boolean)
+            .join(' ')
+            .trim() || "Unknown";
+
+        // --------------------------------------------------
+        // GET FORWARDED STATUS ID
+        // --------------------------------------------------
+        const [forwardedStatus] = await db.select({ id: ticket_statuses.id })
+            .from(ticket_statuses)
+            .where(eq(ticket_statuses.value, TICKET_STATUS.FORWARDED))
+            .limit(1);
+
+        if (!forwardedStatus) {
+            return NextResponse.json({ error: "FORWARDED status not found in database" }, { status: 500 });
         }
 
         // --------------------------------------------------
@@ -126,7 +146,7 @@ export async function POST(
                 .update(tickets)
                 .set({
                     assigned_to: targetAdmin.id,
-                    status: TICKET_STATUS.FORWARDED,
+                    status_id: forwardedStatus.id,
                     updated_at: new Date(),
                 })
                 .where(eq(tickets.id, ticketId))
@@ -143,7 +163,7 @@ export async function POST(
                     forwarded_by_role: role,
                     previous_assigned_to: ticket.assigned_to,
                     new_assigned_to: targetAdmin.id,
-                    new_admin_name: targetAdmin.full_name,
+                    new_admin_name: targetAdminName,
                     new_admin_email: targetAdmin.email,
                     reason: reason || null,
                 },
@@ -155,11 +175,11 @@ export async function POST(
         return NextResponse.json(
             {
                 success: true,
-                message: `Ticket forwarded to ${targetAdmin.full_name || targetAdmin.email}`,
+                message: `Ticket forwarded to ${targetAdminName || targetAdmin.email}`,
                 ticket: updatedTicket,
                 forwardedTo: {
                     id: targetAdmin.id,
-                    name: targetAdmin.full_name,
+                    name: targetAdminName,
                     email: targetAdmin.email,
                 },
             },

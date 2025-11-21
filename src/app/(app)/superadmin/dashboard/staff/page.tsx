@@ -32,7 +32,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
 interface StaffMember {
-  id: number;
+  id: string;
   clerkUserId: string | null;
   fullName: string;
   email: string | null;
@@ -73,7 +73,7 @@ export default function StaffManagementPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [editingStaff, setEditingStaff] = useState<StaffMember | null>(null);
-  const [deletingStaffId, setDeletingStaffId] = useState<number | null>(null);
+  const [deletingStaffId, setDeletingStaffId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     clerkUserId: "",
     domain: "",
@@ -133,13 +133,39 @@ export default function StaffManagementPage() {
       const response = await fetch("/api/admin/master-data");
       if (response.ok) {
         const data = await response.json();
-        setMasterData(data);
+        // Ensure all required properties exist with default empty arrays
+        setMasterData({
+          hostels: data.hostels || [],
+          batches: data.batches || [],
+          class_sections: data.class_sections || [],
+          domains: data.domains || [],
+          roles: data.roles || [],
+          scopes: data.scopes || [],
+        });
       } else {
         toast.error("Failed to fetch master data");
+        // Set empty master data to prevent crashes
+        setMasterData({
+          hostels: [],
+          batches: [],
+          class_sections: [],
+          domains: [],
+          roles: [],
+          scopes: [],
+        });
       }
     } catch (error) {
       console.error("Error fetching master data:", error);
       toast.error("Failed to fetch master data");
+      // Set empty master data to prevent crashes
+      setMasterData({
+        hostels: [],
+        batches: [],
+        class_sections: [],
+        domains: [],
+        roles: [],
+        scopes: [],
+      });
     } finally {
       setLoadingMasterData(false);
     }
@@ -186,13 +212,13 @@ export default function StaffManagementPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     // Clear previous errors
     setErrors({});
-    
+
     // Validation
     const newErrors: Record<string, string> = {};
-    
+
     if (!formData.clerkUserId || formData.clerkUserId === "none") {
       newErrors.clerkUserId = "Please select a user";
     }
@@ -338,16 +364,16 @@ export default function StaffManagementPage() {
           {masterData && (
             <div className="flex gap-2 mt-2">
               <Badge variant="outline" className="text-xs">
-                {masterData.hostels.length} Hostel{masterData.hostels.length !== 1 ? 's' : ''} Available
+                {(masterData.hostels?.length || 0)} Hostel{(masterData.hostels?.length || 0) !== 1 ? 's' : ''} Available
               </Badge>
               <Badge variant="outline" className="text-xs">
-                {masterData.scopes.length} Location{masterData.scopes.length !== 1 ? 's' : ''} (From Staff Data)
+                {(masterData.scopes?.length || 0)} Location{(masterData.scopes?.length || 0) !== 1 ? 's' : ''} (From Staff Data)
               </Badge>
               <Badge variant="outline" className="text-xs">
-                {masterData.domains.length} Domain{masterData.domains.length !== 1 ? 's' : ''}
+                {(masterData.domains?.length || 0)} Domain{(masterData.domains?.length || 0) !== 1 ? 's' : ''}
               </Badge>
               <Badge variant="outline" className="text-xs">
-                {masterData.roles.length} Role{masterData.roles.length !== 1 ? 's' : ''}
+                {(masterData.roles?.length || 0)} Role{(masterData.roles?.length || 0) !== 1 ? 's' : ''}
               </Badge>
             </div>
           )}
@@ -387,243 +413,243 @@ export default function StaffManagementPage() {
                   </div>
                 </div>
               ) : (
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="clerkUserId">Select User *</Label>
-                  <Select
-                    value={formData.clerkUserId || undefined}
-                    onValueChange={(value) => {
-                      setFormData({ ...formData, clerkUserId: value === "none" ? "" : value });
-                      setErrors({ ...errors, clerkUserId: "" });
-                    }}
-                    required
-                  >
-                    <SelectTrigger id="clerkUserId" className={errors.clerkUserId ? "border-destructive" : ""}>
-                      <SelectValue placeholder="Select a user" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">None</SelectItem>
-                      {clerkUsers
-                        .filter(user => {
-                          // When editing, show current user; when creating, exclude users already in staff
-                          if (editingStaff && staff.find(s => s.clerkUserId === user.id && s.id !== editingStaff.id)) {
-                            return false;
-                          }
-                          if (!editingStaff && staff.find(s => s.clerkUserId === user.id)) {
-                            return false;
-                          }
-                          return true;
-                        })
-                        .map((user, index) => {
-                          const displayName = user.name || 
-                            (user.firstName && user.lastName 
-                              ? `${user.firstName} ${user.lastName}` 
-                              : user.emailAddresses?.[0]?.emailAddress || 
-                                user.email || 
-                                user.id);
-                          return (
-                            <SelectItem key={`user-${user.id}-${index}`} value={user.id}>
-                              {displayName}
-                            </SelectItem>
-                          );
-                        })}
-                    </SelectContent>
-                  </Select>
-                  {selectedUser && (
-                    <div className="p-3 bg-muted rounded-lg space-y-1">
-                      <p className="text-sm font-medium">{selectedUserFullName}</p>
-                      {selectedUserEmail && (
-                        <p className="text-xs text-muted-foreground">{selectedUserEmail}</p>
-                      )}
-                    </div>
-                  )}
-                  <p className="text-xs text-muted-foreground">
-                    Select a user from Clerk. Their name and email will be automatically used.
-                  </p>
-                  {errors.clerkUserId && (
-                    <p className="text-sm text-destructive">{errors.clerkUserId}</p>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
+                <form onSubmit={handleSubmit} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="domain">Domain *</Label>
+                    <Label htmlFor="clerkUserId">Select User *</Label>
                     <Select
-                      value={formData.domain}
+                      value={formData.clerkUserId || undefined}
                       onValueChange={(value) => {
-                        setFormData({
-                          ...formData,
-                          domain: value,
-                          scope: value === "College" ? "" : formData.scope,
-                        });
-                        setErrors({ ...errors, domain: "", scope: "" });
+                        setFormData({ ...formData, clerkUserId: value === "none" ? "" : value });
+                        setErrors({ ...errors, clerkUserId: "" });
                       }}
                       required
                     >
-                      <SelectTrigger id="domain" className={errors.domain ? "border-destructive" : ""}>
-                        <SelectValue placeholder={masterData ? "Select domain" : "Loading..."} />
+                      <SelectTrigger id="clerkUserId" className={errors.clerkUserId ? "border-destructive" : ""}>
+                        <SelectValue placeholder="Select a user" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        {clerkUsers
+                          .filter(user => {
+                            // When editing, show current user; when creating, exclude users already in staff
+                            if (editingStaff && staff.find(s => s.clerkUserId === user.id && s.id !== editingStaff.id)) {
+                              return false;
+                            }
+                            if (!editingStaff && staff.find(s => s.clerkUserId === user.id)) {
+                              return false;
+                            }
+                            return true;
+                          })
+                          .map((user, index) => {
+                            const displayName = user.name ||
+                              (user.firstName && user.lastName
+                                ? `${user.firstName} ${user.lastName}`
+                                : user.emailAddresses?.[0]?.emailAddress ||
+                                user.email ||
+                                user.id);
+                            return (
+                              <SelectItem key={`user-${user.id}-${index}`} value={user.id}>
+                                {displayName}
+                              </SelectItem>
+                            );
+                          })}
+                      </SelectContent>
+                    </Select>
+                    {selectedUser && (
+                      <div className="p-3 bg-muted rounded-lg space-y-1">
+                        <p className="text-sm font-medium">{selectedUserFullName}</p>
+                        {selectedUserEmail && (
+                          <p className="text-xs text-muted-foreground">{selectedUserEmail}</p>
+                        )}
+                      </div>
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      Select a user from Clerk. Their name and email will be automatically used.
+                    </p>
+                    {errors.clerkUserId && (
+                      <p className="text-sm text-destructive">{errors.clerkUserId}</p>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="domain">Domain *</Label>
+                      <Select
+                        value={formData.domain}
+                        onValueChange={(value) => {
+                          setFormData({
+                            ...formData,
+                            domain: value,
+                            scope: value === "College" ? "" : formData.scope,
+                          });
+                          setErrors({ ...errors, domain: "", scope: "" });
+                        }}
+                        required
+                      >
+                        <SelectTrigger id="domain" className={errors.domain ? "border-destructive" : ""}>
+                          <SelectValue placeholder={masterData ? "Select domain" : "Loading..."} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {!masterData ? (
+                            <SelectItem value="loading" disabled>Loading domains...</SelectItem>
+                          ) : masterData.domains.length === 0 ? (
+                            <SelectItem value="empty" disabled>No domains available</SelectItem>
+                          ) : (
+                            masterData.domains.map((domain) => (
+                              <SelectItem key={domain.value} value={domain.value}>
+                                {domain.label}
+                              </SelectItem>
+                            ))
+                          )}
+                        </SelectContent>
+                      </Select>
+                      {errors.domain && (
+                        <p className="text-sm text-destructive">{errors.domain}</p>
+                      )}
+                    </div>
+                    {formData.domain === "Hostel" && (
+                      <div className="space-y-2">
+                        <Label htmlFor="scope">Scope (Hostel/Location) *</Label>
+                        <Select
+                          value={formData.scope}
+                          onValueChange={(value) => {
+                            setFormData({ ...formData, scope: value });
+                            setErrors({ ...errors, scope: "" });
+                          }}
+                          required
+                          disabled={!masterData || (masterData.scopes.length === 0 && masterData.hostels.length === 0)}
+                        >
+                          <SelectTrigger id="scope" className={errors.scope ? "border-destructive" : ""}>
+                            <SelectValue placeholder={masterData ? "Select location/hostel" : "Loading..."} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {!masterData ? (
+                              <SelectItem value="loading" disabled>Loading locations...</SelectItem>
+                            ) : masterData.scopes.length === 0 && masterData.hostels.length === 0 ? (
+                              <SelectItem value="empty" disabled>No locations available</SelectItem>
+                            ) : (
+                              <>
+                                {/* Show existing scopes from staff data (dynamic) */}
+                                {masterData.scopes.length > 0 && (
+                                  <>
+                                    {masterData.scopes.map((scope) => (
+                                      <SelectItem key={`scope-${scope.value}`} value={scope.value}>
+                                        {scope.label}
+                                      </SelectItem>
+                                    ))}
+                                    {masterData.hostels.length > 0 && (
+                                      <SelectItem value="divider" disabled>
+                                        ──── From Hostels Table ────
+                                      </SelectItem>
+                                    )}
+                                  </>
+                                )}
+                                {/* Also show hostels from hostels table, but only if not already in scopes */}
+                                {masterData.hostels
+                                  .filter(hostel => !masterData.scopes.some(scope => scope.value === hostel.name))
+                                  .map((hostel) => (
+                                    <SelectItem key={`hostel-${hostel.id}`} value={hostel.name}>
+                                      {hostel.name} {hostel.code ? `(${hostel.code})` : ''}
+                                    </SelectItem>
+                                  ))}
+                              </>
+                            )}
+                          </SelectContent>
+                        </Select>
+                        {masterData && masterData.scopes.length === 0 && masterData.hostels.length === 0 && (
+                          <p className="text-xs text-amber-600 dark:text-amber-400">
+                            ⚠️ No locations configured. Please add staff with locations or configure hostels first.
+                          </p>
+                        )}
+                        {masterData && masterData.scopes.length > 0 && (
+                          <p className="text-xs text-muted-foreground">
+                            📍 Showing {masterData.scopes.length} existing location{masterData.scopes.length !== 1 ? 's' : ''} from staff data
+                            {masterData.hostels.length > 0 && ` + ${masterData.hostels.length} from hostels table`}
+                          </p>
+                        )}
+                        {errors.scope && (
+                          <p className="text-sm text-destructive">{errors.scope}</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="role">Role *</Label>
+                    <Select
+                      value={formData.role}
+                      onValueChange={(value) => {
+                        setFormData({ ...formData, role: value });
+                        setErrors({ ...errors, role: "" });
+                      }}
+                      required
+                      disabled={!masterData || masterData.roles.length === 0}
+                    >
+                      <SelectTrigger id="role" className={errors.role ? "border-destructive" : ""}>
+                        <SelectValue placeholder={masterData ? "Select role" : "Loading..."} />
                       </SelectTrigger>
                       <SelectContent>
                         {!masterData ? (
-                          <SelectItem value="loading" disabled>Loading domains...</SelectItem>
-                        ) : masterData.domains.length === 0 ? (
-                          <SelectItem value="empty" disabled>No domains available</SelectItem>
+                          <SelectItem value="loading" disabled>Loading roles...</SelectItem>
+                        ) : masterData.roles.length === 0 ? (
+                          <SelectItem value="empty" disabled>No roles available</SelectItem>
                         ) : (
-                          masterData.domains.map((domain) => (
-                            <SelectItem key={domain.value} value={domain.value}>
-                              {domain.label}
+                          masterData.roles.map((role) => (
+                            <SelectItem key={role.value} value={role.value}>
+                              {role.label}
                             </SelectItem>
                           ))
                         )}
                       </SelectContent>
                     </Select>
-                    {errors.domain && (
-                      <p className="text-sm text-destructive">{errors.domain}</p>
+                    {masterData && masterData.roles.length === 0 && (
+                      <p className="text-xs text-amber-600 dark:text-amber-400">
+                        ⚠️ No staff roles configured. Please configure roles in the system.
+                      </p>
+                    )}
+                    {errors.role && (
+                      <p className="text-sm text-destructive">{errors.role}</p>
                     )}
                   </div>
-                  {formData.domain === "Hostel" && (
+
+
+                  <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="scope">Scope (Hostel/Location) *</Label>
-                      <Select
-                        value={formData.scope}
-                        onValueChange={(value) => {
-                          setFormData({ ...formData, scope: value });
-                          setErrors({ ...errors, scope: "" });
-                        }}
-                        required
-                        disabled={!masterData || (masterData.scopes.length === 0 && masterData.hostels.length === 0)}
-                      >
-                        <SelectTrigger id="scope" className={errors.scope ? "border-destructive" : ""}>
-                          <SelectValue placeholder={masterData ? "Select location/hostel" : "Loading..."} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {!masterData ? (
-                            <SelectItem value="loading" disabled>Loading locations...</SelectItem>
-                          ) : masterData.scopes.length === 0 && masterData.hostels.length === 0 ? (
-                            <SelectItem value="empty" disabled>No locations available</SelectItem>
-                          ) : (
-                            <>
-                              {/* Show existing scopes from staff data (dynamic) */}
-                              {masterData.scopes.length > 0 && (
-                                <>
-                                  {masterData.scopes.map((scope) => (
-                                    <SelectItem key={`scope-${scope.value}`} value={scope.value}>
-                                      {scope.label}
-                                    </SelectItem>
-                                  ))}
-                                  {masterData.hostels.length > 0 && (
-                                    <SelectItem value="divider" disabled>
-                                      ──── From Hostels Table ────
-                                    </SelectItem>
-                                  )}
-                                </>
-                              )}
-                              {/* Also show hostels from hostels table, but only if not already in scopes */}
-                              {masterData.hostels
-                                .filter(hostel => !masterData.scopes.some(scope => scope.value === hostel.name))
-                                .map((hostel) => (
-                                  <SelectItem key={`hostel-${hostel.id}`} value={hostel.name}>
-                                    {hostel.name} {hostel.code ? `(${hostel.code})` : ''}
-                                  </SelectItem>
-                                ))}
-                            </>
-                          )}
-                        </SelectContent>
-                      </Select>
-                      {masterData && masterData.scopes.length === 0 && masterData.hostels.length === 0 && (
-                        <p className="text-xs text-amber-600 dark:text-amber-400">
-                          ⚠️ No locations configured. Please add staff with locations or configure hostels first.
-                        </p>
-                      )}
-                      {masterData && masterData.scopes.length > 0 && (
-                        <p className="text-xs text-muted-foreground">
-                          📍 Showing {masterData.scopes.length} existing location{masterData.scopes.length !== 1 ? 's' : ''} from staff data
-                          {masterData.hostels.length > 0 && ` + ${masterData.hostels.length} from hostels table`}
-                        </p>
-                      )}
-                      {errors.scope && (
-                        <p className="text-sm text-destructive">{errors.scope}</p>
-                      )}
+                      <Label htmlFor="slackUserId">Slack User ID</Label>
+                      <Input
+                        id="slackUserId"
+                        value={formData.slackUserId}
+                        onChange={(e) => setFormData({ ...formData, slackUserId: e.target.value })}
+                        placeholder="U0123ABCD"
+                      />
                     </div>
-                  )}
-                </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="whatsappNumber">WhatsApp Number</Label>
+                      <Input
+                        id="whatsappNumber"
+                        value={formData.whatsappNumber}
+                        onChange={(e) => setFormData({ ...formData, whatsappNumber: e.target.value })}
+                        placeholder="+1234567890"
+                      />
+                    </div>
+                  </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="role">Role *</Label>
-                  <Select
-                    value={formData.role}
-                    onValueChange={(value) => {
-                      setFormData({ ...formData, role: value });
-                      setErrors({ ...errors, role: "" });
-                    }}
-                    required
-                    disabled={!masterData || masterData.roles.length === 0}
-                  >
-                    <SelectTrigger id="role" className={errors.role ? "border-destructive" : ""}>
-                      <SelectValue placeholder={masterData ? "Select role" : "Loading..."} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {!masterData ? (
-                        <SelectItem value="loading" disabled>Loading roles...</SelectItem>
-                      ) : masterData.roles.length === 0 ? (
-                        <SelectItem value="empty" disabled>No roles available</SelectItem>
+                  <DialogFooter>
+                    <Button type="button" variant="outline" onClick={handleCloseDialog}>
+                      Cancel
+                    </Button>
+                    <Button type="submit" disabled={saving}>
+                      {saving ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Saving...
+                        </>
                       ) : (
-                        masterData.roles.map((role) => (
-                          <SelectItem key={role.value} value={role.value}>
-                            {role.label}
-                          </SelectItem>
-                        ))
+                        editingStaff ? "Update" : "Create"
                       )}
-                    </SelectContent>
-                  </Select>
-                  {masterData && masterData.roles.length === 0 && (
-                    <p className="text-xs text-amber-600 dark:text-amber-400">
-                      ⚠️ No staff roles configured. Please configure roles in the system.
-                    </p>
-                  )}
-                  {errors.role && (
-                    <p className="text-sm text-destructive">{errors.role}</p>
-                  )}
-                </div>
-
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="slackUserId">Slack User ID</Label>
-                    <Input
-                      id="slackUserId"
-                      value={formData.slackUserId}
-                      onChange={(e) => setFormData({ ...formData, slackUserId: e.target.value })}
-                      placeholder="U0123ABCD"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="whatsappNumber">WhatsApp Number</Label>
-                    <Input
-                      id="whatsappNumber"
-                      value={formData.whatsappNumber}
-                      onChange={(e) => setFormData({ ...formData, whatsappNumber: e.target.value })}
-                      placeholder="+1234567890"
-                    />
-                  </div>
-                </div>
-
-                <DialogFooter>
-                  <Button type="button" variant="outline" onClick={handleCloseDialog}>
-                    Cancel
-                  </Button>
-                  <Button type="submit" disabled={saving}>
-                    {saving ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Saving...
-                      </>
-                    ) : (
-                      editingStaff ? "Update" : "Create"
-                    )}
-                  </Button>
-                </DialogFooter>
-              </form>
+                    </Button>
+                  </DialogFooter>
+                </form>
               )}
             </DialogContent>
           </Dialog>
@@ -745,4 +771,3 @@ export default function StaffManagementPage() {
     </div>
   );
 }
-

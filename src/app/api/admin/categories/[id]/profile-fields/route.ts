@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db, category_profile_fields, categories } from "@/db";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 
 // GET - Get profile field configuration for a category
@@ -26,41 +26,24 @@ export async function GET(
 			return NextResponse.json({ error: "Invalid category ID" }, { status: 400 });
 		}
 
-		// Verify category exists - explicitly select columns to avoid Drizzle issues
-		const [category] = await db
-			.select({
-				id: categories.id,
-				name: categories.name,
-				slug: categories.slug,
-				description: categories.description,
-				icon: categories.icon,
-				color: categories.color,
-				sla_hours: categories.sla_hours,
-				poc_name: categories.poc_name,
-				poc_slack_id: categories.poc_slack_id,
-				committee_id: categories.committee_id,
-				parent_category_id: categories.parent_category_id,
-				active: categories.active,
-				display_order: categories.display_order,
-				created_at: categories.created_at,
-				updated_at: categories.updated_at,
-			})
-			.from(categories)
-			.where(eq(categories.id, categoryId))
-			.limit(1);
-
-		if (!category) {
-			return NextResponse.json({ error: "Category not found" }, { status: 404 });
-		}
-
-		// Get profile field configurations for this category
+		// Get profile field configurations for this category - explicit columns
 		const profileFields = await db
-			.select()
+			.select({
+				id: category_profile_fields.id,
+				category_id: category_profile_fields.category_id,
+				field_name: category_profile_fields.field_name,
+				required: category_profile_fields.required,
+				editable: category_profile_fields.editable,
+				display_order: category_profile_fields.display_order,
+				created_at: category_profile_fields.created_at,
+			})
 			.from(category_profile_fields)
-			.where(eq(category_profile_fields.category_id, categoryId))
-			.orderBy(category_profile_fields.display_order);
+			.where(eq(category_profile_fields.category_id, categoryId));
 
-		return NextResponse.json({ profileFields });
+		// Sort manually to avoid orderBy issues
+		const sortedProfileFields = profileFields.sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+
+		return NextResponse.json({ profileFields: sortedProfileFields });
 	} catch (error) {
 		console.error("Error fetching category profile fields:", error);
 		return NextResponse.json(
@@ -90,33 +73,6 @@ export async function POST(
 		const categoryId = parseInt(id);
 		if (isNaN(categoryId)) {
 			return NextResponse.json({ error: "Invalid category ID" }, { status: 400 });
-		}
-
-		// Verify category exists - explicitly select columns to avoid Drizzle issues
-		const [category] = await db
-			.select({
-				id: categories.id,
-				name: categories.name,
-				slug: categories.slug,
-				description: categories.description,
-				icon: categories.icon,
-				color: categories.color,
-				sla_hours: categories.sla_hours,
-				poc_name: categories.poc_name,
-				poc_slack_id: categories.poc_slack_id,
-				committee_id: categories.committee_id,
-				parent_category_id: categories.parent_category_id,
-				active: categories.active,
-				display_order: categories.display_order,
-				created_at: categories.created_at,
-				updated_at: categories.updated_at,
-			})
-			.from(categories)
-			.where(eq(categories.id, categoryId))
-			.limit(1);
-
-		if (!category) {
-			return NextResponse.json({ error: "Category not found" }, { status: 404 });
 		}
 
 		const body = await request.json();
@@ -168,14 +124,24 @@ export async function POST(
 			);
 		}
 
-		// Return updated configurations
+		// Return updated configurations - explicit columns
 		const updatedFields = await db
-			.select()
+			.select({
+				id: category_profile_fields.id,
+				category_id: category_profile_fields.category_id,
+				field_name: category_profile_fields.field_name,
+				required: category_profile_fields.required,
+				editable: category_profile_fields.editable,
+				display_order: category_profile_fields.display_order,
+				created_at: category_profile_fields.created_at,
+			})
 			.from(category_profile_fields)
-			.where(eq(category_profile_fields.category_id, categoryId))
-			.orderBy(category_profile_fields.display_order);
+			.where(eq(category_profile_fields.category_id, categoryId));
 
-		return NextResponse.json({ profileFields: updatedFields });
+		// Sort manually to avoid orderBy issues
+		const sortedUpdatedFields = updatedFields.sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+
+		return NextResponse.json({ profileFields: sortedUpdatedFields });
 	} catch (error) {
 		console.error("Error setting category profile fields:", error);
 		return NextResponse.json(
@@ -184,4 +150,3 @@ export async function POST(
 		);
 	}
 }
-

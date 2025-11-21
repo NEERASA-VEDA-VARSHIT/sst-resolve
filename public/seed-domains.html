@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Seed Domains</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 600px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    h1 {
+      margin-top: 0;
+      color: #333;
+    }
+    button {
+      background: #3B82F6;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      font-size: 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:hover {
+      background: #2563EB;
+    }
+    button:disabled {
+      background: #94A3B8;
+      cursor: not-allowed;
+    }
+    #result {
+      margin-top: 20px;
+      padding: 12px;
+      border-radius: 4px;
+      font-family: 'Courier New', monospace;
+      white-space: pre-wrap;
+    }
+    .success {
+      background: #ECFDF5;
+      border: 1px solid #10B981;
+      color: #065F46;
+    }
+    .error {
+      background: #FEF2F2;
+      border: 1px solid #EF4444;
+      color: #991B1B;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🌱 Seed Database Domains</h1>
+    <p>This will seed your database with:</p>
+    <ul>
+      <li><strong>Hostel</strong> domain (with Neeladri and Velankani scopes)</li>
+      <li><strong>College</strong> domain</li>
+    </ul>
+    <button id="seedBtn" onclick="seedDomains()">Seed Domains</button>
+    <div id="result"></div>
+  </div>
+
+  <script>
+    async function seedDomains() {
+      const btn = document.getElementById('seedBtn');
+      const resultDiv = document.getElementById('result');
+      
+      btn.disabled = true;
+      btn.textContent = 'Seeding...';
+      resultDiv.textContent = '';
+      resultDiv.className = '';
+
+      try {
+        const response = await fetch('/api/seed/domains', { 
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+          resultDiv.className = 'success';
+          resultDiv.textContent = '✅ ' + data.message + '\n\n' + 
+            'Domains: ' + data.domains.length + '\n' +
+            'Scopes: ' + data.scopes.length + '\n\n' +
+            JSON.stringify(data, null, 2);
+        } else {
+          resultDiv.className = 'error';
+          resultDiv.textContent = '❌ Error: ' + (data.error || 'Unknown error') + '\n\n' + 
+            JSON.stringify(data, null, 2);
+        }
+      } catch (error) {
+        resultDiv.className = 'error';
+        resultDiv.textContent = '❌ Network Error: ' + error.message;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Seed Domains';
+      }
+    }
+  </script>
+</body>
+</html>

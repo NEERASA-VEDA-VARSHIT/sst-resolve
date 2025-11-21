@@ -32,8 +32,16 @@ export async function GET(request: NextRequest) {
 		const { searchParams } = new URL(request.url);
 		const activeOnly = searchParams.get("active") === "true";
 
-		let query = db.select().from(hostels);
-		
+		let query = db.select({
+			id: hostels.id,
+			name: hostels.name,
+			code: hostels.code,
+			capacity: hostels.capacity,
+			is_active: hostels.is_active,
+			created_at: hostels.created_at,
+			updated_at: hostels.updated_at,
+		}).from(hostels);
+
 		if (activeOnly) {
 			query = query.where(eq(hostels.is_active, true)) as any;
 		}
@@ -75,7 +83,10 @@ export async function POST(request: NextRequest) {
 
 		// Check if hostel with same name already exists
 		const [existing] = await db
-			.select()
+			.select({
+				id: hostels.id,
+				name: hostels.name,
+			})
 			.from(hostels)
 			.where(eq(hostels.name, name.trim()))
 			.limit(1);

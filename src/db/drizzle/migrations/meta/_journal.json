@@ -5,36 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1762406841762,
-      "tag": "0000_massive_virginia_dare",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1762408112442,
-      "tag": "0001_thankful_vector",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1762411612540,
-      "tag": "0002_tired_alex_power",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1762419735651,
-      "tag": "0003_loose_mockingbird",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1762495420720,
-      "tag": "0004_fearless_brother_voodoo",
+      "when": 1763670121917,
+      "tag": "0000_fat_screwball",
       "breakpoints": true
     }
   ]

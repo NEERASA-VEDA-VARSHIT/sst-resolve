@@ -1,1 +1,0 @@
-ALTER TABLE "tickets" ADD COLUMN "is_public" text DEFAULT 'false';

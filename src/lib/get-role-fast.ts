@@ -7,7 +7,7 @@
  */
 
 import { db } from "@/db";
-import { users, user_roles, roles } from "@/db/schema";
+import { users, roles } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import type { UserRole } from "@/types/auth";
 
@@ -27,54 +27,36 @@ const roleCache = new Map<string, { role: UserRole | null; expires: number }>();
 export async function getRoleFast(clerkId: string): Promise<UserRole | null> {
   const now = Date.now();
   const cached = roleCache.get(clerkId);
-  
+
   // Return cached role if still valid
   if (cached && cached.expires > now) {
     return cached.role;
   }
 
   try {
-    // Get ALL roles for this user (they might have multiple)
-    const result = await db
-      .select({ 
-        roleName: roles.name 
+    // Get role for this user (single role per user now)
+    const [result] = await db
+      .select({
+        roleName: roles.name
       })
       .from(users)
-      .innerJoin(user_roles, eq(user_roles.user_id, users.id))
-      .innerJoin(roles, eq(user_roles.role_id, roles.id))
-      .where(eq(users.clerk_id, clerkId));
+      .leftJoin(roles, eq(users.role_id, roles.id))
+      .where(eq(users.clerk_id, clerkId))
+      .limit(1);
 
     let role: UserRole | null = null;
 
-    if (result.length > 0) {
-      // If user has multiple roles, pick the highest priority one
-      const rolePriority: Record<UserRole, number> = {
-        super_admin: 5,
-        
-        admin: 3,
-        committee: 2,
-        student: 1,
-      };
-
+    if (result && result.roleName) {
       const validRoles: UserRole[] = ["student", "admin", "super_admin", "committee"];
-      let highestPriority = -1;
-
-      for (const row of result) {
-        const roleName = row.roleName;
-        if (validRoles.includes(roleName as UserRole)) {
-          const priority = rolePriority[roleName as UserRole];
-          if (priority > highestPriority) {
-            highestPriority = priority;
-            role = roleName as UserRole;
-          }
-        }
+      if (validRoles.includes(result.roleName as UserRole)) {
+        role = result.roleName as UserRole;
       }
     }
 
     // Cache for 10 seconds
-    roleCache.set(clerkId, { 
-      role, 
-      expires: now + 10_000 
+    roleCache.set(clerkId, {
+      role,
+      expires: now + 10_000
     });
 
     return role;
@@ -85,13 +67,13 @@ export async function getRoleFast(clerkId: string): Promise<UserRole | null> {
     if (process.env.NODE_ENV === 'development') {
       console.warn("[getRoleFast] DB query failed (Edge runtime) - fallback to page auth");
     }
-    
+
     // On error, cache null for 10 seconds to avoid hammering DB
-    roleCache.set(clerkId, { 
-      role: null, 
-      expires: now + 10_000 
+    roleCache.set(clerkId, {
+      role: null,
+      expires: now + 10_000
     });
-    
+
     return null;
   }
 }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import { tickets, users, staff } from "@/db/schema";
+import { tickets, users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
@@ -25,17 +25,30 @@ import { getOrCreateUser } from "@/lib/user-sync";
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     // ------------------- AUTH -------------------
     const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { id } = await params;
+    const ticketId = Number(id);
     if (isNaN(ticketId)) {
       return NextResponse.json({ error: "Invalid ticket ID" }, { status: 400 });
     }
 
     // Load local user for ownership checks
     const localUser = await getOrCreateUser(userId);
+    if (!localUser) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    const role = await getUserRoleFromDB(userId);
+    const isStudent = role === "student";
+    const isCommittee = role === "committee";
 
     // ------------------- LOAD TICKET -------------------
     const [ticket] = await db
@@ -55,11 +68,9 @@ export async function GET(
       }
     }
 
-    if (isCommittee) {
-      // Committee can only view activity for committee tickets
-      // The ticket/category rules already enforced upstream.
-      // If needed, we enforce category here.
-    }
+    // Committee → can only view activity for committee tickets
+    // The ticket/category rules already enforced upstream.
+    // If needed, we enforce category here.
 
     // Admins, senior, super_admin → full access
 
@@ -86,11 +97,15 @@ export async function GET(
     }
 
     // 2. STATUS CHANGES
+    // Note: Since we don't have a separate history table for status changes yet,
+    // we only have the current timestamps.
+    // Ideally, we should query an 'activity_log' or 'audit_log' table.
+
     if (ticket.created_at) {
       timeline.push({
         type: "status_change",
         oldStatus: null,
-        newStatus: ticket.status || "OPEN",
+        newStatus: "OPEN", // Initial status
         at: ticket.created_at,
       });
     }

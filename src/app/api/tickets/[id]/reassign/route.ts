@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { db, tickets } from "@/db";
+import { db, tickets, users, categories, outbox } from "@/db";
 import { eq } from "drizzle-orm";
 import { postThreadReply } from "@/lib/slack";
-import { sendEmail, getStudentEmail } from "@/lib/email";
-import { ReassignTicketSchema } from "@/schema/ticket.schema";
+import { sendEmail } from "@/lib/email";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
 
@@ -53,22 +52,31 @@ export async function POST(
 
 		const body = await request.json();
 		
-		// Validate input using Zod schema
-		const validationResult = ReassignTicketSchema.safeParse(body);
-		if (!validationResult.success) {
+		// Validate input - assignedTo should be a UUID string or "unassigned"
+		const { assignedTo } = body;
+		if (!assignedTo || (typeof assignedTo !== "string")) {
 			return NextResponse.json(
-				{ error: "Validation failed", details: validationResult.error.errors },
+				{ error: "Validation failed", details: "assignedTo is required and must be a string (UUID or 'unassigned')" },
 				{ status: 400 }
 			);
 		}
 		
-		const { assignedTo } = validationResult.data;
+		// Convert "unassigned" to null, otherwise it should be a database user UUID
 		const normalizedAssignedTo = assignedTo === "unassigned" ? null : assignedTo;
  
-		// Get current ticket
+		// Get current ticket with category info
 		const [ticket] = await db
-			.select()
+			.select({
+				id: tickets.id,
+				category_id: tickets.category_id,
+				category_name: categories.name,
+				location: tickets.location,
+				assigned_to: tickets.assigned_to,
+				created_by: tickets.created_by,
+				metadata: tickets.metadata,
+			})
 			.from(tickets)
+			.leftJoin(categories, eq(tickets.category_id, categories.id))
 			.where(eq(tickets.id, ticketId))
 			.limit(1);
 
@@ -76,68 +84,116 @@ export async function POST(
 			return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
 		}
 
-		// Parse existing details
-		let details: any = {};
+		// Parse existing metadata
+		let metadata: any = {};
 		let originalMessageId: string | undefined;
 		let originalSubject: string | undefined;
-		if (ticket.details) {
+		if (ticket.metadata) {
 			try {
-				details = JSON.parse(ticket.details);
-				originalMessageId = details.originalEmailMessageId;
-				originalSubject = details.originalEmailSubject;
+				metadata = typeof ticket.metadata === 'object' ? ticket.metadata : JSON.parse(String(ticket.metadata));
+				originalMessageId = metadata.originalEmailMessageId;
+				originalSubject = metadata.originalEmailSubject;
 			} catch (e) {
-				console.error("Error parsing details:", e);
+				console.error("Error parsing metadata:", e);
 			}
 		}
 
-		// Validate new assignee against domain/scope assignment
+		// Validate new assignee and get admin name
+		// The assignedTo might be a Clerk ID or a database UUID
 		let adminName = "Admin";
+		let databaseUserId: string | null = null;
+		
 		if (normalizedAssignedTo) {
-			const { getAdminAssignment, ticketMatchesAdminAssignment } = await import("@/lib/admin-assignment");
-			const targetAssignment = await getAdminAssignment(normalizedAssignedTo);
-			if (!targetAssignment.domain) {
-				return NextResponse.json({ error: "Selected admin does not have a domain assignment" }, { status: 400 });
-			}
-			const matchesAssignment = ticketMatchesAdminAssignment(
-				{ category: ticket.category, location: ticket.location },
-				targetAssignment
-			);
-			if (!matchesAssignment) {
-				return NextResponse.json({ error: "Selected admin is not authorized for this ticket's domain" }, { status: 400 });
-			}
-			try {
-				const { clerkClient } = await import("@clerk/nextjs/server");
-				const client = await clerkClient();
-				const user = await client.users.getUser(normalizedAssignedTo);
-				adminName = user.firstName && user.lastName 
-					? `${user.firstName} ${user.lastName}`
-					: user.emailAddresses[0]?.emailAddress || "Admin";
-			} catch (e) {
-				console.error("Error fetching admin name:", e);
+			// Check if it's a Clerk ID (starts with "user_") or a UUID
+			const isClerkId = normalizedAssignedTo.startsWith("user_");
+			
+			if (isClerkId) {
+				// Convert Clerk ID to database user UUID
+				const dbUser = await getOrCreateUser(normalizedAssignedTo);
+				if (!dbUser) {
+					return NextResponse.json({ error: "Selected user not found in database" }, { status: 400 });
+				}
+				databaseUserId = dbUser.id;
+				adminName = [dbUser.first_name, dbUser.last_name].filter(Boolean).join(' ').trim() || dbUser.email || "Admin";
+			} else {
+				// It's already a database UUID, verify the user exists
+				const [targetUser] = await db
+					.select({
+						id: users.id,
+						first_name: users.first_name,
+						last_name: users.last_name,
+						email: users.email,
+					})
+					.from(users)
+					.where(eq(users.id, normalizedAssignedTo))
+					.limit(1);
+
+				if (!targetUser) {
+					return NextResponse.json({ error: "Selected user not found" }, { status: 400 });
+				}
+
+				databaseUserId = targetUser.id;
+				adminName = [targetUser.first_name, targetUser.last_name].filter(Boolean).join(' ').trim() || targetUser.email || "Admin";
 			}
 		} else {
 			adminName = "Unassigned";
 		}
 
-		// Update ticket
-		await db
-			.update(tickets)
-			.set({
-				assignedTo: normalizedAssignedTo,
-				updatedAt: new Date(),
-			})
-			.where(eq(tickets.id, ticketId));
+		// Get previous assignee name for notifications
+		let previousAssigneeName = "Unassigned";
+		if (ticket.assigned_to) {
+			const [prevUser] = await db
+				.select({
+					first_name: users.first_name,
+					last_name: users.last_name,
+					email: users.email,
+				})
+				.from(users)
+				.where(eq(users.id, ticket.assigned_to))
+				.limit(1);
+			if (prevUser) {
+				previousAssigneeName = [prevUser.first_name, prevUser.last_name].filter(Boolean).join(' ').trim() || prevUser.email || "Unknown";
+			}
+		}
 
-		// Send Slack notification
-		if (ticket.category === "Hostel" || ticket.category === "College") {
-			const slackMessageTs = details.slackMessageTs;
-			if (slackMessageTs) {
+		// Update ticket with database user ID and create outbox event for notifications
+		await db.transaction(async (tx) => {
+			await tx
+				.update(tickets)
+				.set({
+					assigned_to: databaseUserId,
+					updated_at: new Date(),
+				})
+				.where(eq(tickets.id, ticketId));
+
+			// Create outbox event for reassignment notifications (decoupled)
+			await tx.insert(outbox).values({
+				event_type: "ticket.reassigned",
+				payload: {
+					ticket_id: ticketId,
+					previous_assigned_to: ticket.assigned_to,
+					new_assigned_to: databaseUserId,
+					previous_assignee_name: previousAssigneeName,
+					new_assignee_name: adminName,
+					category_name: ticket.category_name,
+					reassigned_by: userId,
+				},
+				attempts: 0,
+			});
+		});
+
+		// Send notifications immediately (for real-time updates)
+		// Also handled by worker for reliability
+		try {
+			// Send Slack notification (if category supports it and thread exists)
+			const slackMessageTs = metadata.slackMessageTs;
+			if (slackMessageTs && (ticket.category_name === "Hostel" || ticket.category_name === "College")) {
 				try {
 					const reassignText = normalizedAssignedTo
-						? `🔄 *Ticket Reassigned*\nTicket #${ticketId} has been reassigned to ${adminName}.\nPrevious assignment: ${ticket.assignedTo || "Unassigned"}`
-						: `🔄 *Ticket Unassigned*\nTicket #${ticketId} is now unassigned.\nPrevious assignment: ${ticket.assignedTo || "Unassigned"}`;
+						? `🔄 *Ticket Reassigned*\nTicket #${ticketId} has been reassigned to ${adminName}.\nPrevious assignment: ${previousAssigneeName}`
+						: `🔄 *Ticket Unassigned*\nTicket #${ticketId} is now unassigned.\nPrevious assignment: ${previousAssigneeName}`;
 					await postThreadReply(
-						ticket.category as "Hostel" | "College",
+						ticket.category_name as "Hostel" | "College",
 						slackMessageTs,
 						reassignText
 					);
@@ -146,11 +202,19 @@ export async function POST(
 					console.error(`❌ Error posting reassignment to Slack for ticket #${ticketId}:`, slackError);
 				}
 			}
-		}
 
-		// Send email notification to student
-		try {
-			const studentEmail = await getStudentEmail(ticket.userNumber);
+			// Send email notification to student
+			const [studentUser] = await db
+				.select({
+					email: users.email,
+					first_name: users.first_name,
+					last_name: users.last_name,
+				})
+				.from(users)
+				.where(eq(users.id, ticket.created_by))
+				.limit(1);
+
+			const studentEmail = studentUser?.email;
 			if (studentEmail) {
 				const emailTemplate = normalizedAssignedTo
 					? {
@@ -177,7 +241,7 @@ export async function POST(
 									<p>Your ticket has been reassigned to ensure prompt attention.</p>
 									<div class="info-box">
 										<p><strong>Ticket ID:</strong> #${ticketId}</p>
-										<p><strong>Category:</strong> ${ticket.category}</p>
+										<p><strong>Category:</strong> ${ticket.category_name || "Unknown"}</p>
 										<p><strong>Assigned To:</strong> ${adminName}</p>
 										<p>Your ticket will be handled by the new assignee.</p>
 									</div>
@@ -214,7 +278,7 @@ export async function POST(
 									<p>Your ticket has been updated to ensure prompt attention.</p>
 									<div class="info-box">
 										<p><strong>Ticket ID:</strong> #${ticketId}</p>
-										<p><strong>Category:</strong> ${ticket.category}</p>
+										<p><strong>Category:</strong> ${ticket.category_name || "Unknown"}</p>
 										<p><strong>Assigned To:</strong> ${adminName}</p>
 										<p>Your ticket will be handled by the new assignee.</p>
 									</div>
@@ -238,14 +302,15 @@ export async function POST(
 				});
 				console.log(`✅ Reassignment email sent to ${studentEmail} for ticket #${ticket.id}`);
 			}
-		} catch (emailError) {
-			console.error("Error sending reassignment email:", emailError);
+		} catch (notificationError) {
+			console.error("Error sending reassignment notifications:", notificationError);
+			// Don't fail the request if notifications fail - outbox event will handle retry
 		}
 
 		return NextResponse.json({ 
 			success: true, 
-			message: normalizedAssignedTo ? "Ticket reassigned successfully" : "Ticket unassigned successfully",
-			assignedTo: normalizedAssignedTo,
+			message: databaseUserId ? "Ticket reassigned successfully" : "Ticket unassigned successfully",
+			assignedTo: databaseUserId,
 		});
 	} catch (error) {
 		console.error("Error reassigning ticket:", error);

@@ -1,7 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { db } from "@/db";
-import { tickets, categories, users, staff, user_roles } from "@/db/schema";
+import { db, tickets, categories, users, roles, domains, scopes, ticket_statuses } from "@/db";
 import { eq, sql, and, gte, desc, count } from "drizzle-orm";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
@@ -38,12 +37,12 @@ export default async function SuperAdminAnalyticsPage() {
         const allTickets = await db
             .select({
                 id: tickets.id,
-                status: tickets.status,
+                status: ticket_statuses.value,
                 escalation_level: tickets.escalation_level,
                 created_at: tickets.created_at,
                 resolved_at: tickets.resolved_at,
                 acknowledged_at: tickets.acknowledged_at,
-                due_at: tickets.due_at,
+                due_at: tickets.resolution_due_at,
                 category_id: tickets.category_id,
                 category_name: categories.name,
                 location: tickets.location,
@@ -51,33 +50,43 @@ export default async function SuperAdminAnalyticsPage() {
                 rating_submitted: tickets.rating_submitted,
                 assigned_to: tickets.assigned_to,
                 created_by: tickets.created_by,
-                admin_name: staff.full_name,
-                admin_domain: staff.domain,
-                admin_scope: staff.scope,
+                admin_first_name: users.first_name,
+                admin_last_name: users.last_name,
+                admin_domain: domains.name,
+                admin_scope: scopes.name,
             })
             .from(tickets)
             .leftJoin(categories, eq(tickets.category_id, categories.id))
-            .leftJoin(staff, eq(tickets.assigned_to, staff.id));
+            .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
+            .leftJoin(users, eq(tickets.assigned_to, users.id))
+            .leftJoin(domains, eq(users.primary_domain_id, domains.id))
+            .leftJoin(scopes, eq(users.primary_scope_id, scopes.id));
 
-        // Fetch all staff members
+        // Fetch all staff members (admins, super_admins, committee)
         const allStaff = await db
             .select({
-                id: staff.id,
-                full_name: staff.full_name,
-                domain: staff.domain,
-                scope: staff.scope,
-                user_id: staff.user_id,
+                id: users.id,
+                first_name: users.first_name,
+                last_name: users.last_name,
+                domain: domains.name,
+                scope: scopes.name,
+                role: roles.name,
             })
-            .from(staff);
+            .from(users)
+            .leftJoin(roles, eq(users.role_id, roles.id))
+            .leftJoin(domains, eq(users.primary_domain_id, domains.id))
+            .leftJoin(scopes, eq(users.primary_scope_id, scopes.id))
+            .where(sql`${roles.name} IN ('admin', 'super_admin', 'committee')`);
 
         // Fetch user counts by role
         const userCounts = await db
             .select({
-                role: user_roles.role,
+                role: roles.name,
                 count: sql<number>`count(*)`,
             })
-            .from(user_roles)
-            .groupBy(user_roles.role);
+            .from(users)
+            .leftJoin(roles, eq(users.role_id, roles.id))
+            .groupBy(roles.name);
 
         // Fetch dynamic statuses
         const ticketStatuses = await getAllTicketStatuses();
@@ -157,7 +166,10 @@ export default async function SuperAdminAnalyticsPage() {
                 : 0;
 
             return {
-                ...staffMember,
+                id: staffMember.id,
+                full_name: [staffMember.first_name, staffMember.last_name].filter(Boolean).join(" ") || "Unknown",
+                domain: staffMember.domain,
+                scope: staffMember.scope,
                 assignedCount: assignedTickets.length,
                 resolvedCount: staffResolved.length,
                 resolutionRate: assignedTickets.length > 0 ? (staffResolved.length / assignedTickets.length) * 100 : 0,

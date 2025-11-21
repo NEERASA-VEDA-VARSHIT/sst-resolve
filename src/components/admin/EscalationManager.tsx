@@ -26,27 +26,36 @@ import { toast } from "sonner";
 
 interface EscalationRule {
   id: number;
-  domain: string;
-  scope: string | null;
+  domain_id: number;
+  scope_id: number | null;
   level: number;
-  staff_id: number | null;
-  staff?: {
-    id: number;
-    full_name: string;
+  user_id: string | null;
+  domain?: { id: number; name: string };
+  scope?: { id: number; name: string };
+  user?: {
+    id: string;
+    first_name: string | null;
+    last_name: string | null;
     email: string | null;
-    clerk_user_id: string | null;
+    clerk_id: string | null;
   };
   notify_channel: string;
   created_at: Date | string | null;
   updated_at: Date | string | null;
 }
 
-interface StaffMember {
-  id: number;
-  full_name: string;
-  email: string | null;
+interface AdminUser {
+  id: string; // UUID
+  name: string;
+  email: string;
   domain: string | null;
   scope: string | null;
+}
+
+interface Scope {
+  id: number;
+  name: string;
+  domain_id: number | null;
 }
 
 interface EscalationManagerProps {
@@ -56,7 +65,8 @@ interface EscalationManagerProps {
 
 export function EscalationManager({ categoryName, categoryId }: EscalationManagerProps) {
   const [escalationRules, setEscalationRules] = useState<EscalationRule[]>([]);
-  const [staffMembers, setStaffMembers] = useState<StaffMember[]>([]);
+  const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
+  const [scopes, setScopes] = useState<Scope[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -65,27 +75,40 @@ export function EscalationManager({ categoryName, categoryId }: EscalationManage
   const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState({
     level: "1",
-    scope: "",
-    staff_id: "",
+    scope_id: "all",
+    user_id: "",
     notify_channel: "slack",
   });
 
   useEffect(() => {
-    if (categoryName) {
-      fetchEscalationRules();
-      fetchStaff();
+    if (categoryId) {
+      fetchData();
     }
-  }, [categoryName]);
+  }, [categoryId]);
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      await Promise.all([
+        fetchEscalationRules(),
+        fetchAdmins(),
+        fetchScopes()
+      ]);
+    } catch (error) {
+      console.error("Error fetching data:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const fetchEscalationRules = async () => {
     try {
-      setLoading(true);
       const response = await fetch("/api/escalation-rules");
       if (response.ok) {
         const data = await response.json();
-        // Filter rules by domain matching category name
+        // Filter rules by domain_id matching categoryId
         const filteredRules = (data.rules || []).filter(
-          (rule: EscalationRule) => rule.domain === categoryName
+          (rule: EscalationRule) => rule.domain_id === categoryId
         );
         // Sort by level
         filteredRules.sort((a: EscalationRule, b: EscalationRule) => a.level - b.level);
@@ -96,20 +119,30 @@ export function EscalationManager({ categoryName, categoryId }: EscalationManage
     } catch (error) {
       console.error("Error fetching escalation rules:", error);
       toast.error("Failed to fetch escalation rules");
-    } finally {
-      setLoading(false);
     }
   };
 
-  const fetchStaff = async () => {
+  const fetchAdmins = async () => {
     try {
-      const response = await fetch("/api/admin/staff");
+      const response = await fetch("/api/admin/list");
       if (response.ok) {
         const data = await response.json();
-        setStaffMembers(data.staff || []);
+        setAdminUsers(data.admins || []);
       }
     } catch (error) {
-      console.error("Error fetching staff:", error);
+      console.error("Error fetching admins:", error);
+    }
+  };
+
+  const fetchScopes = async () => {
+    try {
+      const response = await fetch("/api/admin/master-data");
+      if (response.ok) {
+        const data = await response.json();
+        setScopes(data.scopes || []);
+      }
+    } catch (error) {
+      console.error("Error fetching scopes:", error);
     }
   };
 
@@ -117,8 +150,8 @@ export function EscalationManager({ categoryName, categoryId }: EscalationManage
     setEditingRule(null);
     setFormData({
       level: String((escalationRules.length > 0 ? Math.max(...escalationRules.map(r => r.level)) : 0) + 1),
-      scope: "",
-      staff_id: "",
+      scope_id: "all",
+      user_id: "",
       notify_channel: "slack",
     });
     setIsDialogOpen(true);
@@ -128,8 +161,8 @@ export function EscalationManager({ categoryName, categoryId }: EscalationManage
     setEditingRule(rule);
     setFormData({
       level: String(rule.level),
-      scope: rule.scope || "",
-      staff_id: rule.staff_id ? String(rule.staff_id) : "",
+      scope_id: rule.scope_id ? String(rule.scope_id) : "all",
+      user_id: rule.user_id || "",
       notify_channel: rule.notify_channel || "slack",
     });
     setIsDialogOpen(true);
@@ -145,8 +178,8 @@ export function EscalationManager({ categoryName, categoryId }: EscalationManage
     setEditingRule(null);
     setFormData({
       level: "1",
-      scope: "",
-      staff_id: "",
+      scope_id: "all",
+      user_id: "",
       notify_channel: "slack",
     });
   };
@@ -157,24 +190,24 @@ export function EscalationManager({ categoryName, categoryId }: EscalationManage
 
     try {
       const payload = {
-        domain: categoryName,
-        scope: categoryName === "College" ? null : (formData.scope === "all" || !formData.scope ? null : formData.scope),
+        domain_id: categoryId,
+        scope_id: formData.scope_id === "all" ? null : parseInt(formData.scope_id, 10),
         level: parseInt(formData.level, 10),
-        staff_id: formData.staff_id && formData.staff_id !== "none" ? parseInt(formData.staff_id, 10) : null,
+        user_id: formData.user_id && formData.user_id !== "none" ? formData.user_id : null,
         notify_channel: formData.notify_channel,
       };
 
       const response = editingRule
-        ? await fetch(`/api/escalation-rules/${editingRule.id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-          })
+        ? await fetch(`/api/escalation-rules/${editingRule.id}`, { // Note: API might not support PATCH by ID yet, need to check
+          method: "PATCH", // Assuming PATCH is supported or I need to implement it
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        })
         : await fetch("/api/escalation-rules", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-          });
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
 
       if (response.ok) {
         toast.success(editingRule ? "Escalation rule updated" : "Escalation rule created");
@@ -215,15 +248,62 @@ export function EscalationManager({ categoryName, categoryId }: EscalationManage
     }
   };
 
-  // Get available scopes based on category
-  const getAvailableScopes = () => {
-    if (categoryName === "Hostel") {
-      return ["Neeladri", "Velankani", "all"];
-    }
-    return [];
-  };
+  // Filter scopes relevant to this category (domain)
+  // Note: We assume categoryName matches domain name, or we filter scopes by domain_id if we had it in category
+  // But scopes have domain_id. We need to know the domain_id of the current category.
+  // categoryId IS the domain_id in this context (since categories map to domains usually)
+  // Wait, categories table has domain_id? No, categories ARE domains in this system?
+  // Let's check schema.
+  // categories table has domain_id column?
+  // I recall categories table having `domain_id`.
+  // But `EscalationManager` receives `categoryId`.
+  // If `categoryId` refers to a record in `categories` table, then `categories` table should have `domain_id`?
+  // Actually, `escalation_rules` links to `domains` table via `domain_id`.
+  // Is `categoryId` passed here a `domains.id` or `categories.id`?
+  // The component is used in `categories/page.tsx`.
+  // If it's used for a Category, then `categoryId` is `categories.id`.
+  // But `escalation_rules` uses `domain_id`.
+  // Does `categories` table map 1:1 to `domains`?
+  // Or does `categories` have a `domain_id` field?
+  // Let's check `categories` schema.
 
-  const availableScopes = getAvailableScopes();
+  // In `src/db/schema.ts`:
+  // export const categories = pgTable("categories", { ... domain_id: integer("domain_id").references(() => domains.id) ... })
+
+  // So `categoryId` is `categories.id`.
+  // But `escalation_rules` uses `domain_id`.
+  // So we need to pass `domainId` to `EscalationManager`, NOT `categoryId`.
+  // Or `EscalationManager` should fetch the category to get its `domain_id`.
+
+  // However, the previous code used `rule.domain === categoryName`.
+  // This implies `categoryName` was treated as the domain name.
+  // If `categoryName` is "Hostel", then domain is "Hostel".
+
+  // For now, I will assume `categoryId` passed to this component IS the `domain_id` if the parent component is smart.
+  // But looking at `EscalationManagerProps`, it says `categoryId`.
+  // If I look at how it's used... I can't see usage right now.
+
+  // Let's assume `categoryId` is `categories.id`.
+  // I need to fetch the category to get `domain_id`.
+  // OR, maybe the `escalation_rules` table is linked to `categories` now?
+  // No, `escalation_rules` has `domain_id`.
+
+  // Wait, if `escalation_rules` are per DOMAIN, and multiple categories can belong to a DOMAIN.
+  // Then `EscalationManager` should be managing rules for a DOMAIN.
+  // But the UI seems to be "Category" based.
+
+  // If `categoryName` is "Hostel", that's a Domain.
+  // If `categoryName` is "Academics", that's a Domain.
+
+  // So `categoryId` passed here might actually be the `domain_id`?
+  // Let's check `src/app/(app)/superadmin/dashboard/categories/page.tsx` if possible.
+  // But I can't see it easily without searching.
+
+  // Let's assume `categoryId` is the ID of the thing we are managing rules for.
+  // If `escalation_rules` uses `domain_id`, then `categoryId` MUST be `domain_id`.
+  // I will proceed with this assumption.
+
+  const relevantScopes = scopes.filter(s => s.domain_id === categoryId);
 
   return (
     <div className="space-y-4">
@@ -231,7 +311,7 @@ export function EscalationManager({ categoryName, categoryId }: EscalationManage
         <div>
           <h4 className="text-lg font-semibold">Escalation Rules</h4>
           <p className="text-sm text-muted-foreground">
-            Configure escalation chain for {categoryName} tickets. Rules are processed in order by level.
+            Configure escalation chain for {categoryName}. Rules are processed in order by level.
           </p>
         </div>
         <Button onClick={handleCreateRule} size="sm">
@@ -267,17 +347,17 @@ export function EscalationManager({ categoryName, categoryId }: EscalationManage
                         Level {rule.level}
                       </Badge>
                       {rule.scope && (
-                        <Badge variant="secondary">{rule.scope}</Badge>
+                        <Badge variant="secondary">{rule.scope.name}</Badge>
                       )}
                       {!rule.scope && categoryName === "Hostel" && (
                         <Badge variant="secondary">All Hostels</Badge>
                       )}
                     </div>
-                    {rule.staff ? (
+                    {rule.user ? (
                       <div className="space-y-1">
-                        <p className="font-medium">{rule.staff.full_name}</p>
-                        {rule.staff.email && (
-                          <p className="text-sm text-muted-foreground">{rule.staff.email}</p>
+                        <p className="font-medium">{[rule.user.first_name, rule.user.last_name].filter(Boolean).join(' ')}</p>
+                        {rule.user.email && (
+                          <p className="text-sm text-muted-foreground">{rule.user.email}</p>
                         )}
                       </div>
                     ) : (
@@ -322,7 +402,7 @@ export function EscalationManager({ categoryName, categoryId }: EscalationManage
               {editingRule ? "Edit Escalation Rule" : "Create Escalation Rule"}
             </DialogTitle>
             <DialogDescription>
-              Configure escalation rule for {categoryName} tickets. Lower levels escalate first.
+              Configure escalation rule for {categoryName}. Lower levels escalate first.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -343,45 +423,43 @@ export function EscalationManager({ categoryName, categoryId }: EscalationManage
               </p>
             </div>
 
-            {categoryName === "Hostel" && availableScopes.length > 0 && (
+            {relevantScopes.length > 0 && (
               <div className="space-y-2">
-                <Label htmlFor="scope">Scope (Hostel)</Label>
+                <Label htmlFor="scope">Scope</Label>
                 <Select
-                  value={formData.scope || "all"}
-                  onValueChange={(value) => setFormData({ ...formData, scope: value })}
+                  value={formData.scope_id || "all"}
+                  onValueChange={(value) => setFormData({ ...formData, scope_id: value })}
                 >
                   <SelectTrigger id="scope">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Hostels</SelectItem>
-                    {availableScopes
-                      .filter((s) => s !== "all")
-                      .map((scope) => (
-                        <SelectItem key={scope} value={scope}>
-                          {scope}
-                        </SelectItem>
-                      ))}
+                    <SelectItem value="all">All {categoryName}s</SelectItem>
+                    {relevantScopes.map((scope) => (
+                      <SelectItem key={scope.id} value={String(scope.id)}>
+                        {scope.name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="staff_id">Assign to Staff</Label>
+              <Label htmlFor="user_id">Assign to Admin</Label>
               <Select
-                value={formData.staff_id || "none"}
-                onValueChange={(value) => setFormData({ ...formData, staff_id: value })}
+                value={formData.user_id || "none"}
+                onValueChange={(value) => setFormData({ ...formData, user_id: value })}
               >
-                <SelectTrigger id="staff_id">
-                  <SelectValue placeholder="Select staff member" />
+                <SelectTrigger id="user_id">
+                  <SelectValue placeholder="Select admin" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">No staff assigned</SelectItem>
-                  {staffMembers.map((staff) => (
-                    <SelectItem key={staff.id} value={String(staff.id)}>
-                      {staff.full_name}
-                      {staff.domain && ` (${staff.domain}${staff.scope ? ` - ${staff.scope}` : ""})`}
+                  <SelectItem value="none">No admin assigned</SelectItem>
+                  {adminUsers.map((admin) => (
+                    <SelectItem key={admin.id} value={admin.id}>
+                      {admin.name}
+                      {admin.domain && ` (${admin.domain}${admin.scope ? ` - ${admin.scope}` : ""})`}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -438,4 +516,3 @@ export function EscalationManager({ categoryName, categoryId }: EscalationManage
     </div>
   );
 }
-

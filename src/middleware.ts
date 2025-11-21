@@ -51,7 +51,7 @@ export default clerkMiddleware(async (auth, req) => {
   // EDGE RUNTIME FIX: Database queries don't work reliably in Edge runtime
   // Solution: Let users access any authenticated route, pages will handle authorization
   // This prevents "Failed query" errors while maintaining security at page level
-  
+
   // Try to fetch role (may fail in Edge runtime with some DB drivers)
   let role: string | null = null;
   try {
@@ -61,7 +61,7 @@ export default clerkMiddleware(async (auth, req) => {
     console.warn('[Middleware] DB query failed (Edge runtime), allowing access - page will authorize');
     return NextResponse.next();
   }
-  
+
   // If role not found, allow access - page will handle user creation & authorization
   if (!role) {
     return NextResponse.next();
@@ -103,7 +103,7 @@ export default clerkMiddleware(async (auth, req) => {
   if (isStudent) {
     // EDGE RUNTIME FIX: Skip profile check in middleware (fails in Edge runtime)
     // Student profile check moved to page layouts where DB queries work
-    
+
     // Student can access all student routes
     if (!isStudentRoute(req)) {
       return NextResponse.redirect(new URL('/student/dashboard', req.url));

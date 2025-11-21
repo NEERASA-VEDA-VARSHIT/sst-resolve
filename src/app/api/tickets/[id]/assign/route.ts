@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import { tickets, staff, users, outbox } from "@/db/schema";
+import { tickets, users, outbox } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getUserRoleFromDB } from "@/lib/db-roles";
@@ -35,7 +35,7 @@ const AssignSchema = z.object({
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     // 1. Authentication
@@ -57,7 +57,8 @@ export async function PATCH(
     const staffClerkId = parsed.data.staffClerkId;
 
     // 2. Validate ticket ID
-    const ticketId = Number(params.id);
+    const { id } = await params;
+    const ticketId = Number(id);
     if (isNaN(ticketId))
       return NextResponse.json({ error: "Invalid ticket ID" }, { status: 400 });
 
@@ -88,8 +89,8 @@ export async function PATCH(
     if (!ticket)
       return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
 
-    // 6. Resolve staff ID if a new assignee is provided
-    let assignedStaffId: number | null = null;
+    // 6. Resolve user ID if a new assignee is provided
+    let assignedUserId: string | null = null;
 
     if (staffClerkId !== null) {
       // Find DB user with the given clerkId
@@ -106,21 +107,7 @@ export async function PATCH(
         );
       }
 
-      // Find staff entry for that user
-      const [staffRow] = await db
-        .select({ id: staff.id })
-        .from(staff)
-        .where(eq(staff.user_id, staffUser.id))
-        .limit(1);
-
-      if (!staffRow) {
-        return NextResponse.json(
-          { error: "User is not registered as staff" },
-          { status: 400 }
-        );
-      }
-
-      assignedStaffId = staffRow.id;
+      assignedUserId = staffUser.id;
     }
 
     // 7. Update ticket & write outbox event
@@ -129,7 +116,7 @@ export async function PATCH(
       const [update] = await tx
         .update(tickets)
         .set({
-          assigned_to: assignedStaffId,
+          assigned_to: assignedUserId,
           updated_at: new Date(),
         })
         .where(eq(tickets.id, ticketId))
@@ -143,7 +130,7 @@ export async function PATCH(
         payload: {
           ticket_id: ticketId,
           old_assignee: ticket.assigned_to,
-          new_assignee: assignedStaffId,
+          new_assignee: assignedUserId,
           updated_by_clerk_id: userId,
         },
       });

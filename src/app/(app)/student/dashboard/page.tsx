@@ -1,5 +1,5 @@
 import { auth } from "@clerk/nextjs/server";
-import { db, tickets, users, categories, subcategories, sub_subcategories } from "@/db";
+import { db, tickets, users, categories, subcategories, sub_subcategories, ticket_statuses } from "@/db";
 import { eq, ilike, and, or, sql, asc, desc } from "drizzle-orm";
 
 import { TicketCard } from "@/components/layout/TicketCard";
@@ -67,16 +67,23 @@ export default async function StudentDashboardPage({
     }
   }
 
-  // Status Filter
+  // Status Filter - use status_id from ticket_statuses table
   if (statusFilter) {
     const s = statusFilter.toUpperCase();
 
     if (s === "ESCALATED") {
       conditions.push(sql`${tickets.escalation_level} > 0`);
-    } else if (s === "RESOLVED") {
-      conditions.push(eq(tickets.status, "RESOLVED"));
     } else {
-      conditions.push(eq(tickets.status, s as any));
+      // Join with ticket_statuses to filter by status value
+      const [statusRow] = await db
+        .select({ id: ticket_statuses.id })
+        .from(ticket_statuses)
+        .where(eq(ticket_statuses.value, s))
+        .limit(1);
+      
+      if (statusRow) {
+        conditions.push(eq(tickets.status_id, statusRow.id));
+      }
     }
   }
 
@@ -140,12 +147,12 @@ export default async function StudentDashboardPage({
     case "status":
       orderBy = sql`
         CASE 
-          WHEN ${tickets.status}='OPEN' THEN 1
-          WHEN ${tickets.status}='IN_PROGRESS' THEN 2
-          WHEN ${tickets.status}='AWAITING_STUDENT' THEN 3
-          WHEN ${tickets.status}='REOPENED' THEN 4
-          WHEN ${tickets.status}='ESCALATED' THEN 5
-          WHEN ${tickets.status}='RESOLVED' THEN 6
+          WHEN ${ticket_statuses.value}='OPEN' THEN 1
+          WHEN ${ticket_statuses.value}='IN_PROGRESS' THEN 2
+          WHEN ${ticket_statuses.value}='AWAITING_STUDENT_RESPONSE' THEN 3
+          WHEN ${ticket_statuses.value}='REOPENED' THEN 4
+          WHEN ${ticket_statuses.value}='ESCALATED' THEN 5
+          WHEN ${ticket_statuses.value}='RESOLVED' THEN 6
         END
       `;
       break;
@@ -161,13 +168,13 @@ export default async function StudentDashboardPage({
     .select({
       id: tickets.id,
       description: tickets.description,
-      status: tickets.status,
+      status: ticket_statuses.value,
       location: tickets.location,
       created_by: tickets.created_by,
       category_id: tickets.category_id,
       created_at: tickets.created_at,
       updated_at: tickets.updated_at,
-      due_at: tickets.due_at,
+      due_at: tickets.resolution_due_at,
       escalation_level: tickets.escalation_level,
       metadata: tickets.metadata,
       resolved_at: tickets.resolved_at,
@@ -175,28 +182,31 @@ export default async function StudentDashboardPage({
       feedback: tickets.feedback,
 
       category_name: categories.name,
-      creator_name: users.name,
+      creator_first_name: users.first_name,
+      creator_last_name: users.last_name,
       creator_email: users.email,
     })
     .from(tickets)
     .leftJoin(categories, eq(tickets.category_id, categories.id))
     .leftJoin(users, eq(tickets.created_by, users.id))
+    .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
     .where(and(...conditions))
     .orderBy(orderBy);
 
   // -----------------------------
-  // 6. Stats Query (Optimized)
+  // 6. Stats Query (Optimized) - using status_id joins
   // -----------------------------
   const statsResult = await db
     .select({
       total: sql<number>`COUNT(*)`,
-      open: sql<number>`SUM(CASE WHEN ${tickets.status}='OPEN' THEN 1 ELSE 0 END)`,
-      inProgress: sql<number>`SUM(CASE WHEN ${tickets.status} IN ('IN_PROGRESS','ESCALATED') THEN 1 ELSE 0 END)`,
-      awaitingStudent: sql<number>`SUM(CASE WHEN ${tickets.status}='AWAITING_STUDENT' THEN 1 ELSE 0 END)`,
-      resolved: sql<number>`SUM(CASE WHEN ${tickets.status}='RESOLVED' THEN 1 ELSE 0 END)`,
+      open: sql<number>`SUM(CASE WHEN ${ticket_statuses.value}='OPEN' THEN 1 ELSE 0 END)`,
+      inProgress: sql<number>`SUM(CASE WHEN ${ticket_statuses.value} IN ('IN_PROGRESS','ESCALATED') THEN 1 ELSE 0 END)`,
+      awaitingStudent: sql<number>`SUM(CASE WHEN ${ticket_statuses.value}='AWAITING_STUDENT_RESPONSE' THEN 1 ELSE 0 END)`,
+      resolved: sql<number>`SUM(CASE WHEN ${ticket_statuses.value}='RESOLVED' THEN 1 ELSE 0 END)`,
       escalated: sql<number>`SUM(CASE WHEN ${tickets.escalation_level} > 0 THEN 1 ELSE 0 END)`,
     })
     .from(tickets)
+    .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
     .where(eq(tickets.created_by, dbUser.id));
 
   const stats = statsResult[0];
@@ -274,7 +284,13 @@ export default async function StudentDashboardPage({
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {allTickets.map((ticket) => (
-            <TicketCard key={ticket.id} ticket={ticket as any} />
+            <TicketCard 
+              key={ticket.id} 
+              ticket={{
+                ...ticket,
+                creator_name: [ticket.creator_first_name, ticket.creator_last_name].filter(Boolean).join(' ').trim() || null,
+              } as any} 
+            />
           ))}
         </div>
       )}

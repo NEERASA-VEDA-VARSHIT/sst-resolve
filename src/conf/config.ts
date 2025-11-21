@@ -66,8 +66,16 @@ export const slackConfig = {
   ccMap: ((): Record<string, string[]> => {
     try {
       const raw = process.env.SLACK_CC_MAP_JSON;
-      if (raw) return JSON.parse(raw);
-    } catch {}
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        // Ensure parsed result is a valid object
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          return parsed;
+        }
+      }
+    } catch (error) {
+      console.warn("[Slack Config] Error parsing SLACK_CC_MAP_JSON, using defaults:", error);
+    }
     // Default mapping: apply provided CC to broad categories; extend as needed
     return {
       Hostel: ["U09NQH3MRM2"],

@@ -23,7 +23,17 @@ export const getTicketStatuses = unstable_cache(
     async (): Promise<TicketStatus[]> => {
         try {
             const statuses = await db
-                .select()
+                .select({
+                    id: ticket_statuses.id,
+                    value: ticket_statuses.value,
+                    label: ticket_statuses.label,
+                    description: ticket_statuses.description,
+                    progress_percent: ticket_statuses.progress_percent,
+                    badge_color: ticket_statuses.badge_color,
+                    is_active: ticket_statuses.is_active,
+                    is_final: ticket_statuses.is_final,
+                    display_order: ticket_statuses.display_order,
+                })
                 .from(ticket_statuses)
                 .where(eq(ticket_statuses.is_active, true))
                 .orderBy(asc(ticket_statuses.display_order));
@@ -82,7 +92,17 @@ export const getTicketStatuses = unstable_cache(
 export async function getTicketStatusByValue(value: string): Promise<TicketStatus | null> {
     try {
         const [status] = await db
-            .select()
+            .select({
+                id: ticket_statuses.id,
+                value: ticket_statuses.value,
+                label: ticket_statuses.label,
+                description: ticket_statuses.description,
+                progress_percent: ticket_statuses.progress_percent,
+                badge_color: ticket_statuses.badge_color,
+                is_active: ticket_statuses.is_active,
+                is_final: ticket_statuses.is_final,
+                display_order: ticket_statuses.display_order,
+            })
             .from(ticket_statuses)
             .where(eq(ticket_statuses.value, value))
             .limit(1);
@@ -121,7 +141,17 @@ export function buildBadgeColorMap(statuses: TicketStatus[]): Record<string, str
 export async function getAllTicketStatuses(): Promise<TicketStatus[]> {
     try {
         const statuses = await db
-            .select()
+            .select({
+                id: ticket_statuses.id,
+                value: ticket_statuses.value,
+                label: ticket_statuses.label,
+                description: ticket_statuses.description,
+                progress_percent: ticket_statuses.progress_percent,
+                badge_color: ticket_statuses.badge_color,
+                is_active: ticket_statuses.is_active,
+                is_final: ticket_statuses.is_final,
+                display_order: ticket_statuses.display_order,
+            })
             .from(ticket_statuses)
             .orderBy(asc(ticket_statuses.display_order));
 
@@ -140,7 +170,8 @@ export async function getTicketCountByStatus(statusValue: string): Promise<numbe
         const [result] = await db
             .select({ count: sql<number>`count(*)` })
             .from(tickets)
-            .where(eq(tickets.status, statusValue as any));
+            .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
+            .where(eq(ticket_statuses.value, statusValue));
 
         return result?.count || 0;
     } catch (error) {
@@ -155,17 +186,14 @@ export async function getTicketCountByStatus(statusValue: string): Promise<numbe
  */
 export async function canDeleteStatus(statusId: number): Promise<{ canDelete: boolean; ticketCount: number }> {
     try {
-        const [status] = await db
-            .select({ value: ticket_statuses.value })
-            .from(ticket_statuses)
-            .where(eq(ticket_statuses.id, statusId))
-            .limit(1);
+        // Check directly by ID which is faster and safer
+        const [result] = await db
+            .select({ count: sql<number>`count(*)` })
+            .from(tickets)
+            .where(eq(tickets.status_id, statusId));
 
-        if (!status) {
-            return { canDelete: false, ticketCount: 0 };
-        }
+        const ticketCount = result?.count || 0;
 
-        const ticketCount = await getTicketCountByStatus(status.value);
         return {
             canDelete: ticketCount === 0,
             ticketCount,

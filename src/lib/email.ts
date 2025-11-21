@@ -120,8 +120,12 @@ export async function sendEmail({ to, subject, html, ticketId, threadMessageId, 
 			// References should include the original Message-ID (and optionally chain of previous messages)
 			mailOptions.references = originalMessageId;
 			// Also set headers directly for better compatibility
+			// Safety check: ensure headers is a valid object before spreading
+			const existingHeaders = mailOptions.headers && typeof mailOptions.headers === 'object' && !Array.isArray(mailOptions.headers)
+				? mailOptions.headers
+				: {};
 			mailOptions.headers = {
-				...(mailOptions.headers || {}),
+				...existingHeaders,
 				"In-Reply-To": originalMessageId,
 				"References": originalMessageId,
 			};

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, tickets, staff } from "@/db";
-import { eq, and, or, isNull, lt } from "drizzle-orm";
+import { db, tickets, users, ticket_statuses, categories } from "@/db/schema";
+import { eq, and, or, isNotNull, aliasedTable } from "drizzle-orm";
 import { postThreadReplyToChannel } from "@/lib/slack";
-import { sendEmail, getStudentEmail } from "@/lib/email";
+import { sendEmail } from "@/lib/email";
 
 /**
  * GET /api/cron/remind-spocs
@@ -22,21 +22,40 @@ export async function GET(request: NextRequest) {
     const reminders = [];
     const errors = [];
 
+    // Alias for SPOC user
+    const spocUser = aliasedTable(users, "spoc_user");
+
     // Find all open/in_progress tickets that:
     // 1. Are assigned to a SPOC
     // 2. Have not been acknowledged OR have TAT that is due/overdue
     const pendingTickets = await db
-      .select()
+      .select({
+        id: tickets.id,
+        status_value: ticket_statuses.value,
+        assigned_to: tickets.assigned_to,
+        created_at: tickets.created_at,
+        acknowledged_at: tickets.acknowledged_at,
+        metadata: tickets.metadata,
+        category_name: categories.name,
+        subcategory_id: tickets.subcategory_id,
+        user_number: users.phone,
+        spoc_email: spocUser.email,
+        spoc_slack_id: spocUser.slack_user_id,
+      })
       .from(tickets)
+      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
+      .leftJoin(categories, eq(tickets.category_id, categories.id))
+      .leftJoin(users, eq(tickets.created_by, users.id)) // Creator
+      .leftJoin(spocUser, eq(tickets.assigned_to, spocUser.id)) // SPOC
       .where(
         and(
           or(
-            eq(tickets.status, "open"),
-            eq(tickets.status, "in_progress"),
-            eq(tickets.status, "awaiting_student_response"),
-            eq(tickets.status, "reopened")
+            eq(ticket_statuses.value, "OPEN"),
+            eq(ticket_statuses.value, "IN_PROGRESS"),
+            eq(ticket_statuses.value, "AWAITING_STUDENT"),
+            eq(ticket_statuses.value, "REOPENED")
           ),
-          or(eq(tickets.assignedTo, ""), isNull(tickets.assignedTo)) // Only unassigned or assigned tickets
+          isNotNull(tickets.assigned_to)
         )
       );
 
@@ -47,9 +66,9 @@ export async function GET(request: NextRequest) {
         let reminderReason = "";
 
         // Case 1: Not acknowledged and created more than 2 hours ago
-        if (!ticket.acknowledgedAt && ticket.createdAt) {
+        if (!ticket.acknowledged_at && ticket.created_at) {
           const hoursSinceCreation =
-            (now.getTime() - new Date(ticket.createdAt).getTime()) / (1000 * 60 * 60);
+            (now.getTime() - new Date(ticket.created_at).getTime()) / (1000 * 60 * 60);
           if (hoursSinceCreation >= 2) {
             needsReminder = true;
             reminderReason = `Ticket not acknowledged (created ${Math.floor(hoursSinceCreation)} hours ago)`;
@@ -57,9 +76,9 @@ export async function GET(request: NextRequest) {
         }
 
         // Case 2: Acknowledged but TAT is due/overdue
-        if (ticket.acknowledgedAt && ticket.details) {
+        if (ticket.acknowledged_at && ticket.metadata) {
           try {
-            const details = JSON.parse(ticket.details);
+            const details = ticket.metadata as any;
             const tatDate = details.tatDate ? new Date(details.tatDate) : null;
             if (tatDate && tatDate.getTime() <= now.getTime()) {
               needsReminder = true;
@@ -75,33 +94,23 @@ export async function GET(request: NextRequest) {
         if (!needsReminder) continue;
 
         // Get SPOC info
-        let spocUserId = ticket.assignedTo;
-        if (!spocUserId) continue;
-
-        // Get staff info for Slack mention
-        const [spocStaff] = await db
-          .select()
-          .from(staff)
-          .where(eq(staff.clerkUserId, spocUserId))
-          .limit(1);
+        if (!ticket.assigned_to) continue;
 
         // Send Slack reminder
-        if (ticket.category === "Hostel" || ticket.category === "College") {
+        if (ticket.category_name === "Hostel" || ticket.category_name === "College") {
           try {
-            const details = ticket.details ? JSON.parse(ticket.details) : {};
+            const details = (ticket.metadata as any) || {};
             const slackMessageTs = details.slackMessageTs;
             if (slackMessageTs) {
               const { slackConfig } = await import("@/conf/config");
+              // Note: subcategory name is not fetched, so we might miss subcategory specific CCs.
+              // But for now, let's use category name.
               const ccUserIds =
-                slackConfig.ccMap[
-                  `${ticket.category}${ticket.subcategory ? ":" + ticket.subcategory : ""}`
-                ] ||
-                slackConfig.ccMap[ticket.category] ||
+                slackConfig.ccMap[ticket.category_name] ||
                 slackConfig.defaultCc;
 
-              const reminderText = `⏰ *Reminder*\n${reminderReason}\nTicket #${ticket.id} requires attention.\n${
-                spocStaff?.slackUserId ? `<@${spocStaff.slackUserId}>` : ""
-              }`;
+              const reminderText = `⏰ *Reminder*\n${reminderReason}\nTicket #${ticket.id} requires attention.\n${ticket.spoc_slack_id ? `<@${ticket.spoc_slack_id}>` : ""
+                }`;
 
               const channelOverride = details.slackChannel;
               if (channelOverride) {
@@ -114,7 +123,7 @@ export async function GET(request: NextRequest) {
               } else {
                 const { postThreadReply } = await import("@/lib/slack");
                 await postThreadReply(
-                  ticket.category as "Hostel" | "College",
+                  ticket.category_name as "Hostel" | "College",
                   slackMessageTs,
                   reminderText,
                   ccUserIds
@@ -139,12 +148,12 @@ export async function GET(request: NextRequest) {
         }
 
         // Send email reminder to SPOC (if email available)
-        if (spocStaff?.email) {
+        if (ticket.spoc_email) {
           try {
             const emailSubject = `Reminder: Ticket #${ticket.id} Requires Attention`;
-            const emailBody = `Reminder: ${reminderReason}\n\nTicket #${ticket.id}\nCategory: ${ticket.category}\nSubcategory: ${ticket.subcategory}\nUser: ${ticket.userNumber}\n\nPlease take action on this ticket.`;
+            const emailBody = `Reminder: ${reminderReason}\n\nTicket #${ticket.id}\nCategory: ${ticket.category_name}\nUser Phone: ${ticket.user_number || "N/A"}\n\nPlease take action on this ticket.`;
             await sendEmail({
-              to: spocStaff.email,
+              to: ticket.spoc_email,
               subject: emailSubject,
               html: emailBody.replace(/\n/g, '<br>'),
             });
@@ -183,4 +192,3 @@ export async function GET(request: NextRequest) {
     );
   }
 }
-

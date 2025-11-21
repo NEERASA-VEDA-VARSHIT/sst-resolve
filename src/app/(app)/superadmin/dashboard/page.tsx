@@ -1,7 +1,8 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { db, tickets, categories, users, staff } from "@/db";
+import { db, tickets, categories, users, roles, ticket_statuses } from "@/db";
 import { desc, eq, and, isNull, or, sql, count } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { TicketCard } from "@/components/layout/TicketCard";
 import { Card, CardContent } from "@/components/ui/card";
 import Link from "next/link";
@@ -14,6 +15,9 @@ import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
 import { normalizeStatusForComparison } from "@/lib/utils";
 
+// Create alias for users table to use for assigned admin
+const assignedAdmin = alias(users, 'assigned_admin');
+
 export default async function SuperAdminDashboardPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> | Record<string, string | string[] | undefined> }) {
   const { userId } = await auth();
 
@@ -22,35 +26,13 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
   }
 
   // Ensure user exists in database
-  await getOrCreateUser(userId);
+  const dbUser = await getOrCreateUser(userId);
 
   // Get role from database (single source of truth)
   const role = await getUserRoleFromDB(userId);
 
   if (role !== 'super_admin') {
     redirect('/student/dashboard');
-  }
-
-  // Get super admin's staff ID to check assigned tickets
-  let superAdminStaffId: number | null = null;
-  try {
-    const dbUser = await getOrCreateUser(userId);
-
-    if (!dbUser) {
-      console.error('[Super Admin Dashboard] Failed to create/fetch user');
-      throw new Error('Failed to load user profile');
-    }
-
-    const [superAdminStaff] = await db
-      .select({ id: staff.id })
-      .from(staff)
-      .where(eq(staff.user_id, dbUser.id))
-      .limit(1);
-
-    superAdminStaffId = superAdminStaff?.id || null;
-  } catch (error) {
-    console.error('[Super Admin Dashboard] Error fetching user/staff info:', error);
-    throw new Error('Failed to load super admin profile');
   }
 
   const resolvedSearchParams = searchParams instanceof Promise ? await searchParams : (searchParams || {});
@@ -65,16 +47,17 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
   const createdTo = (typeof params["to"] === "string" ? params["to"] : params["to"]?.[0]) || "";
   const user = (typeof params["user"] === "string" ? params["user"] : params["user"]?.[0]) || "";
   const sort = (typeof params["sort"] === "string" ? params["sort"] : params["sort"]?.[0]) || "newest";
-  
+
   // Pagination
   const page = parseInt((typeof params["page"] === "string" ? params["page"] : params["page"]?.[0]) || "1", 10);
   const limit = 20; // Tickets per page
   const offsetValue = (page - 1) * limit;
 
   // Define where conditions for reuse
+  // Super admin sees: unassigned tickets, tickets assigned to them, and escalated tickets
   const whereConditions = or(
     isNull(tickets.assigned_to), // Unassigned tickets
-    superAdminStaffId ? eq(tickets.assigned_to, superAdminStaffId) : sql`false`, // Assigned to super admin
+    dbUser ? eq(tickets.assigned_to, dbUser.id) : sql`false`, // Assigned to super admin
     sql`${tickets.escalation_level} > 0` // Escalated tickets
   );
 
@@ -90,6 +73,7 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
     totalCount = totalResult?.count || 0;
 
     // Fetch tickets with joins for category and creator info
+    // Note: We'll fetch assigned admin info separately to avoid alias issues
     ticketRows = await db
       .select({
         // All ticket columns explicitly
@@ -97,8 +81,11 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
         title: tickets.title,
         description: tickets.description,
         location: tickets.location,
-        status: tickets.status,
+        status_id: tickets.status_id,
+        status: ticket_statuses.value, // Get the actual status value from the joined table
         category_id: tickets.category_id,
+        subcategory_id: tickets.subcategory_id,
+        sub_subcategory_id: tickets.sub_subcategory_id,
         created_by: tickets.created_by,
         assigned_to: tickets.assigned_to,
         acknowledged_by: tickets.acknowledged_by,
@@ -106,12 +93,16 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
         escalation_level: tickets.escalation_level,
         tat_extended_count: tickets.tat_extended_count,
         last_escalation_at: tickets.last_escalation_at,
-        due_at: tickets.due_at,
-        acknowledgement_tat: tickets.acknowledgement_tat,
+        acknowledgement_tat_hours: tickets.acknowledgement_tat_hours,
+        resolution_tat_hours: tickets.resolution_tat_hours,
+        acknowledgement_due_at: tickets.acknowledgement_due_at,
+        resolution_due_at: tickets.resolution_due_at,
         acknowledged_at: tickets.acknowledged_at,
         reopened_at: tickets.reopened_at,
         sla_breached_at: tickets.sla_breached_at,
+        reopen_count: tickets.reopen_count,
         rating: tickets.rating,
+        feedback_type: tickets.feedback_type,
         rating_submitted: tickets.rating_submitted,
         feedback: tickets.feedback,
         is_public: tickets.is_public,
@@ -120,29 +111,58 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
         slack_thread_id: tickets.slack_thread_id,
         external_ref: tickets.external_ref,
         metadata: tickets.metadata,
-        attachments: tickets.attachments,
-        user_number: tickets.user_number,
-        category: tickets.category,
-        subcategory: tickets.subcategory,
-        details: tickets.details,
         created_at: tickets.created_at,
         updated_at: tickets.updated_at,
         resolved_at: tickets.resolved_at,
         // Joined fields
         category_name: categories.name,
-        creator_name: users.name,
+        creator_first_name: users.first_name,
+        creator_last_name: users.last_name,
         creator_email: users.email,
-        assigned_staff_name: staff.full_name,
-        assigned_staff_email: staff.email,
       })
       .from(tickets)
+      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
       .leftJoin(categories, eq(tickets.category_id, categories.id))
       .leftJoin(users, eq(tickets.created_by, users.id))
-      .leftJoin(staff, eq(staff.id, tickets.assigned_to))
       .where(whereConditions)
       .orderBy(desc(tickets.created_at))
       .limit(limit)
       .offset(offsetValue);
+
+    // Fetch assigned admin info separately for tickets that have an assigned_to
+    const assignedToIds = [...new Set(ticketRows.map(t => t.assigned_to).filter(Boolean))];
+    let assignedAdmins: Record<string, any> = {};
+
+    if (assignedToIds.length > 0) {
+      const admins = await db
+        .select({
+          id: users.id,
+          first_name: users.first_name,
+          last_name: users.last_name,
+          email: users.email,
+        })
+        .from(users)
+        .where(sql`${users.id} IN ${assignedToIds}`);
+
+      assignedAdmins = Object.fromEntries(
+        admins.map(admin => [
+          admin.id,
+          {
+            first_name: admin.first_name || null,
+            last_name: admin.last_name || null,
+            email: admin.email
+          }
+        ])
+      );
+    }
+
+    // Add assigned admin info to ticket rows
+    ticketRows = ticketRows.map(row => ({
+      ...row,
+      creator_name: [row.creator_first_name, row.creator_last_name].filter(Boolean).join(" ").trim() || null,
+      assigned_staff_name: row.assigned_to ? [assignedAdmins[row.assigned_to]?.first_name, assignedAdmins[row.assigned_to]?.last_name].filter(Boolean).join(" ").trim() : null,
+      assigned_staff_email: row.assigned_to ? assignedAdmins[row.assigned_to]?.email : null,
+    }));
   } catch (error) {
     console.error('[Super Admin Dashboard] Error fetching tickets/count:', error);
     throw new Error('Failed to load tickets for dashboard');
@@ -155,7 +175,7 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
   if (escalatedFilter === "true") {
     filteredTickets = filteredTickets.filter(t => (t.escalation_level || 0) > 0);
   }
-  
+
   if (user) {
     filteredTickets = filteredTickets.filter(t => {
       const name = (t.creator_name || "").toLowerCase();
@@ -163,13 +183,13 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
       return name.includes(user.toLowerCase()) || email.includes(user.toLowerCase());
     });
   }
-  
+
   if (createdFrom) {
     const from = new Date(createdFrom);
     from.setHours(0, 0, 0, 0);
     filteredTickets = filteredTickets.filter(t => t.created_at && t.created_at.getTime() >= from.getTime());
   }
-  
+
   if (createdTo) {
     const to = new Date(createdTo);
     to.setHours(23, 59, 59, 999);
@@ -184,9 +204,9 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
     endOfToday.setHours(23, 59, 59, 999);
     filteredTickets = filteredTickets.filter(t => {
       const metadata = (t.metadata as any) || {};
-      const tatDate = t.due_at || (metadata?.tatDate ? new Date(metadata.tatDate) : null);
+      const tatDate = t.resolution_due_at || (metadata?.tatDate ? new Date(metadata.tatDate) : null);
       const hasTat = !!tatDate;
-      
+
       if (tat === "has") return hasTat;
       if (tat === "none") return !hasTat;
       if (tat === "due") return hasTat && tatDate && tatDate.getTime() < now.getTime();
@@ -206,7 +226,7 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
       case "oldest":
         return (a.created_at?.getTime() || 0) - (b.created_at?.getTime() || 0);
       case "status":
-        const statusOrder = { 
+        const statusOrder = {
           OPEN: 1, IN_PROGRESS: 2, AWAITING_STUDENT: 3,
           REOPENED: 4, ESCALATED: 5, RESOLVED: 6
         };
@@ -215,8 +235,8 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
         if (aStatus !== bStatus) return aStatus - bStatus;
         return (b.created_at?.getTime() || 0) - (a.created_at?.getTime() || 0);
       case "due-date":
-        const aDue = a.due_at?.getTime() || Infinity;
-        const bDue = b.due_at?.getTime() || Infinity;
+        const aDue = a.resolution_due_at?.getTime() || Infinity;
+        const bDue = b.resolution_due_at?.getTime() || Infinity;
         if (aDue !== bDue) return aDue - bDue;
         return (b.created_at?.getTime() || 0) - (a.created_at?.getTime() || 0);
       default:
@@ -278,7 +298,7 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
     const normalized = normalizeStatusForComparison(t.status);
     if (!["open", "in_progress", "awaiting_student_response", "reopened"].includes(normalized)) return false;
     const metadata = (t.metadata as any) || {};
-    const tatDate = t.due_at || (metadata?.tatDate ? new Date(metadata.tatDate) : null);
+    const tatDate = t.resolution_due_at || (metadata?.tatDate ? new Date(metadata.tatDate) : null);
     if (!tatDate) return false;
     return tatDate.getTime() >= startOfToday.getTime() && tatDate.getTime() <= endOfToday.getTime();
   }).length;
@@ -378,63 +398,63 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
         </div>
 
         <div className="space-y-6">
-            <AdminTicketFilters />
+          <AdminTicketFilters />
 
-            <StatsCards stats={stats} />
+          <StatsCards stats={stats} />
 
-            <div className="flex justify-between items-center pt-4">
-              <h2 className="text-2xl font-semibold flex items-center gap-2">
-                <FileText className="w-6 h-6" />
-                Unassigned Tickets & Escalations
-                {unassignedCount > 0 && (
-                  <span className="ml-2 px-2 py-1 text-xs rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 font-medium">
-                    {unassignedCount} unassigned
-                  </span>
-                )}
-              </h2>
-              <p className="text-sm text-muted-foreground">
-                {pagination.actualCount} {pagination.actualCount === 1 ? 'ticket' : 'tickets'} on this page
-                {pagination.totalPages > 1 && (
-                  <span className="ml-2">
-                    (Page {pagination.page} of {pagination.totalPages})
-                  </span>
-                )}
-              </p>
-            </div>
+          <div className="flex justify-between items-center pt-4">
+            <h2 className="text-2xl font-semibold flex items-center gap-2">
+              <FileText className="w-6 h-6" />
+              Unassigned Tickets & Escalations
+              {unassignedCount > 0 && (
+                <span className="ml-2 px-2 py-1 text-xs rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 font-medium">
+                  {unassignedCount} unassigned
+                </span>
+              )}
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              {pagination.actualCount} {pagination.actualCount === 1 ? 'ticket' : 'tickets'} on this page
+              {pagination.totalPages > 1 && (
+                <span className="ml-2">
+                  (Page {pagination.page} of {pagination.totalPages})
+                </span>
+              )}
+            </p>
+          </div>
 
-            {allTickets.length === 0 ? (
-              <Card className="border-2 border-dashed">
-                <CardContent className="flex flex-col items-center justify-center py-16">
-                  <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
-                    <FileText className="w-8 h-8 text-muted-foreground" />
-                  </div>
-                  <p className="text-lg font-semibold mb-1">No tickets found</p>
-                  <p className="text-sm text-muted-foreground text-center max-w-md">
-                    Unassigned tickets and escalations will appear here. Use the filters above to search for specific tickets.
-                  </p>
-                </CardContent>
-              </Card>
-            ) : (
-              <>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  {allTickets.map((ticket) => (
-                    <TicketCard key={ticket.id} ticket={ticket} basePath="/superadmin/dashboard" />
-                  ))}
+          {allTickets.length === 0 ? (
+            <Card className="border-2 border-dashed">
+              <CardContent className="flex flex-col items-center justify-center py-16">
+                <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
+                  <FileText className="w-8 h-8 text-muted-foreground" />
                 </div>
+                <p className="text-lg font-semibold mb-1">No tickets found</p>
+                <p className="text-sm text-muted-foreground text-center max-w-md">
+                  Unassigned tickets and escalations will appear here. Use the filters above to search for specific tickets.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {allTickets.map((ticket) => (
+                  <TicketCard key={ticket.id} ticket={ticket} basePath="/superadmin/dashboard" />
+                ))}
+              </div>
 
-                {/* Pagination Controls */}
-                <PaginationControls
-                  currentPage={pagination.page}
-                  totalPages={pagination.totalPages}
-                  hasNext={pagination.hasNextPage}
-                  hasPrev={pagination.hasPrevPage}
-                  totalCount={pagination.totalCount}
-                  startIndex={pagination.startIndex}
-                  endIndex={pagination.endIndex}
-                  baseUrl="/superadmin/dashboard"
-                />
-              </>
-            )}
+              {/* Pagination Controls */}
+              <PaginationControls
+                currentPage={pagination.page}
+                totalPages={pagination.totalPages}
+                hasNext={pagination.hasNextPage}
+                hasPrev={pagination.hasPrevPage}
+                totalCount={pagination.totalCount}
+                startIndex={pagination.startIndex}
+                endIndex={pagination.endIndex}
+                baseUrl="/superadmin/dashboard"
+              />
+            </>
+          )}
         </div>
       </div>
     </div>

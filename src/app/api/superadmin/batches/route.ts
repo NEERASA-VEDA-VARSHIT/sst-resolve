@@ -32,8 +32,15 @@ export async function GET(request: NextRequest) {
 		const { searchParams } = new URL(request.url);
 		const activeOnly = searchParams.get("active") === "true";
 
-		let query = db.select().from(batches);
-		
+		let query = db.select({
+			id: batches.id,
+			batch_year: batches.batch_year,
+			display_name: batches.display_name,
+			is_active: batches.is_active,
+			created_at: batches.created_at,
+			updated_at: batches.updated_at,
+		}).from(batches);
+
 		if (activeOnly) {
 			query = query.where(eq(batches.is_active, true)) as any;
 		}
@@ -84,7 +91,10 @@ export async function POST(request: NextRequest) {
 
 		// Check if batch with same year already exists
 		const [existing] = await db
-			.select()
+			.select({
+				id: batches.id,
+				batch_year: batches.batch_year,
+			})
 			.from(batches)
 			.where(eq(batches.batch_year, year))
 			.limit(1);

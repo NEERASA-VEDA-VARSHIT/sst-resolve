@@ -38,7 +38,21 @@ export async function GET(request: NextRequest) {
         switch (event_type) {
           case "ticket.created":
           case "ticket.created.v1":
-            await processTicketCreated(id, payload);
+            // Safety check: ensure payload is a valid object before processing
+            let ticketPayload: any = {};
+            try {
+              if (payload && typeof payload === 'object' && !Array.isArray(payload) && payload !== null) {
+                // Deep clone to avoid any reference issues
+                ticketPayload = JSON.parse(JSON.stringify(payload));
+              } else {
+                console.warn(`[Outbox] Invalid payload type for event ${id}, using empty object:`, typeof payload);
+                ticketPayload = {};
+              }
+            } catch (error) {
+              console.error(`[Outbox] Error processing payload for event ${id}:`, error);
+              ticketPayload = {};
+            }
+            await processTicketCreated(id, ticketPayload as any);
             await markOutboxSuccess(id);
             processed++;
             break;

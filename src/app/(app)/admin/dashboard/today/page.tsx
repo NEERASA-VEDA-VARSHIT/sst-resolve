@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { db, tickets, staff } from "@/db";
+import { db, tickets } from "@/db";
 import { desc, eq, isNull, or } from "drizzle-orm";
 import { TicketCard } from "@/components/layout/TicketCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,30 +30,14 @@ export default async function AdminTodayPendingPage() {
   const { getAdminAssignment, ticketMatchesAdminAssignment } = await import("@/lib/admin-assignment");
   const adminAssignment = await getAdminAssignment(adminUserId);
 
-  // Get admin's staff record
+  // Get admin's user record
   const dbUser = await getOrCreateUser(adminUserId);
   if (!dbUser) {
     console.error("[AdminTodayPendingPage] Failed to create/fetch user");
     redirect("/");
   }
 
-  const [adminStaff] = await db
-    .select({ id: staff.id })
-    .from(staff)
-    .where(eq(staff.user_id, dbUser.id))
-    .limit(1);
-
-  if (!adminStaff) {
-    return (
-      <div className="space-y-8">
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-muted-foreground">No staff assignment found. Please contact super admin.</p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  const adminUserDbId = dbUser.id;
 
   // Fetch tickets: assigned to this admin OR unassigned tickets that match admin's domain/scope
   let allTickets = await db
@@ -61,20 +45,22 @@ export default async function AdminTodayPendingPage() {
     .from(tickets)
     .where(
       or(
-        eq(tickets.assigned_to, adminStaff.id),
+        eq(tickets.assigned_to, adminUserDbId),
         isNull(tickets.assigned_to)
       )
     )
     .orderBy(desc(tickets.created_at));
 
-  // Filter unassigned tickets to only show those matching admin's domain/scope
+  // Filter tickets: show assigned tickets OR unassigned tickets matching domain/scope
   if (adminAssignment.domain) {
     allTickets = allTickets.filter(t => {
-      // If assigned to this admin, always show
-      if (t.assigned_to === adminStaff.id) {
+      // Priority 1: Always show tickets explicitly assigned to this admin
+      // This includes tickets assigned via category_assignments, default_admin_id, etc.
+      if (t.assigned_to === adminUserDbId) {
         return true;
       }
-      // If unassigned, only show if matches admin's domain/scope
+      // Priority 2: Show unassigned tickets that match admin's domain/scope
+      // This allows admins to pick up unassigned tickets in their domain
       if (!t.assigned_to) {
         // Get category name from join or metadata
         const categoryName = t.category || (t.metadata && typeof t.metadata === "object" ? (t.metadata as any).category : null);
@@ -85,6 +71,9 @@ export default async function AdminTodayPendingPage() {
       }
       return false;
     });
+  } else {
+    // If admin has no domain assignment, only show tickets assigned to them
+    allTickets = allTickets.filter(t => t.assigned_to === adminUserDbId);
   }
 
   const now = new Date();

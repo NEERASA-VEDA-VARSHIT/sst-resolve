@@ -1,7 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { db, tickets, users, staff, categories } from "@/db";
-import { desc, eq, or, isNull, inArray } from "drizzle-orm";
+import { db, tickets, users, categories, ticket_statuses, domains } from "@/db";
+import { desc, eq, or, isNull, inArray, aliasedTable } from "drizzle-orm";
 import { TicketCard } from "@/components/layout/TicketCard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,8 +38,8 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
     redirect('/student/dashboard');
   }
 
-  // Get admin's staff record to find staff.id
-  let adminStaffId: number | null = null;
+  // Get admin's user ID for ticket assignment
+  let adminUserId: string | null = null;
   try {
     const dbUser = await getOrCreateUser(userId);
 
@@ -48,15 +48,9 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
       throw new Error('Failed to load user profile');
     }
 
-    const [staffMember] = await db
-      .select({ id: staff.id })
-      .from(staff)
-      .where(eq(staff.user_id, dbUser.id))
-      .limit(1);
-
-    adminStaffId = staffMember?.id || null;
+    adminUserId = dbUser.id;
   } catch (error) {
-    console.error('[Admin Dashboard] Error fetching user/staff info:', error);
+    console.error('[Admin Dashboard] Error fetching user info:', error);
     throw new Error('Failed to load admin profile');
   }
 
@@ -77,149 +71,259 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
   const escalated = (typeof params["escalated"] === "string" ? params["escalated"] : params["escalated"]?.[0]) || "";
 
   // Get admin's domain/scope assignment
-    const { getAdminAssignment, ticketMatchesAdminAssignment } = await import("@/lib/admin-assignment");
-    const adminAssignment = await getAdminAssignment(userId);
-    const hasAssignment = !!adminAssignment.domain;
+  const { getAdminAssignment, ticketMatchesAdminAssignment } = await import("@/lib/admin-assignment");
+  const adminAssignment = await getAdminAssignment(userId);
+  const hasAssignment = !!adminAssignment.domain;
 
-    // Fetch all tickets first
-    let allTickets = await db
+  // Fetch all tickets with joins for status and category
+  const ticketRows = await db
+    .select({
+      // Ticket fields
+      id: tickets.id,
+      status_id: tickets.status_id,
+      status_value: ticket_statuses.value,
+      status_label: ticket_statuses.label,
+      status_badge_color: ticket_statuses.badge_color,
+      category_id: tickets.category_id,
+      category_name: categories.name,
+      description: tickets.description,
+      location: tickets.location,
+      assigned_to: tickets.assigned_to,
+      escalation_level: tickets.escalation_level,
+      metadata: tickets.metadata,
+      created_at: tickets.created_at,
+      updated_at: tickets.updated_at,
+      resolution_due_at: tickets.resolution_due_at,
+      // Creator fields
+      creator_id: users.id,
+      creator_first_name: users.first_name,
+      creator_last_name: users.last_name,
+      creator_email: users.email,
+    })
+    .from(tickets)
+    .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
+    .leftJoin(categories, eq(tickets.category_id, categories.id))
+    .leftJoin(users, eq(tickets.created_by, users.id))
+    .orderBy(desc(tickets.created_at));
+
+  // Transform to match TicketCard expected format
+  // We need to fetch the full ticket data to satisfy TicketCard type requirements
+  const ticketIds = ticketRows.map(t => t.id);
+  let allTickets: any[] = [];
+  
+  if (ticketIds.length > 0) {
+    const fullTicketRows = await db
       .select()
       .from(tickets)
-      .orderBy(desc(tickets.created_at));
+      .where(inArray(tickets.id, ticketIds));
+    
+    // Create a map of full tickets by ID
+    const fullTicketMap = new Map(fullTicketRows.map(t => [t.id, t]));
+    
+    // Merge the full ticket data with the joined data
+    allTickets = ticketRows.map(ticket => {
+      const fullTicket = fullTicketMap.get(ticket.id);
+      return {
+        ...fullTicket, // This includes all required Ticket fields
+        // Override with joined data
+        status_id: ticket.status_id,
+        status_value: ticket.status_value,
+        status_label: ticket.status_label,
+        status_badge_color: ticket.status_badge_color,
+        category_name: ticket.category_name,
+        creator_first_name: ticket.creator_first_name,
+        creator_last_name: ticket.creator_last_name,
+        creator_email: ticket.creator_email,
+        // Additional fields for TicketCard
+        status: ticket.status_value || null,
+        creator_name: [ticket.creator_first_name, ticket.creator_last_name].filter(Boolean).join(' ').trim() || null,
+        due_at: ticket.resolution_due_at,
+      };
+    });
+  }
 
-    // Get category names for all tickets (batch query for performance)
-    const categoryIds = [...new Set(allTickets.map(t => t.category_id).filter(Boolean) as number[])];
-    const categoryMap = new Map<number, string>();
-    if (categoryIds.length > 0) {
-      const categoryRecords = await db
-        .select({ id: categories.id, name: categories.name })
-        .from(categories)
-        .where(inArray(categories.id, categoryIds));
-      for (const cat of categoryRecords) {
-        categoryMap.set(cat.id, cat.name);
+  // Get category names and domains for all tickets (for filtering logic)
+  const categoryMap = new Map<number, { name: string; domain: string | null }>();
+  const categoryIds = [...new Set(allTickets.map(t => t.category_id).filter(Boolean) as number[])];
+  if (categoryIds.length > 0) {
+    const categoryRecords = await db
+      .select({ 
+        id: categories.id, 
+        name: categories.name,
+        domainName: domains.name,
+      })
+      .from(categories)
+      .leftJoin(domains, eq(categories.domain_id, domains.id))
+      .where(inArray(categories.id, categoryIds));
+    for (const cat of categoryRecords) {
+      categoryMap.set(cat.id, { name: cat.name, domain: cat.domainName || null });
+    }
+  }
+
+  // Get domains from categories this admin is assigned to
+  const { getAdminAssignedCategoryDomains } = await import("@/lib/admin-assignment");
+  const assignedCategoryDomains = adminUserId 
+    ? await getAdminAssignedCategoryDomains(adminUserId)
+    : [];
+
+  // Filter by assignment (synchronous since we have categoryMap)
+  if (adminUserId) {
+    allTickets = allTickets.filter(t => {
+      // Priority 1: Show tickets explicitly assigned to this admin (regardless of domain/scope)
+      // This includes tickets assigned via category_assignments, default_admin_id, etc.
+      if (t.assigned_to === adminUserId) {
+        // If admin has a scope, filter by scope for assigned tickets too
+        if (adminAssignment.scope && t.location) {
+          const ticketLocation = (t.location || "").toLowerCase();
+          const assignmentScope = (adminAssignment.scope || "").toLowerCase();
+          return ticketLocation === assignmentScope;
+        }
+        return true; // Always show tickets assigned to this admin (if no scope restriction)
       }
-    }
-
-    // Filter by assignment (now synchronous since we have categoryMap)
-    if (adminStaffId) {
-      allTickets = allTickets.filter(t => {
-        // Show tickets assigned to this admin
-        if (t.assigned_to === adminStaffId) {
-          if (hasAssignment) {
-            // If admin has domain assignment, check if ticket matches
-            const ticketCategory = t.category_id 
-              ? categoryMap.get(t.category_id) || null
-              : t.category; // Fallback to legacy category field
-            return ticketMatchesAdminAssignment(
-              { category: ticketCategory, location: t.location },
-              adminAssignment
-            );
-          }
-          return true;
+      
+      // Priority 2: Show tickets in domains from categories admin is assigned to
+      // If admin is assigned to a category, they should see all tickets in that category's domain
+      const ticketCategoryInfo = t.category_id ? categoryMap.get(t.category_id) : null;
+      if (ticketCategoryInfo?.domain && assignedCategoryDomains.includes(ticketCategoryInfo.domain)) {
+        // Admin is assigned to this category's domain
+        // If admin has a scope, filter by scope
+        if (adminAssignment.scope && t.location) {
+          const ticketLocation = (t.location || "").toLowerCase();
+          const assignmentScope = (adminAssignment.scope || "").toLowerCase();
+          return ticketLocation === assignmentScope;
         }
-        // Show unassigned tickets that match admin's domain/scope
-        if (!t.assigned_to && hasAssignment) {
-          const ticketCategory = t.category_id 
-            ? categoryMap.get(t.category_id) || null
-            : t.category;
-          return ticketMatchesAdminAssignment(
-            { category: ticketCategory, location: t.location },
-            adminAssignment
-          );
-        }
-        return false;
-      });
-    } else {
-      // If not a staff member, show no tickets (committee members might not have staff record)
-      allTickets = [];
-    }
-
-    // Search filter (searches across ID, description, user info, and subcategory)
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      allTickets = allTickets.filter(t => {
-        const idMatch = t.id.toString().includes(query);
-        const descMatch = (t.description || "").toLowerCase().includes(query);
-        // Get user info for search
-        const userMatch = false; // Will be populated if needed from users table
-        // Get subcategory from metadata
-        const metadata = (t.metadata as any) || {};
-        const subcatName = metadata.subcategory || t.subcategory || "";
-        const subcatMatch = subcatName.toLowerCase().includes(query);
-        return idMatch || descMatch || subcatMatch;
-      });
-    }
-
-    if (category) {
-      allTickets = allTickets.filter(t => {
-        const ticketCategory = t.category_id ? categoryMap.get(t.category_id) : t.category;
-        return (ticketCategory || "").toLowerCase() === category.toLowerCase();
-      });
-    }
-    if (subcategory) {
-      allTickets = allTickets.filter(t => {
-        const metadata = (t.metadata as any) || {};
-        const subcatName = metadata.subcategory || t.subcategory || "";
-        return subcatName.toLowerCase().includes(subcategory.toLowerCase());
-      });
-    }
-    if (location) {
-      allTickets = allTickets.filter(t => (t.location || "").toLowerCase().includes(location.toLowerCase()));
-    }
-    if (status) {
-      if (status.toLowerCase() === "resolved") {
-        allTickets = allTickets.filter(t => t.status === "RESOLVED" || t.status === "CLOSED");
-      } else {
-        allTickets = allTickets.filter(t => (t.status || "").toLowerCase() === status.toLowerCase());
-      }
-    }
-    if (escalated === "true") {
-      allTickets = allTickets.filter(t => (t.escalation_level || 0) > 0);
-    }
-    if (user) {
-      // Search by user - would need to join with users table for full search
-      // For now, filter by user_number (legacy) or skip
-      allTickets = allTickets.filter(t => {
-        const userNumber = t.user_number || "";
-        return userNumber.toLowerCase().includes(user.toLowerCase());
-      });
-    }
-    if (createdFrom) {
-      const from = new Date(createdFrom);
-      from.setHours(0,0,0,0);
-      allTickets = allTickets.filter(t => t.created_at ? new Date(t.created_at).getTime() >= from.getTime() : false);
-    }
-    if (createdTo) {
-      const to = new Date(createdTo);
-      to.setHours(23,59,59,999);
-      allTickets = allTickets.filter(t => t.created_at ? new Date(t.created_at).getTime() <= to.getTime() : false);
-    }
-
-    if (tat) {
-      const now = new Date();
-      const startOfToday = new Date(now);
-      startOfToday.setHours(0, 0, 0, 0);
-      const endOfToday = new Date(now);
-      endOfToday.setHours(23, 59, 59, 999);
-      allTickets = allTickets.filter(t => {
-        // Use authoritative due_at field first, fallback to metadata.tatDate
-        const dueDate = t.due_at ? new Date(t.due_at) : null;
-        const metadata = (t.metadata as any) || {};
-        const metadataTatDate = metadata.tatDate ? new Date(metadata.tatDate) : null;
-        const tatDate = dueDate || metadataTatDate;
-        const hasTat = !!tatDate;
-        
-        if (tat === "has") return hasTat;
-        if (tat === "none") return !hasTat;
-        if (tat === "due") return hasTat && tatDate && tatDate.getTime() < now.getTime();
-        if (tat === "upcoming") return hasTat && tatDate && tatDate.getTime() >= now.getTime();
-        if (tat === "today") {
-          return hasTat && tatDate && tatDate.getTime() >= startOfToday.getTime() && tatDate.getTime() <= endOfToday.getTime();
-        }
+        // No scope restriction, show all tickets in this domain
         return true;
-      });
-    }
+      }
+      
+      // Priority 3: Show unassigned tickets that match admin's domain/scope (from primary assignment)
+      // This allows admins to pick up unassigned tickets in their domain
+      if (!t.assigned_to && hasAssignment) {
+        const ticketCategory = ticketCategoryInfo?.name || null;
+        return ticketMatchesAdminAssignment(
+          { category: ticketCategory, location: t.location },
+          adminAssignment
+        );
+      }
+      
+      return false;
+    });
+  } else {
+    // If user ID not found, show no tickets
+    allTickets = [];
+  }
 
+  // Search filter (searches across ID, description, and subcategory)
+  if (searchQuery) {
+    const query = searchQuery.toLowerCase();
+    allTickets = allTickets.filter(t => {
+      const idMatch = t.id.toString().includes(query);
+      const descMatch = (t.description || "").toLowerCase().includes(query);
+      // Get subcategory from metadata
+      const metadata = (t.metadata as any) || {};
+      const subcatName = metadata.subcategory || "";
+      const subcatMatch = subcatName.toLowerCase().includes(query);
+      return idMatch || descMatch || subcatMatch;
+    });
+  }
+
+  // Category filter
+  if (category) {
+    allTickets = allTickets.filter(t => {
+      const ticketCategory = t.category_id ? categoryMap.get(t.category_id) : null;
+      const categoryName = ticketCategory?.name || t.category_name || "";
+      return categoryName.toLowerCase() === category.toLowerCase();
+    });
+  }
+
+  // Subcategory filter
+  if (subcategory) {
+    allTickets = allTickets.filter(t => {
+      const metadata = (t.metadata as any) || {};
+      const subcatName = metadata.subcategory || "";
+      return subcatName.toLowerCase().includes(subcategory.toLowerCase());
+    });
+  }
+
+  // Location filter
+  if (location) {
+    allTickets = allTickets.filter(t => (t.location || "").toLowerCase().includes(location.toLowerCase()));
+  }
+
+  // Status filter (using status_value from joined table)
+  if (status) {
+    const normalizedStatus = status.toUpperCase();
+    allTickets = allTickets.filter(t => {
+      const ticketStatus = t.status?.toUpperCase() || "";
+      if (normalizedStatus === "RESOLVED") {
+        return ticketStatus === "RESOLVED";
+      } else if (normalizedStatus === "OPEN") {
+        return ticketStatus === "OPEN";
+      } else if (normalizedStatus === "IN_PROGRESS" || normalizedStatus === "IN PROGRESS") {
+        return ticketStatus === "IN_PROGRESS";
+      } else if (normalizedStatus === "AWAITING_STUDENT" || normalizedStatus === "AWAITING STUDENT" || normalizedStatus === "AWAITING_STUDENT_RESPONSE") {
+        return ticketStatus === "AWAITING_STUDENT_RESPONSE" || ticketStatus === "AWAITING_STUDENT";
+      } else if (normalizedStatus === "REOPENED") {
+        return ticketStatus === "REOPENED";
+      } else if (normalizedStatus === "ESCALATED") {
+        return ticketStatus === "ESCALATED" || (t.escalation_level || 0) > 0;
+      }
+      return ticketStatus === normalizedStatus;
+    });
+  }
+
+  // Escalated filter
+  if (escalated === "true") {
+    allTickets = allTickets.filter(t => (t.escalation_level || 0) > 0);
+  }
+
+  // User filter
+  if (user) {
+    allTickets = allTickets.filter(t => {
+      const metadata = (t.metadata as any) || {};
+      const userInfo = metadata.userEmail || metadata.userName || "";
+      return userInfo.toLowerCase().includes(user.toLowerCase());
+    });
+  }
+
+  // Date range filters
+  if (createdFrom) {
+    const from = new Date(createdFrom);
+    from.setHours(0, 0, 0, 0);
+    allTickets = allTickets.filter(t => t.created_at ? new Date(t.created_at).getTime() >= from.getTime() : false);
+  }
+  if (createdTo) {
+    const to = new Date(createdTo);
+    to.setHours(23, 59, 59, 999);
+    allTickets = allTickets.filter(t => t.created_at ? new Date(t.created_at).getTime() <= to.getTime() : false);
+  }
+
+  // TAT filter
+  if (tat) {
+    const now = new Date();
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+    const endOfToday = new Date(now);
+    endOfToday.setHours(23, 59, 59, 999);
+    allTickets = allTickets.filter(t => {
+      // Use metadata.tatDate for TAT filtering
+      const metadata = (t.metadata as any) || {};
+      const metadataTatDate = metadata.tatDate ? new Date(metadata.tatDate) : null;
+      const tatDate = metadataTatDate;
+      const hasTat = !!tatDate && !isNaN(tatDate.getTime());
+
+      if (tat === "has") return hasTat;
+      if (tat === "none") return !hasTat;
+      if (tat === "due") return hasTat && tatDate && tatDate.getTime() < now.getTime();
+      if (tat === "upcoming") return hasTat && tatDate && tatDate.getTime() >= now.getTime();
+      if (tat === "today") {
+        return hasTat && tatDate && tatDate.getTime() >= startOfToday.getTime() && tatDate.getTime() <= endOfToday.getTime();
+      }
+      return true;
+    });
+  }
+
+  // Sort
   if (sort === "oldest") {
     allTickets = [...allTickets].reverse();
   }
@@ -238,34 +342,37 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
       : { role: undefined },
   }));
 
-    const stats = {
-      total: allTickets.length,
-      open: allTickets.filter(t => t.status === 'OPEN').length,
-      inProgress: allTickets.filter(t => t.status === 'IN_PROGRESS').length,
-      resolved: allTickets.filter(t => t.status === 'RESOLVED' || t.status === 'CLOSED').length,
-      escalated: allTickets.filter(t => (t.escalation_level || 0) > 0).length,
-    };
+  const stats = {
+    total: allTickets.length,
+    open: allTickets.filter(t => (t.status?.toUpperCase() || "") === "OPEN").length,
+    inProgress: allTickets.filter(t => (t.status?.toUpperCase() || "") === "IN_PROGRESS").length,
+    resolved: allTickets.filter(t => (t.status?.toUpperCase() || "") === "RESOLVED").length,
+    awaitingStudent: allTickets.filter(t => {
+      const s = (t.status?.toUpperCase() || "");
+      return s === "AWAITING_STUDENT_RESPONSE" || s === "AWAITING_STUDENT";
+    }).length,
+    escalated: allTickets.filter(t => (t.escalation_level || 0) > 0).length,
+  };
 
-    // Calculate today pending count
-    const now = new Date();
-    const startOfToday = new Date(now);
-    startOfToday.setHours(0, 0, 0, 0);
-    const endOfToday = new Date(now);
-    endOfToday.setHours(23, 59, 59, 999);
-    const todayPending = allTickets.filter(t => {
-      const status = (t.status || "").toUpperCase();
-      if (!["OPEN", "IN_PROGRESS", "AWAITING_STUDENT", "REOPENED"].includes(status)) return false;
-      // Use authoritative due_at field first, fallback to metadata.tatDate
-      const dueDate = t.due_at ? new Date(t.due_at) : null;
-      const metadata = (t.metadata as any) || {};
-      const metadataTatDate = metadata.tatDate ? new Date(metadata.tatDate) : null;
-      const tatDate = dueDate || metadataTatDate;
-      if (!tatDate || isNaN(tatDate.getTime())) return false;
-      return tatDate.getTime() >= startOfToday.getTime() && tatDate.getTime() <= endOfToday.getTime();
-    }).length;
+  // Calculate today pending count
+  const now = new Date();
+  const startOfToday = new Date(now);
+  startOfToday.setHours(0, 0, 0, 0);
+  const endOfToday = new Date(now);
+  endOfToday.setHours(23, 59, 59, 999);
+  const todayPending = allTickets.filter(t => {
+    const isNotResolved = (t.status?.toUpperCase() || "") !== "RESOLVED";
+    if (!isNotResolved) return false;
+    // Use metadata.tatDate for TAT
+    const metadata = (t.metadata as any) || {};
+    const metadataTatDate = metadata.tatDate ? new Date(metadata.tatDate) : null;
+    const tatDate = metadataTatDate;
+    if (!tatDate || isNaN(tatDate.getTime())) return false;
+    return tatDate.getTime() >= startOfToday.getTime() && tatDate.getTime() <= endOfToday.getTime();
+  }).length;
 
-    return (
-      <div className="space-y-8">
+  return (
+    <div className="space-y-8">
       <div>
         <div className="flex items-center justify-between mb-6">
           <div>
@@ -356,4 +463,3 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
     </div>
   );
 }
-

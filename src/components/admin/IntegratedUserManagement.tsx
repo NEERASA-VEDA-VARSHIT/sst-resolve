@@ -21,8 +21,7 @@ import type { Roles } from "@/types/globals";
 
 type User = {
   id: string;
-  firstName: string | null;
-  lastName: string | null;
+  name: string | null;
   emailAddresses: Array<{ emailAddress: string }>;
   publicMetadata: {
     role?: Roles;
@@ -115,14 +114,14 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
   // Filter and search users
   const filteredUsers = useMemo(() => {
     return users.filter((user) => {
-      const fullName = `${user.firstName || ""} ${user.lastName || ""}`.trim().toLowerCase();
+      const fullName = (user.name || "").toLowerCase();
       const email = (user.emailAddresses[0]?.emailAddress || "").toLowerCase();
       const searchLower = searchQuery.toLowerCase();
       const matchesSearch = !searchQuery || fullName.includes(searchLower) || email.includes(searchLower);
-      
+
       const currentRole = user.publicMetadata?.role || "student";
       const matchesRole = roleFilter === "all" || currentRole === roleFilter;
-      
+
       return matchesSearch && matchesRole;
     });
   }, [users, searchQuery, roleFilter]);
@@ -162,7 +161,7 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
         const error = await response.json();
         throw new Error(error.error || "Failed to update role");
       }
-      
+
       // If setting admin/super_admin, prompt for staff assignment
       if ((role === "admin" || role === "super_admin") && !getStaffAssignment(userId)) {
         const user = users.find(u => u.id === userId);
@@ -178,7 +177,7 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
           setIsStaffDialogOpen(true);
         }
       }
-      
+
       toast.success(`Role updated to ${role}`);
       await fetchStaff();
       window.location.reload();
@@ -239,7 +238,7 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
 
   const handleSaveStaff = async () => {
     if (!selectedUserForStaff) return;
-    
+
     if (!staffFormData.domain) {
       toast.error("Please select a domain");
       return;
@@ -441,7 +440,7 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
             <div className="space-y-3">
               {filteredUsers.map((user) => {
                 const currentRole = user.publicMetadata?.role || "student";
-                const fullName = `${user.firstName || ""} ${user.lastName || ""}`.trim() || "No name";
+                const fullName = user.name || "No name";
                 const email = user.emailAddresses[0]?.emailAddress || "No email";
                 const staffAssignment = getStaffAssignment(user.id);
                 const DomainIcon = staffAssignment ? getDomainIcon(staffAssignment.domain) : null;
@@ -488,14 +487,14 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
                             )}
                           </div>
                         </div>
-                        
+
                         {/* Role Assignment Buttons */}
                         {currentRole === "student" && (
                           <p className="text-xs text-muted-foreground mb-2 italic">
                             💡 Tip: Assigning an elevated role (Admin, Super Admin, Committee) will automatically remove the Student role.
                           </p>
                         )}
-                        
+
                         <div className="flex flex-wrap gap-2 sm:flex-nowrap">
                           <Button
                             variant={currentRole === "student" ? "default" : "outline"}
@@ -591,7 +590,7 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
           <DialogHeader>
             <DialogTitle>Staff Assignment</DialogTitle>
             <DialogDescription>
-              {selectedUserForStaff && `Configure staff assignment for ${selectedUserForStaff.firstName || ""} ${selectedUserForStaff.lastName || ""}`.trim()}
+              {selectedUserForStaff && `Configure staff assignment for ${selectedUserForStaff.name || ""}`.trim()}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">

@@ -42,8 +42,19 @@ const STATUS_STYLES: Record<string, string> = {
     "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800",
 };
 
-const formatStatus = (status?: string) =>
-  status ? status.replaceAll("_", " ").replace(/\b\w/g, (l) => l.toUpperCase()) : "Unknown";
+const formatStatus = (status?: string | { value: string; label: string; badge_color: string | null } | null) => {
+  if (!status) return "Unknown";
+  if (typeof status === "string") {
+    return status.replaceAll("_", " ").replace(/\b\w/g, (l) => l.toUpperCase());
+  }
+  return status.label || status.value || "Unknown";
+};
+
+const getStatusValue = (status?: string | { value: string; label: string; badge_color: string | null } | null): string => {
+  if (!status) return "";
+  if (typeof status === "string") return status;
+  return status.value || "";
+};
 
 function computeTatInfo(date?: Date | null) {
   if (!date) return { overdue: false, label: null };
@@ -133,7 +144,7 @@ export function TicketCard({ ticket, basePath = "/student/dashboard" }: TicketCa
                     variant="outline"
                     className={cn(
                       "text-xs font-semibold border transition-all",
-                      STATUS_STYLES[ticket.status ?? ""] || "bg-muted text-foreground",
+                      STATUS_STYLES[getStatusValue(ticket.status)] || "bg-muted text-foreground",
                       "group-hover:scale-105 group-hover:shadow-sm"
                     )}
                   >

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import { tickets, users, staff, outbox } from "@/db/schema";
+import { tickets, users, outbox, ticket_statuses } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
@@ -36,7 +36,7 @@ const StatusSchema = z.object({
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     // -------------------------
@@ -46,7 +46,8 @@ export async function PATCH(
     if (!userId)
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const ticketId = Number(params.id);
+    const { id } = await params;
+    const ticketId = Number(id);
     if (isNaN(ticketId))
       return NextResponse.json({ error: "Invalid ticket ID" }, { status: 400 });
 
@@ -77,8 +78,14 @@ export async function PATCH(
     // LOAD TICKET
     // -------------------------
     const [ticket] = await db
-      .select()
+      .select({
+        id: tickets.id,
+        created_by: tickets.created_by,
+        status: ticket_statuses.value,
+        status_id: tickets.status_id,
+      })
       .from(tickets)
+      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
       .where(eq(tickets.id, ticketId))
       .limit(1);
 
@@ -119,8 +126,18 @@ export async function PATCH(
     // STATUS TRANSITION RULES
     // -------------------------
 
+    // Get new status ID
+    const [newStatusRow] = await db.select({ id: ticket_statuses.id })
+      .from(ticket_statuses)
+      .where(eq(ticket_statuses.value, newStatus))
+      .limit(1);
+
+    if (!newStatusRow) {
+      return NextResponse.json({ error: "Invalid status value in database" }, { status: 500 });
+    }
+
     const updateData: any = {
-      status: newStatus,
+      status_id: newStatusRow.id,
       updated_at: new Date(),
     };
 
@@ -134,15 +151,7 @@ export async function PATCH(
 
     // Admin taking action → assign the ticket to themselves automatically
     if (isAdmin) {
-      const [staffRow] = await db
-        .select({ id: staff.id })
-        .from(staff)
-        .where(eq(staff.user_id, localUser.id))
-        .limit(1);
-
-      if (staffRow) {
-        updateData.assigned_to = staffRow.id;
-      }
+      updateData.assigned_to = localUser.id;
     }
 
     // -------------------------

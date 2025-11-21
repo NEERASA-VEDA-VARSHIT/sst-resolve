@@ -7,19 +7,19 @@ import { eq } from "drizzle-orm";
  * Input: dbUserId (NOT Clerk userId)
  */
 export async function isProfileComplete(dbUserId: string) {
-  try {
-    // dbUserId must be the UUID, not Clerk user_id
-    const [student] = await db
-      .select()
-      .from(students)
-      .where(eq(students.user_id, dbUserId))
-      .limit(1);
+	try {
+		// dbUserId must be the UUID, not Clerk user_id
+		const [student] = await db
+			.select({ id: students.id })
+			.from(students)
+			.where(eq(students.user_id, dbUserId))
+			.limit(1);
 
-    return !!student;
-  } catch (err) {
-    console.error("Error checking profile existence:", err);
-    return false;
-  }
+		return !!student;
+	} catch (err) {
+		console.error("Error checking profile existence:", err);
+		return false;
+	}
 }
 
 /**
@@ -28,7 +28,7 @@ export async function isProfileComplete(dbUserId: string) {
 export async function getMissingProfileFields(dbUserId: string): Promise<string[]> {
 	try {
 		const [student] = await db
-			.select()
+			.select({ id: students.id })
 			.from(students)
 			.where(eq(students.user_id, dbUserId))
 			.limit(1);

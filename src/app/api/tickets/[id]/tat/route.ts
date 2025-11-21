@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import { tickets, staff, categories, users } from "@/db/schema";
+import { tickets, categories, users, ticket_statuses } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { sendEmail, getTATSetEmail } from "@/lib/email";
 import { SetTATSchema } from "@/schema/ticket.schema";
@@ -30,7 +30,7 @@ export async function POST(
 ) {
 	try {
 		const { userId } = await auth();
-		
+
 		if (!userId) {
 			return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 		}
@@ -40,14 +40,14 @@ export async function POST(
 
 		// Get role from database (single source of truth)
 		const role = await getUserRoleFromDB(userId);
-		
+
 		if (role !== "admin" && role !== "super_admin") {
 			return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 		}
 
 		const { id } = await params;
 		const body = await request.json();
-		
+
 		// Validate input using Zod schema
 		const validationResult = SetTATSchema.safeParse(body);
 		if (!validationResult.success) {
@@ -56,7 +56,7 @@ export async function POST(
 				{ status: 400 }
 			);
 		}
-		
+
 		const { tat, markInProgress } = validationResult.data;
 
 		const ticketId = parseInt(id);
@@ -113,17 +113,17 @@ export async function POST(
 		// Set TAT (support both setting and extending)
 		// PRD v3.0: Track TAT extensions for auto-escalation (after 3 extensions)
 		const isExtension = metadata.tat ? true : false;
-		
+
 		// Store previous values before updating (for extension tracking)
 		const previousTAT = metadata.tat;
 		const previousTATDate = metadata.tatDate;
-		
+
 		// Update TAT values in metadata
 		metadata.tat = tatText;
 		metadata.tatDate = tatDate.toISOString();
 		metadata.tatSetAt = new Date().toISOString();
 		metadata.tatSetBy = "Admin"; // You can get admin name from userId if needed
-		
+
 		// Track TAT extension count
 		if (isExtension) {
 			metadata.tatExtendedAt = new Date().toISOString();
@@ -146,23 +146,21 @@ export async function POST(
 		// Update ticket with TAT and optionally mark as in_progress
 		// Also assign ticket to the admin taking action
 		const dbUser = await getOrCreateUser(userId);
-		const [adminStaff] = await db
-			.select({ id: staff.id })
-			.from(staff)
-			.where(eq(staff.user_id, dbUser.id))
-			.limit(1);
-
-		const updateData: any = { 
+		const updateData: any = {
 			metadata: metadata,
 			updated_at: new Date(),
+			assigned_to: dbUser.id,
 		};
-		
-		if (adminStaff) {
-			updateData.assigned_to = adminStaff.id;
-		}
-		
+
 		if (markInProgress) {
-			updateData.status = "IN_PROGRESS"; // Use uppercase enum value
+			const [statusRow] = await db.select({ id: ticket_statuses.id })
+				.from(ticket_statuses)
+				.where(eq(ticket_statuses.value, "IN_PROGRESS"))
+				.limit(1);
+
+			if (statusRow) {
+				updateData.status_id = statusRow.id;
+			}
 		}
 
 		await db
@@ -179,7 +177,7 @@ export async function POST(
 					.from(users)
 					.where(eq(users.id, ticket.created_by))
 					.limit(1);
-				
+
 				if (creator?.email) {
 					// Use the originalMessageId we retrieved before the update
 					const emailTemplate = getTATSetEmail(
@@ -198,7 +196,7 @@ export async function POST(
 						threadMessageId: originalMessageId,
 						originalSubject: originalSubject,
 					});
-					
+
 					if (!emailResult) {
 						console.error(`❌ Failed to send TAT email to ${creator.email} for ticket #${ticket.id}`);
 					} else {
@@ -216,20 +214,20 @@ export async function POST(
 			try {
 				if (categoryName === "Hostel" || categoryName === "College" || categoryName === "Committee") {
 					const slackMessageTs = metadata.slackMessageTs;
-					
+
 					if (slackMessageTs) {
 						const tatMessage = isExtension
 							? `⏱️ *TAT Extended*\n\nTurnaround Time updated to: *${tatText}*\nTarget Date: ${new Date(tatDate).toLocaleDateString()}`
 							: markInProgress
-							? `⏱️ *TAT Set & Ticket In Progress*\n\nTurnaround Time: *${tatText}*\nTarget Date: ${new Date(tatDate).toLocaleDateString()}`
-							: `⏱️ *TAT Updated*\n\nTurnaround Time: *${tatText}*\nTarget Date: ${new Date(tatDate).toLocaleDateString()}`;
+								? `⏱️ *TAT Set & Ticket In Progress*\n\nTurnaround Time: *${tatText}*\nTarget Date: ${new Date(tatDate).toLocaleDateString()}`
+								: `⏱️ *TAT Updated*\n\nTurnaround Time: *${tatText}*\nTarget Date: ${new Date(tatDate).toLocaleDateString()}`;
 
 						const { slackConfig } = await import("@/conf/config");
 						const subcategory = metadata.subcategory || "";
 						const key = `${categoryName}${subcategory ? ":" + subcategory : ""}`;
 						const ccUserIds = (slackConfig.ccMap[key] || slackConfig.ccMap[categoryName] || slackConfig.defaultCc);
 						const channelOverride: string | undefined = typeof metadata.slackChannel === "string" ? metadata.slackChannel : undefined;
-						
+
 						if (channelOverride) {
 							const { postThreadReplyToChannel } = await import("@/lib/slack");
 							await postThreadReplyToChannel(channelOverride, slackMessageTs, tatMessage, ccUserIds);

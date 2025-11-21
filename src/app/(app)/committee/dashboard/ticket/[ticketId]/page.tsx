@@ -29,19 +29,20 @@ export default async function CommitteeTicketPage({ params }: { params: Promise<
   const ticketRows = await db
     .select({
       id: tickets.id,
-      status: tickets.status,
+      status: ticket_statuses.value,
       description: tickets.description,
       location: tickets.location,
       created_by: tickets.created_by,
       category_id: tickets.category_id,
       metadata: tickets.metadata,
-      due_at: tickets.due_at,
+      due_at: tickets.resolution_due_at,
       created_at: tickets.created_at,
       rating: tickets.rating,
       category_name: categories.name,
     })
     .from(tickets)
     .leftJoin(categories, eq(tickets.category_id, categories.id))
+    .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
     .where(eq(tickets.id, id))
     .limit(1);
 
@@ -61,12 +62,12 @@ export default async function CommitteeTicketPage({ params }: { params: Promise<
 
   // Check if ticket is created by this committee member OR tagged to their committee
   let canAccess = false;
-  
+
   // Check if ticket is created by this committee member
   if (ticket.created_by === user.id && ticket.category_name === "Committee") {
     canAccess = true;
   }
-  
+
   // Check if ticket is tagged to any of the user's committees
   if (!canAccess && committeeIds.length > 0) {
     const tagRecords = await db
@@ -79,7 +80,7 @@ export default async function CommitteeTicketPage({ params }: { params: Promise<
         )
       )
       .limit(1);
-    
+
     if (tagRecords.length > 0) {
       canAccess = true;
     }
@@ -177,7 +178,7 @@ export default async function CommitteeTicketPage({ params }: { params: Promise<
         daysRemaining: diffDays,
         isOverdue: diffDays < 0,
       };
-    } catch {}
+    } catch { }
   }
 
   return (
@@ -229,7 +230,7 @@ export default async function CommitteeTicketPage({ params }: { params: Promise<
               <AlertDescription>
                 <div className="flex items-center justify-between">
                   <span className={tatInfo.isOverdue ? "text-red-900 dark:text-red-100 font-medium" : "text-blue-900 dark:text-blue-100 font-medium"}>
-                    {tatInfo.isOverdue 
+                    {tatInfo.isOverdue
                       ? `⚠️ TAT Overdue by ${Math.abs(tatInfo.daysRemaining)} day${Math.abs(tatInfo.daysRemaining) !== 1 ? 's' : ''}`
                       : `⏰ TAT: ${tatInfo.daysRemaining > 0 ? `${tatInfo.daysRemaining} day${tatInfo.daysRemaining !== 1 ? 's' : ''} remaining` : 'Due today'}`}
                   </span>
@@ -288,7 +289,7 @@ export default async function CommitteeTicketPage({ params }: { params: Promise<
                         {ticket.description || "No description provided"}
                       </p>
                     </div>
-                    
+
                     {/* Display Images if available */}
                     {metadata.images && Array.isArray(metadata.images) && metadata.images.length > 0 && (
                       <div className="space-y-2 pt-4 border-t">

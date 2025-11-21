@@ -1,8 +1,8 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
-import { tickets, categories, users, staff } from "@/db/schema";
-import { eq, sql } from "drizzle-orm";
+import { tickets, categories, users, roles, ticket_statuses } from "@/db/schema";
+import { eq, sql, isNotNull, and, or, inArray } from "drizzle-orm";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { FileText, Clock, CheckCircle2, AlertCircle, TrendingUp, Users, ArrowLeft, BarChart3, Calendar, Zap, Target, Activity } from "lucide-react";
 import Link from "next/link";
@@ -34,22 +34,13 @@ export default async function SuperAdminAnalyticsPage() {
     redirect('/error?message=user_not_found');
   }
 
-  // Get super admin's staff ID
-  const [superAdminStaff] = await db
-    .select({ id: staff.id })
-    .from(staff)
-    .where(eq(staff.user_id, dbUser.id))
-    .limit(1);
-
-  const superAdminStaffId = superAdminStaff?.id || null;
-
   // Fetch ALL tickets for overall analytics with more details
-  let allTickets = [];
+  let allTickets: any[] = [];
   try {
     allTickets = await db
       .select({
         id: tickets.id,
-        status: tickets.status,
+        status: ticket_statuses.value,
         escalation_level: tickets.escalation_level,
         created_at: tickets.created_at,
         resolved_at: tickets.resolved_at,
@@ -60,6 +51,7 @@ export default async function SuperAdminAnalyticsPage() {
       })
       .from(tickets)
       .leftJoin(categories, eq(tickets.category_id, categories.id))
+      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
       .orderBy(tickets.created_at);
   } catch (error) {
     console.error('[Super Admin Analytics] Error fetching tickets:', error);
@@ -100,15 +92,15 @@ export default async function SuperAdminAnalyticsPage() {
   startOfWeek.setHours(0, 0, 0, 0);
 
   const ticketsToday = allTickets.filter(t =>
-    t.created_at && t.created_at >= startOfToday
+    t.created_at && new Date(t.created_at) >= startOfToday
   ).length;
 
   const ticketsThisWeek = allTickets.filter(t =>
-    t.created_at && t.created_at >= startOfWeek
+    t.created_at && new Date(t.created_at) >= startOfWeek
   ).length;
 
   const resolvedToday = resolvedTickets.filter(t =>
-    t.resolved_at && t.resolved_at >= startOfToday
+    t.resolved_at && new Date(t.resolved_at) >= startOfToday
   ).length;
 
   // Calculate percentages
@@ -121,29 +113,32 @@ export default async function SuperAdminAnalyticsPage() {
   const avgResolutionHours = resolvedWithTime.length > 0
     ? Math.round(
       resolvedWithTime.reduce((sum, t) => {
-        const hours = (t.resolved_at!.getTime() - t.created_at!.getTime()) / (1000 * 60 * 60);
+        const hours = (new Date(t.resolved_at).getTime() - new Date(t.created_at).getTime()) / (1000 * 60 * 60);
         return sum + hours;
       }, 0) / resolvedWithTime.length
     )
     : 0;
 
   // Per Admin Analytics
-  let adminStats = [];
+  let adminStats: any[] = [];
   try {
     adminStats = await db
       .select({
-        staff_id: staff.id,
-        staff_name: users.name,
+        staff_id: users.id,
+        staff_first_name: users.first_name,
+        staff_last_name: users.last_name,
         staff_email: users.email,
         total: sql<number>`COUNT(${tickets.id})`.as('total'),
-        open: sql<number>`COUNT(CASE WHEN ${tickets.status} = 'OPEN' THEN 1 END)`.as('open'),
-        in_progress: sql<number>`COUNT(CASE WHEN ${tickets.status} = 'IN_PROGRESS' OR ${tickets.status} = 'AWAITING_STUDENT' THEN 1 END)`.as('in_progress'),
-        resolved: sql<number>`COUNT(CASE WHEN ${tickets.status} = 'RESOLVED' THEN 1 END)`.as('resolved'),
+        open: sql<number>`COUNT(CASE WHEN ${ticket_statuses.value} = 'OPEN' THEN 1 END)`.as('open'),
+        in_progress: sql<number>`COUNT(CASE WHEN ${ticket_statuses.value} IN ('IN_PROGRESS', 'AWAITING_STUDENT') THEN 1 END)`.as('in_progress'),
+        resolved: sql<number>`COUNT(CASE WHEN ${ticket_statuses.value} = 'RESOLVED' THEN 1 END)`.as('resolved'),
       })
-      .from(staff)
-      .innerJoin(users, eq(staff.user_id, users.id))
-      .leftJoin(tickets, eq(tickets.assigned_to, staff.id))
-      .groupBy(staff.id, users.name, users.email)
+      .from(users)
+      .innerJoin(roles, eq(users.role_id, roles.id))
+      .leftJoin(tickets, eq(tickets.assigned_to, users.id))
+      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
+      .where(inArray(roles.name, ['admin', 'super_admin']))
+      .groupBy(users.id, users.first_name, users.last_name, users.email)
       .orderBy(sql`COUNT(${tickets.id}) DESC`);
   } catch (error) {
     console.error('[Super Admin Analytics] Error fetching admin stats:', error);
@@ -151,19 +146,20 @@ export default async function SuperAdminAnalyticsPage() {
   }
 
   // Per Category Analytics
-  let categoryStats = [];
+  let categoryStats: any[] = [];
   try {
     categoryStats = await db
       .select({
         category_id: categories.id,
         category_name: categories.name,
         total: sql<number>`COUNT(${tickets.id})`.as('total'),
-        open: sql<number>`COUNT(CASE WHEN ${tickets.status} = 'OPEN' THEN 1 END)`.as('open'),
-        in_progress: sql<number>`COUNT(CASE WHEN ${tickets.status} = 'IN_PROGRESS' OR ${tickets.status} = 'AWAITING_STUDENT' THEN 1 END)`.as('in_progress'),
-        resolved: sql<number>`COUNT(CASE WHEN ${tickets.status} = 'RESOLVED' THEN 1 END)`.as('resolved'),
+        open: sql<number>`COUNT(CASE WHEN ${ticket_statuses.value} = 'OPEN' THEN 1 END)`.as('open'),
+        in_progress: sql<number>`COUNT(CASE WHEN ${ticket_statuses.value} IN ('IN_PROGRESS', 'AWAITING_STUDENT') THEN 1 END)`.as('in_progress'),
+        resolved: sql<number>`COUNT(CASE WHEN ${ticket_statuses.value} = 'RESOLVED' THEN 1 END)`.as('resolved'),
       })
       .from(categories)
       .leftJoin(tickets, eq(tickets.category_id, categories.id))
+      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
       .where(isNotNull(categories.parent_category_id))
       .groupBy(categories.id, categories.name)
       .orderBy(sql`COUNT(${tickets.id}) DESC`);
@@ -454,6 +450,7 @@ export default async function SuperAdminAnalyticsPage() {
                     const inProgress = Number(stat.in_progress) || 0;
                     const resolved = Number(stat.resolved) || 0;
                     const resolutionRate = total > 0 ? Math.round((resolved / total) * 100) : 0;
+                    const staffName = [stat.staff_first_name, stat.staff_last_name].filter(Boolean).join(' ').trim();
 
                     return (
                       <Link
@@ -464,7 +461,7 @@ export default async function SuperAdminAnalyticsPage() {
                         <div className="p-5 border-2 rounded-lg hover:shadow-md transition-all hover:border-primary cursor-pointer">
                           <div className="flex items-center justify-between mb-4">
                             <div>
-                              <p className="font-semibold text-lg">{stat.staff_name || stat.staff_email || "Unknown Admin"}</p>
+                              <p className="font-semibold text-lg">{staffName || stat.staff_email || "Unknown Admin"}</p>
                               <p className="text-sm text-muted-foreground">{stat.staff_email}</p>
                             </div>
                             <div className="text-right">

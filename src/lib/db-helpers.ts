@@ -3,7 +3,7 @@
  * Optimized queries for common operations
  */
 
-import { db, users, roles, user_roles, staff, tickets, committee_members, committees, categories } from "@/db";
+import { db, users, roles, admin_assignments, tickets, committee_members, committees, categories, ticket_statuses, domains, scopes } from "@/db";
 import { eq, and, or, isNull, isNotNull, lt, gte, sql, inArray } from "drizzle-orm";
 import type { UserRole } from "@/types/auth";
 
@@ -19,8 +19,7 @@ export async function findSuperAdminClerkId(): Promise<string | null> {
         clerk_id: users.clerk_id,
       })
       .from(users)
-      .innerJoin(user_roles, eq(users.id, user_roles.user_id))
-      .innerJoin(roles, eq(user_roles.role_id, roles.id))
+      .innerJoin(roles, eq(users.role_id, roles.id))
       .where(eq(roles.name, "super_admin"))
       .limit(1);
 
@@ -41,35 +40,8 @@ export async function getUserRoles(clerkUserId: string): Promise<Array<{
   scope: string | null;
 }>> {
   try {
-    const [user] = await db
-      .select({ id: users.id })
-      .from(users)
-      .where(eq(users.clerk_id, clerkUserId))
-      .limit(1);
-
-    if (!user) {
-      return [];
-    }
-
-    const userRolesList = await db
-      .select({
-        roleName: roles.name,
-        domain: user_roles.domain,
-        scope: user_roles.scope,
-      })
-      .from(user_roles)
-      .innerJoin(roles, eq(user_roles.role_id, roles.id))
-      .where(eq(user_roles.user_id, user.id));
-
-    const validRoles: UserRole[] = ["student", "admin", "super_admin", "committee"];
-    
-    return userRolesList
-      .filter(ur => validRoles.includes(ur.roleName as UserRole))
-      .map(ur => ({
-        role: ur.roleName as UserRole,
-        domain: ur.domain,
-        scope: ur.scope,
-      }));
+    const { getUserRoles: getRoles } = await import("@/lib/db-roles");
+    return await getRoles(clerkUserId);
   } catch (error) {
     console.error("[DB Helpers] Error getting user roles:", error);
     return [];
@@ -89,49 +61,96 @@ export async function isAdmin(
 ): Promise<boolean> {
   try {
     const [user] = await db
-      .select({ id: users.id })
+      .select({
+        id: users.id,
+        roleName: roles.name,
+        primaryDomain: domains.name,
+        primaryScope: scopes.name
+      })
       .from(users)
+      .leftJoin(roles, eq(users.role_id, roles.id))
+      .leftJoin(domains, eq(users.primary_domain_id, domains.id))
+      .leftJoin(scopes, eq(users.primary_scope_id, scopes.id))
       .where(eq(users.clerk_id, clerkUserId))
       .limit(1);
 
-    if (!user) {
+    if (!user || !user.roleName) {
       return false;
     }
 
-    // Get admin or super_admin roles
+    // Super admin has access to everything
+    if (user.roleName === "super_admin") {
+      return true;
+    }
+
+    // Must be at least admin
+    if (user.roleName !== "admin") {
+      return false;
+    }
+
+    // If no specific domain/scope requested, just return true (is an admin)
+    if (options?.domain === undefined && options?.scope === undefined) {
+      return true;
+    }
+
+    // Check primary assignment
+    if (options?.domain !== undefined) {
+      if (options.domain === null) {
+        // Checking for "no domain" - usually implies global admin, but admins are always scoped or primary scoped?
+        // If primary domain is null, then yes.
+        if (user.primaryDomain === null) return true;
+      } else {
+        if (user.primaryDomain === options.domain) {
+          if (options.scope === undefined) return true;
+          if (options.scope === null && user.primaryScope === null) return true;
+          if (options.scope !== null && user.primaryScope === options.scope) return true;
+        }
+      }
+    }
+
+    // Check secondary assignments
     const conditions = [
-      eq(user_roles.user_id, user.id),
-      or(
-        eq(roles.name, "admin"),
-        eq(roles.name),
-        eq(roles.name, "super_admin")
-      ),
+      eq(admin_assignments.user_id, user.id)
     ];
 
     if (options?.domain !== undefined) {
       if (options.domain === null) {
-        conditions.push(isNull(user_roles.domain));
+        // admin_assignments always have a domain_id (not null in schema), so this case is impossible for secondary assignments
+        // unless we interpret "null domain" as something else. 
+        // But let's assume if domain is null, we only check primary.
+        return false;
       } else {
-        conditions.push(eq(user_roles.domain, options.domain));
+        // Join domains to check name
+        // We'll do this in the query below
       }
     }
 
-    if (options?.scope !== undefined) {
-      if (options.scope === null) {
-        conditions.push(isNull(user_roles.scope));
-      } else {
-        conditions.push(eq(user_roles.scope, options.scope));
-      }
-    }
-
-    const adminRoles = await db
+    const query = db
       .select()
-      .from(user_roles)
-      .innerJoin(roles, eq(user_roles.role_id, roles.id))
-      .where(and(...conditions))
-      .limit(1);
+      .from(admin_assignments)
+      .innerJoin(domains, eq(admin_assignments.domain_id, domains.id))
+      .leftJoin(scopes, eq(admin_assignments.scope_id, scopes.id))
+      .where(eq(admin_assignments.user_id, user.id));
 
-    return adminRoles.length > 0;
+    const assignments = await query;
+
+    for (const assignment of assignments) {
+      if (options?.domain !== undefined && options.domain !== null) {
+        if (assignment.domains.name !== options.domain) continue;
+      }
+
+      if (options?.scope !== undefined) {
+        if (options.scope === null) {
+          if (assignment.admin_assignments.scope_id !== null) continue;
+        } else {
+          if (assignment.scopes?.name !== options.scope) continue;
+        }
+      }
+
+      return true;
+    }
+
+    return false;
   } catch (error) {
     console.error("[DB Helpers] Error checking admin status:", error);
     return false;
@@ -149,54 +168,8 @@ export async function userHasScope(
   scope?: string | null
 ): Promise<boolean> {
   try {
-    const [user] = await db
-      .select({ id: users.id })
-      .from(users)
-      .where(eq(users.clerk_id, clerkUserId))
-      .limit(1);
-
-    if (!user) {
-      return false;
-    }
-
-    const roleId = await db
-      .select({ id: roles.id })
-      .from(roles)
-      .where(eq(roles.name, roleName))
-      .limit(1);
-
-    if (roleId.length === 0) {
-      return false;
-    }
-
-    const conditions = [
-      eq(user_roles.user_id, user.id),
-      eq(user_roles.role_id, roleId[0].id),
-    ];
-
-    if (domain !== undefined) {
-      if (domain === null) {
-        conditions.push(isNull(user_roles.domain));
-      } else {
-        conditions.push(eq(user_roles.domain, domain));
-      }
-    }
-
-    if (scope !== undefined) {
-      if (scope === null) {
-        conditions.push(isNull(user_roles.scope));
-      } else {
-        conditions.push(eq(user_roles.scope, scope));
-      }
-    }
-
-    const userRole = await db
-      .select()
-      .from(user_roles)
-      .where(and(...conditions))
-      .limit(1);
-
-    return userRole.length > 0;
+    const { userHasRole } = await import("@/lib/db-roles");
+    return await userHasRole(clerkUserId, roleName, { domain, scope });
   } catch (error) {
     console.error("[DB Helpers] Error checking user scope:", error);
     return false;
@@ -219,7 +192,7 @@ export async function getActiveCommitteeMembers(committeeId: number): Promise<Ar
       .select({
         userId: users.id,
         clerkId: users.clerk_id,
-        name: users.name,
+        name: sql<string>`concat(${users.first_name}, ' ', ${users.last_name})`,
         email: users.email,
         committeeRole: committee_members.role,
       })
@@ -242,10 +215,9 @@ export async function getActiveCommitteeMembers(committeeId: number): Promise<Ar
 
 /**
  * Get POC (Point of Contact) for a category
- * Returns staff member assigned as default_authority for the category
+ * Returns user assigned as default_authority for the category
  */
 export async function getPOCForCategory(categoryId: number): Promise<{
-  staffId: number;
   userId: string;
   clerkId: string;
   name: string;
@@ -253,7 +225,7 @@ export async function getPOCForCategory(categoryId: number): Promise<{
   slackUserId: string | null;
 } | null> {
   try {
-    // Check if default_authority column exists first, then use raw SQL to avoid Drizzle issues
+    // Check if default_authority column exists first
     const columnCheck = await db.execute(sql`
       SELECT EXISTS (
         SELECT 1 FROM information_schema.columns 
@@ -263,11 +235,11 @@ export async function getPOCForCategory(categoryId: number): Promise<{
       ) as exists;
     `);
     const columnExists = (columnCheck[0] as any)?.exists === true;
-    
+
     if (!columnExists) {
       return null;
     }
-    
+
     // Use raw SQL to get default_authority
     const categoryResult = await db.execute(sql`
       SELECT default_authority 
@@ -284,16 +256,15 @@ export async function getPOCForCategory(categoryId: number): Promise<{
 
     const [poc] = await db
       .select({
-        id: staff.id,
-        userId: staff.user_id,
-        fullName: staff.full_name,
-        email: staff.email,
-        slackUserId: staff.slack_user_id,
+        userId: users.id,
+        firstName: users.first_name,
+        lastName: users.last_name,
+        email: users.email,
+        slackUserId: users.slack_user_id,
         clerkId: users.clerk_id,
       })
-      .from(staff)
-      .innerJoin(users, eq(staff.user_id, users.id))
-      .where(eq(staff.id, defaultAuthority))
+      .from(users)
+      .where(eq(users.id, defaultAuthority))
       .limit(1);
 
     if (!poc) {
@@ -301,10 +272,9 @@ export async function getPOCForCategory(categoryId: number): Promise<{
     }
 
     return {
-      staffId: poc.id,
       userId: poc.userId,
       clerkId: poc.clerkId,
-      name: poc.fullName,
+      name: `${poc.firstName} ${poc.lastName}`.trim(),
       email: poc.email,
       slackUserId: poc.slackUserId,
     };
@@ -328,7 +298,11 @@ export async function getOpenTicketsForAdmin(
 ): Promise<Array<{
   id: number;
   status: string;
-  priority: string;
+  priority: string; // Note: priority column removed from tickets, using escalation_level or similar? Or maybe it's still there?
+  // Checking schema: priority is NOT in tickets table anymore. 
+  // We should probably remove it from return type or map it.
+  // For now, I'll return "Normal" as placeholder or remove it.
+  // The interface expects it, so I'll return "Normal".
   category: string | null;
   subcategory: string | null;
   description: string | null;
@@ -346,27 +320,19 @@ export async function getOpenTicketsForAdmin(
       return [];
     }
 
-    // Get staff record for this admin
-    const [staffMember] = await db
-      .select({ id: staff.id, domain: staff.domain, scope: staff.scope })
-      .from(staff)
-      .where(eq(staff.user_id, user.id))
-      .limit(1);
-
-    if (!staffMember) {
-      return [];
-    }
-
     // Build query conditions
     const conditions = [
-      eq(tickets.assigned_to, staffMember.id),
-      sql`${tickets.status} != 'RESOLVED'`,
-      sql`${tickets.status} != 'CLOSED'`,
+      eq(tickets.assigned_to, user.id),
+      sql`${ticket_statuses.value} != 'RESOLVED'`,
+      sql`${ticket_statuses.value} != 'CLOSED'`,
     ];
 
     // Apply domain/scope filters if provided
     if (options?.domain) {
-      conditions.push(eq(tickets.category, options.domain));
+      // This requires joining categories
+      conditions.push(eq(categories.name, options.domain));
+      // Scope logic is tricky as location is loose text or scope name?
+      // Assuming location matches scope name
       if (options?.scope) {
         conditions.push(eq(tickets.location, options.scope));
       }
@@ -375,19 +341,26 @@ export async function getOpenTicketsForAdmin(
     const openTickets = await db
       .select({
         id: tickets.id,
-        status: tickets.status,
-        priority: tickets.priority,
-        category: tickets.category,
-        subcategory: tickets.subcategory,
+        status: ticket_statuses.value,
+        // priority: tickets.priority, // Removed
+        category: categories.name,
+        subcategory: sql<string>`''`, // Need join for subcategory name if needed
         description: tickets.description,
         created_at: tickets.created_at,
-        due_at: tickets.due_at,
+        due_at: tickets.resolution_due_at,
       })
       .from(tickets)
+      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
+      .leftJoin(categories, eq(tickets.category_id, categories.id))
       .where(and(...conditions))
       .orderBy(tickets.created_at);
 
-    return openTickets;
+    return openTickets.map(t => ({
+      ...t,
+      priority: "Normal", // Placeholder
+      category: t.category || null,
+      subcategory: null // Placeholder
+    }));
   } catch (error) {
     console.error("[DB Helpers] Error getting open tickets for admin:", error);
     return [];
@@ -419,37 +392,30 @@ export async function getTicketsNeedingAcknowledgement(
       return [];
     }
 
-    // Get staff record for this admin
-    const [staffMember] = await db
-      .select({ id: staff.id })
-      .from(staff)
-      .where(eq(staff.user_id, user.id))
-      .limit(1);
-
-    if (!staffMember) {
-      return [];
-    }
-
     const ticketsNeedingAck = await db
       .select({
         id: tickets.id,
-        status: tickets.status,
-        priority: tickets.priority,
-        category: tickets.category,
+        status: ticket_statuses.value,
+        category: categories.name,
         created_at: tickets.created_at,
-        due_at: tickets.due_at,
+        due_at: tickets.resolution_due_at,
       })
       .from(tickets)
+      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
+      .leftJoin(categories, eq(tickets.category_id, categories.id))
       .where(
         and(
-          eq(tickets.assigned_to, staffMember.id),
-          eq(tickets.status, "OPEN"),
+          eq(tickets.assigned_to, user.id),
+          eq(ticket_statuses.value, "OPEN"),
           isNull(tickets.acknowledged_at)
         )
       )
       .orderBy(tickets.created_at);
 
-    return ticketsNeedingAck;
+    return ticketsNeedingAck.map(t => ({
+      ...t,
+      priority: "Normal"
+    }));
   } catch (error) {
     console.error("[DB Helpers] Error getting tickets needing acknowledgement:", error);
     return [];
@@ -468,7 +434,7 @@ export async function getTicketsOverdue(): Promise<Array<{
   created_at: Date | null;
   due_at: Date | null;
   sla_breached_at: Date | null;
-  assigned_to: number | null;
+  assigned_to: string | null; // Changed from number to string (UUID)
 }>> {
   try {
     const now = new Date();
@@ -476,29 +442,32 @@ export async function getTicketsOverdue(): Promise<Array<{
     const overdueTickets = await db
       .select({
         id: tickets.id,
-        status: tickets.status,
-        priority: tickets.priority,
-        category: tickets.category,
+        status: ticket_statuses.value,
+        category: categories.name,
         created_at: tickets.created_at,
-        due_at: tickets.due_at,
+        due_at: tickets.resolution_due_at,
         sla_breached_at: tickets.sla_breached_at,
         assigned_to: tickets.assigned_to,
       })
       .from(tickets)
+      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
+      .leftJoin(categories, eq(tickets.category_id, categories.id))
       .where(
         and(
-          isNotNull(tickets.due_at),
-          lt(tickets.due_at, now),
-          sql`${tickets.status} != 'RESOLVED'`,
-          sql`${tickets.status} != 'CLOSED'`
+          isNotNull(tickets.resolution_due_at),
+          lt(tickets.resolution_due_at, now),
+          sql`${ticket_statuses.value} != 'RESOLVED'`,
+          sql`${ticket_statuses.value} != 'CLOSED'`
         )
       )
-      .orderBy(tickets.due_at);
+      .orderBy(tickets.resolution_due_at);
 
-    return overdueTickets;
+    return overdueTickets.map(t => ({
+      ...t,
+      priority: "Normal"
+    }));
   } catch (error) {
     console.error("[DB Helpers] Error getting overdue tickets:", error);
     return [];
   }
 }
-

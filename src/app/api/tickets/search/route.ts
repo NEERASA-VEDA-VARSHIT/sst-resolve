@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import { tickets, users, staff, categories } from "@/db/schema";
+import { tickets, users, ticket_statuses } from "@/db/schema";
 import { and, eq, gte, lte, like, or, sql } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 
@@ -14,10 +14,10 @@ import { getUserRoleFromDB } from "@/lib/db-roles";
  *   - Auth: Required (Admin+)
  *   - Query Parameters:
  *     • query: Text search in description
- *     • status: Filter by status
+ *     • status: Filter by status value (e.g., "OPEN")
  *     • category: Filter by category ID
- *     • assignedTo: Filter by staff UUID
- *     • createdBy: Filter by student UUID
+ *     • assignedTo: Filter by user UUID
+ *     • createdBy: Filter by user UUID
  *     • dateFrom: ISO date
  *     • dateTo: ISO date
  *     • page: Page number
@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
     // -----------------------
     const { userId } = await auth();
     if (!userId) {
-      );
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     // -----------------------
@@ -69,13 +69,13 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    if (status) filters.push(eq(tickets.status, status));
+    if (status) filters.push(eq(ticket_statuses.value, status));
 
     if (categoryId) filters.push(eq(tickets.category_id, Number(categoryId)));
 
-    if (assignedTo) filters.push(eq(tickets.assigned_to, Number(assignedTo)));
+    if (assignedTo) filters.push(eq(tickets.assigned_to, assignedTo));
 
-    if (createdBy) filters.push(eq(tickets.created_by, Number(createdBy)));
+    if (createdBy) filters.push(eq(tickets.created_by, createdBy));
 
     if (dateFrom) filters.push(gte(tickets.created_at, new Date(dateFrom)));
 
@@ -89,7 +89,7 @@ export async function GET(request: NextRequest) {
     const rows = await db
       .select({
         id: tickets.id,
-        status: tickets.status,
+        status: ticket_statuses.value,
         categoryId: tickets.category_id,
         createdAt: tickets.created_at,
         updatedAt: tickets.updated_at,
@@ -100,6 +100,7 @@ export async function GET(request: NextRequest) {
         createdBy: tickets.created_by,
       })
       .from(tickets)
+      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
       .where(whereClause ?? undefined)
       .limit(limit)
       .offset(offset)
@@ -113,6 +114,7 @@ export async function GET(request: NextRequest) {
         count: sql<number>`COUNT(*)`,
       })
       .from(tickets)
+      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
       .where(whereClause ?? undefined);
 
     return NextResponse.json({

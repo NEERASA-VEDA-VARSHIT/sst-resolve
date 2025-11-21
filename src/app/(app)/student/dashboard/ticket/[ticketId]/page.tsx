@@ -78,11 +78,14 @@ export default async function StudentTicketPage({ params }: { params: Promise<{ 
   const progressMap = buildProgressMap(ticketStatuses);
 
   // Calculate ticket progress
-  const normalizedStatus = normalizeStatusForComparison(ticket.status);
+  // ticket.status is now an object with { value, label, badge_color } or null
+  const statusValue = ticket.status?.value || null;
+  const normalizedStatus = normalizeStatusForComparison(statusValue);
   const ticketProgress = progressMap[normalizedStatus] || 0;
 
   // Build timeline using factory function
-  const timelineEntries = buildTimeline(ticket, normalizedStatus);
+  // buildTimeline expects status as string value, not object
+  const timelineEntries = buildTimeline(ticket, statusValue || "");
 
   return (
     <div className="max-w-6xl mx-auto p-4 md:p-6 space-y-6">
@@ -380,7 +383,7 @@ export default async function StudentTicketPage({ params }: { params: Promise<{ 
                       </span>
                     </AlertDescription>
                   </Alert>
-                  <CommentForm ticketId={ticket.id} currentStatus={ticket.status || undefined} />
+                  <CommentForm ticketId={ticket.id} currentStatus={statusValue || undefined} />
                 </div>
               )}
             </CardContent>
@@ -407,7 +410,7 @@ export default async function StudentTicketPage({ params }: { params: Promise<{ 
           {/* 8. Actions Available to Student */}
           <StudentActions
             ticketId={ticket.id}
-            currentStatus={ticket.status || "open"}
+            currentStatus={statusValue || "open"}
           />
 
           {/* 9. Attachments */}

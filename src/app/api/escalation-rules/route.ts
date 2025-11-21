@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { db, escalation_rules, staff } from "@/db";
-import { eq, and, or, isNull } from "drizzle-orm";
+import { db, escalation_rules, users, domains, scopes } from "@/db";
+import { eq, and, or, isNull, inArray } from "drizzle-orm";
 import { asc } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
@@ -10,7 +10,7 @@ import { getOrCreateUser } from "@/lib/user-sync";
 export async function GET(request: NextRequest) {
   try {
     const { userId } = await auth();
-    
+
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -20,56 +20,71 @@ export async function GET(request: NextRequest) {
 
     // Get role from database (single source of truth)
     const role = await getUserRoleFromDB(userId);
-    
+
     if (role !== "admin" && role !== "super_admin") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // Fetch escalation rules with staff details
+    // Fetch escalation rules with explicit columns
     const rules = await db
       .select({
         id: escalation_rules.id,
-        domain: escalation_rules.domain,
-        scope: escalation_rules.scope,
+        domain_id: escalation_rules.domain_id,
+        scope_id: escalation_rules.scope_id,
         level: escalation_rules.level,
-        staff_id: escalation_rules.staff_id,
+        user_id: escalation_rules.user_id,
         notify_channel: escalation_rules.notify_channel,
         created_at: escalation_rules.created_at,
         updated_at: escalation_rules.updated_at,
       })
-      .from(escalation_rules)
-      .orderBy(asc(escalation_rules.domain), asc(escalation_rules.level));
+      .from(escalation_rules);
 
-    // Fetch staff details for each rule
-    const rulesWithStaff = await Promise.all(
-      rules.map(async (rule) => {
-        if (rule.staff_id) {
-          const [staffMember] = await db
-            .select({
-              id: staff.id,
-              full_name: staff.full_name,
-              email: staff.email,
-              clerk_user_id: staff.clerk_user_id,
-            })
-            .from(staff)
-            .where(eq(staff.id, rule.staff_id))
-            .limit(1);
+    // Sort manually to avoid orderBy issues
+    const sortedRules = rules.sort((a, b) => {
+      if (a.domain_id !== b.domain_id) return (a.domain_id || 0) - (b.domain_id || 0);
+      return (a.level || 0) - (b.level || 0);
+    });
 
-          return {
-            ...rule,
-            notify_channel: rule.notify_channel || "slack",
-            staff: staffMember || null,
-          };
-        }
-        return {
-          ...rule,
-          notify_channel: rule.notify_channel || "slack",
-          staff: null,
-        };
-      })
-    );
+    // Fetch related data
+    const domainIds = [...new Set(sortedRules.map(r => r.domain_id).filter(Boolean))];
+    const scopeIds = [...new Set(sortedRules.map(r => r.scope_id).filter(Boolean))];
+    const userIds = [...new Set(sortedRules.map(r => r.user_id).filter(Boolean))];
 
-    return NextResponse.json({ rules: rulesWithStaff });
+    const [domainsList, scopesList, usersList] = await Promise.all([
+      domainIds.length > 0
+        ? db.select().from(domains).where(inArray(domains.id, domainIds))
+        : Promise.resolve([]),
+      scopeIds.length > 0
+        ? db.select().from(scopes).where(inArray(scopes.id, scopeIds as number[]))
+        : Promise.resolve([]),
+      userIds.length > 0
+        ? db.select({
+          id: users.id,
+          email: users.email,
+          first_name: users.first_name,
+          last_name: users.last_name,
+          clerk_id: users.clerk_id,
+        }).from(users).where(inArray(users.id, userIds as string[]))
+        : Promise.resolve([]),
+    ]);
+
+    const domainMap = new Map(domainsList.map(d => [d.id, d]));
+    const scopeMap = new Map(scopesList.map(s => [s.id, s]));
+    const userMap = new Map(usersList.map(u => [u.id, {
+      ...u,
+      name: [u.first_name, u.last_name].filter(Boolean).join(' ').trim() || null,
+    }]));
+
+    // Enrich rules with domain, scope, and user data
+    const enrichedRules = sortedRules.map(rule => ({
+      ...rule,
+      domain: rule.domain_id ? domainMap.get(rule.domain_id) : null,
+      scope: rule.scope_id ? scopeMap.get(rule.scope_id) : null,
+      user: rule.user_id ? userMap.get(rule.user_id) : null,
+      notify_channel: rule.notify_channel || "slack",
+    }));
+
+    return NextResponse.json({ rules: enrichedRules });
   } catch (error) {
     console.error("Error fetching escalation rules:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
@@ -80,7 +95,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const { userId } = await auth();
-    
+
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -90,21 +105,16 @@ export async function POST(request: NextRequest) {
 
     // Get role from database (single source of truth)
     const role = await getUserRoleFromDB(userId);
-    
+
     if (role !== "super_admin") {
       return NextResponse.json({ error: "Only super admins can create escalation rules" }, { status: 403 });
     }
 
     const body = await request.json();
-    const { domain, scope, level, staff_id, notify_channel } = body;
+    const { domain_id, scope_id, level, user_id, notify_channel } = body;
 
-    if (!domain || !level) {
-      return NextResponse.json({ error: "Domain and level are required" }, { status: 400 });
-    }
-
-    // Validate domain
-    if (domain !== "Hostel" && domain !== "College") {
-      return NextResponse.json({ error: "Domain must be 'Hostel' or 'College'" }, { status: 400 });
+    if (!domain_id || !level) {
+      return NextResponse.json({ error: "domain_id and level are required" }, { status: 400 });
     }
 
     // Validate level is a positive integer
@@ -115,80 +125,57 @@ export async function POST(request: NextRequest) {
 
     // Validate notify_channel (optional, defaults to "slack")
     const channel = notify_channel || "slack";
-    if (channel !== "slack" && channel !== "email") {
-      return NextResponse.json({ error: "Notify channel must be 'slack' or 'email'" }, { status: 400 });
+    if (channel !== "slack" && channel !== "email" && channel !== "in_app") {
+      return NextResponse.json({ error: "Notify channel must be 'slack', 'email', or 'in_app'" }, { status: 400 });
     }
 
-    // Check for duplicate rule (same domain, scope, and level)
-    const existingRule = await db
+    // Check for duplicate rule (same domain_id, scope_id, and level)
+    const [existingRule] = await db
       .select()
       .from(escalation_rules)
       .where(
         and(
-          eq(escalation_rules.domain, domain),
+          eq(escalation_rules.domain_id, domain_id),
           eq(escalation_rules.level, levelNum),
-          scope 
-            ? eq(escalation_rules.scope, scope)
-            : or(eq(escalation_rules.scope, null), isNull(escalation_rules.scope))
+          scope_id
+            ? eq(escalation_rules.scope_id, scope_id)
+            : isNull(escalation_rules.scope_id)
         )
       )
       .limit(1);
 
-    if (existingRule.length > 0) {
+    if (existingRule) {
       return NextResponse.json({ error: "An escalation rule with this domain, scope, and level already exists" }, { status: 400 });
     }
 
-    // Validate staff_id if provided
-    if (staff_id) {
-      const staffIdNum = parseInt(String(staff_id), 10);
-      if (isNaN(staffIdNum)) {
-        return NextResponse.json({ error: "Invalid staff_id" }, { status: 400 });
-      }
-
-      const [staffMember] = await db
+    // Validate user_id if provided
+    if (user_id) {
+      const [userRecord] = await db
         .select()
-        .from(staff)
-        .where(eq(staff.id, staffIdNum))
+        .from(users)
+        .where(eq(users.id, user_id))
         .limit(1);
 
-      if (!staffMember) {
-        return NextResponse.json({ error: "Staff member not found" }, { status: 404 });
+      if (!userRecord) {
+        return NextResponse.json({ error: "User not found" }, { status: 404 });
       }
     }
 
     // Create the rule
-    // Note: notify_channel might not exist in database, so we'll try to insert it but handle gracefully
-    const insertValues: any = {
-      domain,
-      scope: domain === "College" ? null : (scope || null),
-      level: levelNum,
-      staff_id: staff_id ? parseInt(String(staff_id), 10) : null,
-    };
-    
-    // Only include notify_channel if the column exists (we'll try and catch if it fails)
-    try {
-      const [newRule] = await db
-        .insert(escalation_rules)
-        .values({
-          ...insertValues,
-          notify_channel: channel,
-        })
-        .returning();
-      return NextResponse.json({ rule: newRule }, { status: 201 });
-    } catch (error: any) {
-      // If notify_channel column doesn't exist, insert without it
-      if (error?.message?.includes("notify_channel")) {
-        const [newRule] = await db
-          .insert(escalation_rules)
-          .values(insertValues)
-          .returning();
-        return NextResponse.json({ rule: { ...newRule, notify_channel: channel } }, { status: 201 });
-      }
-      throw error;
-    }
+    const [newRule] = await db
+      .insert(escalation_rules)
+      .values({
+        domain_id,
+        scope_id: scope_id || null,
+        level: levelNum,
+        user_id: user_id || null,
+        notify_channel: channel,
+      })
+      .returning();
+
+    return NextResponse.json({ rule: newRule }, { status: 201 });
   } catch (error) {
     console.error("Error creating escalation rule:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }
-

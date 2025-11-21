@@ -1,7 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect, notFound } from "next/navigation";
 import { db } from "@/db";
-import { tickets, categories, users, staff } from "@/db/schema";
+import { tickets, categories, users, ticket_statuses, domains, scopes } from "@/db/schema";
 import { eq, desc, inArray, gte, and } from "drizzle-orm";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { FileText, Clock, CheckCircle2, AlertCircle, TrendingUp, Users, ArrowLeft, Calendar, Zap, Target, Activity, Mail, Phone } from "lucide-react";
@@ -40,27 +40,25 @@ export default async function AdminDetailPage({
   const { adminId } = await params;
   const { period: periodParam } = await searchParams;
   const period = periodParam || "all";
-  const staffId = parseInt(adminId, 10);
 
-  if (isNaN(staffId)) {
-    notFound();
-  }
+  // adminId is UUID string
 
-  // Fetch admin/staff details - use separate queries to avoid join issues
-  const [staffRecord] = await db
-    .select()
-    .from(staff)
-    .where(eq(staff.id, staffId))
-    .limit(1);
-
-  if (!staffRecord) {
-    notFound();
-  }
-
+  // Fetch user details with domain/scope info
   const [userRecord] = await db
-    .select()
+    .select({
+      id: users.id,
+      first_name: users.first_name,
+      last_name: users.last_name,
+      email: users.email,
+      phone: users.phone,
+      role_id: users.role_id,
+      domain_name: domains.name,
+      scope_name: scopes.name,
+    })
     .from(users)
-    .where(eq(users.id, staffRecord.user_id))
+    .leftJoin(domains, eq(users.primary_domain_id, domains.id))
+    .leftJoin(scopes, eq(users.primary_scope_id, scopes.id))
+    .where(eq(users.id, adminId))
     .limit(1);
 
   if (!userRecord) {
@@ -68,19 +66,15 @@ export default async function AdminDetailPage({
   }
 
   const adminStaff = {
-    id: staffRecord.id,
-    user_id: staffRecord.user_id,
-    domain: staffRecord.domain,
-    scope: staffRecord.scope,
-    role: userRecord.role,
-    staff_name: userRecord.name,
+    id: userRecord.id,
+    user_id: userRecord.id,
+    domain: userRecord.domain_name,
+    scope: userRecord.scope_name,
+    role: "Admin", // Simplified, could fetch role name from roles table
+    staff_name: [userRecord.first_name, userRecord.last_name].filter(Boolean).join(" "),
     staff_email: userRecord.email,
     staff_phone: userRecord.phone,
   };
-
-  if (!adminStaff) {
-    notFound();
-  }
 
   // Time filter logic
   let timeFilter = undefined;
@@ -96,7 +90,6 @@ export default async function AdminDetailPage({
   }
 
   // Fetch all tickets assigned to this admin
-  // Use separate queries to avoid Drizzle join issues
   let ticketRows: Array<{
     id: number;
     status: string | null;
@@ -115,18 +108,33 @@ export default async function AdminDetailPage({
   }> = [];
 
   try {
-    // Use select() without explicit fields to avoid Drizzle field processing issues
     const rawTicketRows = await db
-      .select()
+      .select({
+        id: tickets.id,
+        status_value: ticket_statuses.value,
+        description: tickets.description,
+        location: tickets.location,
+        created_by: tickets.created_by,
+        category_id: tickets.category_id,
+        escalation_level: tickets.escalation_level,
+        metadata: tickets.metadata,
+        created_at: tickets.created_at,
+        updated_at: tickets.updated_at,
+        resolved_at: tickets.resolved_at,
+        due_at: tickets.resolution_due_at,
+        rating: tickets.rating,
+        feedback: tickets.feedback,
+      })
       .from(tickets)
-      .where(and(eq(tickets.assigned_to, staffId), timeFilter))
+      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
+      .where(and(eq(tickets.assigned_to, adminId), timeFilter))
       .orderBy(desc(tickets.created_at))
-      .limit(1000); // Reasonable limit for analytics
+      .limit(1000);
 
     // Map to the expected structure
     ticketRows = rawTicketRows.map(t => ({
       id: t.id,
-      status: t.status,
+      status: t.status_value,
       description: t.description,
       location: t.location,
       created_by: t.created_by,
@@ -157,19 +165,7 @@ export default async function AdminDetailPage({
         .select({
           id: categories.id,
           name: categories.name,
-          slug: categories.slug,
-          description: categories.description,
-          icon: categories.icon,
-          color: categories.color,
-          sla_hours: categories.sla_hours,
-          poc_name: categories.poc_name,
-          poc_slack_id: categories.poc_slack_id,
-          committee_id: categories.committee_id,
           parent_category_id: categories.parent_category_id,
-          active: categories.active,
-          display_order: categories.display_order,
-          created_at: categories.created_at,
-          updated_at: categories.updated_at,
         })
         .from(categories)
         .where(inArray(categories.id, categoryIds));
@@ -183,10 +179,15 @@ export default async function AdminDetailPage({
   if (userIds.length > 0) {
     try {
       const userData = await db
-        .select()
+        .select({
+          id: users.id,
+          first_name: users.first_name,
+          last_name: users.last_name,
+          email: users.email,
+        })
         .from(users)
         .where(inArray(users.id, userIds));
-      userData.forEach(u => userMap.set(u.id, { name: u.name, email: u.email }));
+      userData.forEach(u => userMap.set(u.id, { name: [u.first_name, u.last_name].filter(Boolean).join(" "), email: u.email }));
     } catch (error) {
       console.error("Error fetching users:", error);
     }
@@ -284,7 +285,6 @@ export default async function AdminDetailPage({
     )
     : 0;
 
-  // Category breakdown
   // Category breakdown
   const categoryBreakdown: Record<string, { total: number; open: number; inProgress: number; resolved: number }> = {};
   allTickets.forEach(t => {
@@ -641,4 +641,3 @@ export default async function AdminDetailPage({
     </div>
   );
 }
-

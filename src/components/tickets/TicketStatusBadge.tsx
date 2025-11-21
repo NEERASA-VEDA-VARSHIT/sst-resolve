@@ -1,44 +1,52 @@
 /**
  * Reusable TicketStatusBadge component
- * Encapsulates status variant logic and styling
+ * Now works with dynamic ticket_statuses table
  */
 
 import { Badge } from "@/components/ui/badge";
-import { normalizeStatusForComparison, formatStatus } from "@/lib/utils";
-import { enumToStatus } from "@/db/status-mapper";
 
 interface TicketStatusBadgeProps {
-  status: string | null | undefined;
+  // New: Accept status object from ticket_statuses table
+  status?: {
+    value: string;
+    label: string;
+    badge_color: string | null;
+  } | null;
+  // Legacy: Accept string value directly (for backward compatibility)
+  statusValue?: string | null;
   className?: string;
 }
 
-export function TicketStatusBadge({ status, className = "" }: TicketStatusBadgeProps) {
-  const normalized = normalizeStatusForComparison(status);
-  
-  const getVariant = () => {
-    switch (normalized) {
-      case "open":
-      case "reopened":
+export function TicketStatusBadge({
+  status,
+  statusValue,
+  className = ""
+}: TicketStatusBadgeProps) {
+  // Use status object if provided, otherwise fall back to statusValue
+  const label = status?.label || statusValue || "Unknown";
+  const badgeColor = status?.badge_color || "outline";
+
+  // Map badge_color from database to Badge variant
+  const getVariant = (color: string | null) => {
+    switch (color) {
+      case "default":
         return "default" as const;
-      case "in_progress":
-      case "awaiting_student_response":
-        return "outline" as const;
-      case "closed":
-      case "resolved":
+      case "secondary":
         return "secondary" as const;
+      case "destructive":
+        return "destructive" as const;
+      case "outline":
       default:
         return "outline" as const;
     }
   };
 
-  if (!status) return null;
-
   return (
-    <Badge 
-      variant={getVariant()} 
+    <Badge
+      variant={getVariant(badgeColor)}
       className={`text-sm px-3 py-1.5 font-semibold ${className}`}
     >
-      {formatStatus(enumToStatus(status))}
+      {label}
     </Badge>
   );
 }

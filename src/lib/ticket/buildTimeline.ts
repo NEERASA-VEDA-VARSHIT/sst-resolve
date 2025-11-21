@@ -17,7 +17,7 @@ type TicketData = {
   updated_at: Date | null;
   resolved_at: Date | string | null;
   escalation_level: number | null;
-  status: string | null;
+  status: string | { value: string; label: string; badge_color: string | null } | null;
 };
 
 export function buildTimeline(ticket: TicketData, normalizedStatus: string): TimelineEntry[] {

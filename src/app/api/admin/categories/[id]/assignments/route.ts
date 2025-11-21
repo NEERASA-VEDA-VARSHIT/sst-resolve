@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { db } from "@/db";
-import { category_assignments, staff } from "@/db/schema";
+import { db, category_assignments, users } from "@/db";
 import { eq, and, desc } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 
@@ -27,22 +26,30 @@ export async function GET(
         const { id } = await params;
         const categoryId = parseInt(id);
 
-        const assignments = await db.query.category_assignments.findMany({
-            where: eq(category_assignments.category_id, categoryId),
-            with: {
-                staff: {
-                    with: {
-                        user: true,
-                    },
+        // Fetch assignments with user info (removed staff reference)
+        const assignmentsList = await db
+            .select({
+                id: category_assignments.id,
+                category_id: category_assignments.category_id,
+                user_id: category_assignments.user_id,
+                is_primary: category_assignments.is_primary,
+                priority: category_assignments.priority,
+                created_at: category_assignments.created_at,
+                updated_at: category_assignments.updated_at,
+                user: {
+                    id: users.id,
+                    email: users.email,
+                    first_name: users.first_name,
+                    last_name: users.last_name,
+                    clerk_id: users.clerk_id,
                 },
-            },
-            orderBy: [
-                desc(category_assignments.is_primary),
-                desc(category_assignments.priority),
-            ],
-        });
+            })
+            .from(category_assignments)
+            .leftJoin(users, eq(category_assignments.user_id, users.id))
+            .where(eq(category_assignments.category_id, categoryId))
+            .orderBy(desc(category_assignments.is_primary), desc(category_assignments.priority));
 
-        return NextResponse.json({ assignments });
+        return NextResponse.json({ assignments: assignmentsList });
     } catch (error) {
         console.error("[Category Assignments API] Error:", error);
         return NextResponse.json(
@@ -74,11 +81,11 @@ export async function POST(
         const { id } = await params;
         const categoryId = parseInt(id);
         const body = await request.json();
-        const { staff_id, is_primary, priority } = body;
+        const { user_id, is_primary, priority } = body;
 
-        if (!staff_id) {
+        if (!user_id) {
             return NextResponse.json(
-                { error: "staff_id is required" },
+                { error: "user_id is required" },
                 { status: 400 }
             );
         }
@@ -92,12 +99,14 @@ export async function POST(
         }
 
         // Check if assignment already exists
-        const existing = await db.query.category_assignments.findFirst({
-            where: and(
+        const [existing] = await db
+            .select()
+            .from(category_assignments)
+            .where(and(
                 eq(category_assignments.category_id, categoryId),
-                eq(category_assignments.staff_id, staff_id)
-            ),
-        });
+                eq(category_assignments.user_id, user_id)
+            ))
+            .limit(1);
 
         if (existing) {
             return NextResponse.json(
@@ -106,17 +115,17 @@ export async function POST(
             );
         }
 
-        const assignment = await db
+        const [assignment] = await db
             .insert(category_assignments)
             .values({
                 category_id: categoryId,
-                staff_id,
+                user_id,
                 is_primary: is_primary || false,
                 priority: priority || 0,
             })
             .returning();
 
-        return NextResponse.json({ assignment: assignment[0] });
+        return NextResponse.json({ assignment });
     } catch (error) {
         console.error("[Category Assignments API] Error:", error);
         return NextResponse.json(

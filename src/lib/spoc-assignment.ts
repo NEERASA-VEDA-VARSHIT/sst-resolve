@@ -4,14 +4,13 @@
  * Follows hierarchy: field > subcategory > category > escalation rules
  */
 
-import { db, staff, users, roles, user_roles, categories, subcategories, category_fields } from "@/db";
+import { db, users, roles, categories, subcategories, category_fields, category_assignments, domains, scopes } from "@/db";
 import { eq, and, or, isNull, inArray, sql } from "drizzle-orm";
 
 /**
  * Find the appropriate SPOC (Single Point of Contact) for a ticket
  * based on category, subcategory, fields, and location
  * Follows hierarchy: field > subcategory > category > escalation rules
- * Role is checked via user_roles table (multi-role support)
  */
 export async function findSPOCForTicket(
   category: string,
@@ -51,17 +50,16 @@ export async function findSPOCForTicket(
 
           if (fieldAssignments.length > 0 && (fieldAssignments[0] as any)?.assigned_admin_id) {
             const adminId = (fieldAssignments[0] as any).assigned_admin_id;
-            const adminStaff = await db
+            const adminUser = await db
               .select({
                 clerk_id: users.clerk_id,
               })
-              .from(staff)
-              .innerJoin(users, eq(staff.user_id, users.id))
-              .where(eq(staff.id, adminId))
+              .from(users)
+              .where(eq(users.id, adminId))
               .limit(1);
 
-            if (adminStaff.length > 0 && adminStaff[0].clerk_id) {
-              return adminStaff[0].clerk_id;
+            if (adminUser.length > 0 && adminUser[0].clerk_id) {
+              return adminUser[0].clerk_id;
             }
           }
         }
@@ -96,17 +94,16 @@ export async function findSPOCForTicket(
 
           if (subcategoryResult.length > 0 && (subcategoryResult[0] as any)?.assigned_admin_id) {
             const adminId = (subcategoryResult[0] as any).assigned_admin_id;
-            const adminStaff = await db
+            const adminUser = await db
               .select({
                 clerk_id: users.clerk_id,
               })
-              .from(staff)
-              .innerJoin(users, eq(staff.user_id, users.id))
-              .where(eq(staff.id, adminId))
+              .from(users)
+              .where(eq(users.id, adminId))
               .limit(1);
 
-            if (adminStaff.length > 0 && adminStaff[0].clerk_id) {
-              return adminStaff[0].clerk_id;
+            if (adminUser.length > 0 && adminUser[0].clerk_id) {
+              return adminUser[0].clerk_id;
             }
           }
         }
@@ -116,7 +113,7 @@ export async function findSPOCForTicket(
       }
     }
 
-    // 3. Check category-level assignment (Multiple Admins support)
+    // 3. Check category-level assignment (Multiple Admins support) - Priority #4
     if (categoryId) {
       try {
         // Check if table exists first (safety check)
@@ -133,51 +130,25 @@ export async function findSPOCForTicket(
           // Query category_assignments table
           // Order by: is_primary DESC (true first), priority DESC (higher first), created_at ASC (oldest first)
           const assignments = await db.execute(sql`
-            SELECT staff_id 
+            SELECT user_id 
             FROM category_assignments 
             WHERE category_id = ${categoryId}
             ORDER BY is_primary DESC, priority DESC, created_at ASC
             LIMIT 1
           `);
 
-          if (assignments.length > 0 && (assignments[0] as any)?.staff_id) {
-            const adminId = (assignments[0] as any).staff_id;
-            const adminStaff = await db
+          if (assignments.length > 0 && (assignments[0] as any)?.user_id) {
+            const adminId = (assignments[0] as any).user_id;
+            const adminUser = await db
               .select({
                 clerk_id: users.clerk_id,
               })
-              .from(staff)
-              .innerJoin(users, eq(staff.user_id, users.id))
-              .where(eq(staff.id, adminId))
+              .from(users)
+              .where(eq(users.id, adminId))
               .limit(1);
 
-            if (adminStaff.length > 0 && adminStaff[0].clerk_id) {
-              return adminStaff[0].clerk_id;
-            }
-          }
-        } else {
-          // Fallback to legacy default_authority if table doesn't exist yet
-          console.warn("category_assignments table not found, falling back to default_authority");
-          const categoryResult = await db.execute(sql`
-            SELECT default_authority 
-            FROM categories 
-            WHERE id = ${categoryId}
-            LIMIT 1
-          `);
-
-          if (categoryResult.length > 0 && (categoryResult[0] as any)?.default_authority) {
-            const adminId = (categoryResult[0] as any).default_authority;
-            const adminStaff = await db
-              .select({
-                clerk_id: users.clerk_id,
-              })
-              .from(staff)
-              .innerJoin(users, eq(staff.user_id, users.id))
-              .where(eq(staff.id, adminId))
-              .limit(1);
-
-            if (adminStaff.length > 0 && adminStaff[0].clerk_id) {
-              return adminStaff[0].clerk_id;
+            if (adminUser.length > 0 && adminUser[0].clerk_id) {
+              return adminUser[0].clerk_id;
             }
           }
         }
@@ -186,75 +157,90 @@ export async function findSPOCForTicket(
       }
     }
 
-    // 4. Fallback to domain/scope matching (existing logic)
-    // Build query based on category and location, joining with users and user_roles
-    let query = db
-      .select({
-        clerk_id: users.clerk_id,
-        scope: staff.scope,
-      })
-      .from(staff)
-      .innerJoin(users, eq(staff.user_id, users.id))
-      .innerJoin(user_roles, eq(users.id, user_roles.user_id))
-      .innerJoin(roles, eq(user_roles.role_id, roles.id))
-      .where(
-        and(
-          eq(staff.domain, category),
-          eq(roles.name, "admin") // Only admins, not super_admins
-        )
-      );
+    // 4. Check category default_admin_id (Priority #5)
+    if (categoryId) {
+      try {
+        const [category] = await db
+          .select({
+            default_admin_id: categories.default_admin_id,
+          })
+          .from(categories)
+          .where(eq(categories.id, categoryId))
+          .limit(1);
 
-    // If Hostel category and location is provided, match by scope
-    if (category === "Hostel" && location) {
-      query = db
+        if (category?.default_admin_id) {
+          const adminUser = await db
+            .select({
+              clerk_id: users.clerk_id,
+            })
+            .from(users)
+            .where(eq(users.id, category.default_admin_id))
+            .limit(1);
+
+          if (adminUser.length > 0 && adminUser[0].clerk_id) {
+            return adminUser[0].clerk_id;
+          }
+        }
+      } catch (error) {
+        console.warn("Category default admin check failed:", error);
+      }
+    }
+
+    // 5. Fallback to domain/scope matching (Priority #6)
+    // We need to find an admin whose primary_domain matches the category
+    // Note: This assumes 'category' string matches a 'domain' name.
+
+    // First, try to find the domain ID for the category name
+    const [domain] = await db
+      .select({ id: domains.id })
+      .from(domains)
+      .where(eq(domains.name, category))
+      .limit(1);
+
+    if (domain) {
+      let query = db
         .select({
           clerk_id: users.clerk_id,
-          scope: staff.scope,
         })
-        .from(staff)
-        .innerJoin(users, eq(staff.user_id, users.id))
-        .innerJoin(user_roles, eq(users.id, user_roles.user_id))
-        .innerJoin(roles, eq(user_roles.role_id, roles.id))
+        .from(users)
+        .leftJoin(roles, eq(users.role_id, roles.id))
         .where(
           and(
-            eq(staff.domain, "Hostel"),
-            eq(staff.scope, location),
+            eq(users.primary_domain_id, domain.id),
             eq(roles.name, "admin")
           )
         );
-    }
 
-    const staffMembers = await query;
+      // If Hostel category and location is provided, match by scope
+      if (category === "Hostel" && location) {
+        const [scope] = await db
+          .select({ id: scopes.id })
+          .from(scopes)
+          .where(eq(scopes.name, location))
+          .limit(1);
 
-    if (staffMembers.length === 0) {
-      // Fallback: try to find any admin in the domain without scope requirement
-      const fallback = await db
-        .select({
-          clerk_id: users.clerk_id,
-        })
-        .from(staff)
-        .innerJoin(users, eq(staff.user_id, users.id))
-        .innerJoin(user_roles, eq(users.id, user_roles.user_id))
-        .innerJoin(roles, eq(user_roles.role_id, roles.id))
-        .where(
-          and(
-            eq(staff.domain, category),
-            eq(roles.name, "admin"),
-            isNull(staff.scope)
-          )
-        );
-
-      if (fallback.length > 0 && fallback[0].clerk_id) {
-        return fallback[0].clerk_id;
+        if (scope) {
+          query = db
+            .select({
+              clerk_id: users.clerk_id,
+            })
+            .from(users)
+            .leftJoin(roles, eq(users.role_id, roles.id))
+            .where(
+              and(
+                eq(users.primary_domain_id, domain.id),
+                eq(users.primary_scope_id, scope.id),
+                eq(roles.name, "admin")
+              )
+            );
+        }
       }
 
-      return null;
-    }
+      const staffMembers = await query;
 
-    // Simple round-robin: pick first available SPOC
-    // TODO: Could implement load balancing based on ticket count
-    if (staffMembers[0].clerk_id) {
-      return staffMembers[0].clerk_id;
+      if (staffMembers.length > 0 && staffMembers[0].clerk_id) {
+        return staffMembers[0].clerk_id;
+      }
     }
 
     return null;
@@ -263,4 +249,3 @@ export async function findSPOCForTicket(
     return null;
   }
 }
-

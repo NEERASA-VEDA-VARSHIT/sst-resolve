@@ -1,9 +1,9 @@
 import { db } from "@/db";
 import { categories, subcategories, sub_subcategories, category_fields, field_options } from "@/db/schema";
-import { eq, asc } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 export async function getCategoriesHierarchy() {
-    // Fetch all data in parallel for performance
+    // Fetch all data in parallel for performance (without orderBy)
     const [
         activeCategories,
         activeSubcategories,
@@ -12,15 +12,24 @@ export async function getCategoriesHierarchy() {
         activeOptions
     ] = await Promise.all([
         db
-            .select()
+            .select({
+                id: categories.id,
+                name: categories.name,
+                slug: categories.slug,
+                display_order: categories.display_order,
+            })
             .from(categories)
-            .where(eq(categories.active, true))
-            .orderBy(asc(categories.display_order), asc(categories.name)),
+            .where(eq(categories.active, true)),
         db
-            .select()
+            .select({
+                id: subcategories.id,
+                category_id: subcategories.category_id,
+                name: subcategories.name,
+                slug: subcategories.slug,
+                display_order: subcategories.display_order,
+            })
             .from(subcategories)
-            .where(eq(subcategories.active, true))
-            .orderBy(asc(subcategories.display_order), asc(subcategories.name)),
+            .where(eq(subcategories.active, true)),
         db
             .select({
                 id: sub_subcategories.id,
@@ -29,23 +38,57 @@ export async function getCategoriesHierarchy() {
                 slug: sub_subcategories.slug,
                 display_order: sub_subcategories.display_order,
             })
-            .from(sub_subcategories)
-            .orderBy(asc(sub_subcategories.display_order), asc(sub_subcategories.name)),
+            .from(sub_subcategories),
         db
-            .select()
+            .select({
+                id: category_fields.id,
+                subcategory_id: category_fields.subcategory_id,
+                name: category_fields.name,
+                slug: category_fields.slug,
+                field_type: category_fields.field_type,
+                display_order: category_fields.display_order,
+            })
             .from(category_fields)
-            .where(eq(category_fields.active, true))
-            .orderBy(asc(category_fields.display_order)),
+            .where(eq(category_fields.active, true)),
         db
-            .select()
+            .select({
+                field_id: field_options.field_id,
+                label: field_options.label,
+                value: field_options.value,
+                display_order: field_options.display_order,
+            })
             .from(field_options)
             .where(eq(field_options.active, true))
-            .orderBy(asc(field_options.display_order))
     ]);
 
+    // Sort manually to avoid orderBy issues
+    const sortedCategories = activeCategories.sort((a, b) => {
+        if ((a.display_order || 0) !== (b.display_order || 0)) {
+            return (a.display_order || 0) - (b.display_order || 0);
+        }
+        return (a.name || '').localeCompare(b.name || '');
+    });
+
+    const sortedSubcategories = activeSubcategories.sort((a, b) => {
+        if ((a.display_order || 0) !== (b.display_order || 0)) {
+            return (a.display_order || 0) - (b.display_order || 0);
+        }
+        return (a.name || '').localeCompare(b.name || '');
+    });
+
+    const sortedSubSubcategories = allSubSubcategories.sort((a, b) => {
+        if ((a.display_order || 0) !== (b.display_order || 0)) {
+            return (a.display_order || 0) - (b.display_order || 0);
+        }
+        return (a.name || '').localeCompare(b.name || '');
+    });
+
+    const sortedFields = activeFields.sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+    const sortedOptions = activeOptions.sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+
     // Construct the hierarchy
-    const categoriesWithSubcategories = activeCategories.map((category) => {
-        const categorySubcategories = activeSubcategories.filter(
+    const categoriesWithSubcategories = sortedCategories.map((category) => {
+        const categorySubcategories = sortedSubcategories.filter(
             (sub) => sub.category_id === category.id
         );
 
@@ -54,8 +97,8 @@ export async function getCategoriesHierarchy() {
             label: category.name || '',
             id: category.id,
             subcategories: categorySubcategories.map((sub) => {
-                const subs = allSubSubcategories.filter(ss => ss.subcategory_id === sub.id);
-                const fields = activeFields.filter(f => f.subcategory_id === sub.id);
+                const subs = sortedSubSubcategories.filter(ss => ss.subcategory_id === sub.id);
+                const fields = sortedFields.filter(f => f.subcategory_id === sub.id);
 
                 return {
                     value: sub.slug || '',
@@ -71,7 +114,7 @@ export async function getCategoriesHierarchy() {
                         name: f.name || '',
                         slug: f.slug || '',
                         type: f.field_type || 'text',
-                        options: activeOptions
+                        options: sortedOptions
                             .filter(o => o.field_id === f.id)
                             .map(o => ({ label: o.label || '', value: o.value || '' }))
                     }))

@@ -5,7 +5,7 @@ import { db, tickets } from "@/db";
 import { BulkCloseTicketsSchema } from "@/schema/ticket.schema";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
-import { statusToEnum } from "@/db/status-mapper";
+import { statusToEnum } from "@/lib/status-helpers";
 
 /**
  * ============================================
@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
     // Get role from database (single source of truth)
     const role = await getUserRoleFromDB(userId);
     const isAdmin = role === "admin" || role === "super_admin";
-    
+
     if (!isAdmin) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
       let details: any = {};
       try {
         details = row.details ? JSON.parse(row.details) : {};
-      } catch {}
+      } catch { }
 
       if (comment) {
         const comments = Array.isArray(details.comments) ? details.comments : [];

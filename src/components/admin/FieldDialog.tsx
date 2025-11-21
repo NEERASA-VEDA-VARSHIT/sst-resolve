@@ -34,7 +34,7 @@ interface Field {
   help_text: string | null;
   validation_rules: any;
   display_order: number;
-  assigned_admin_id?: number | null;
+  assigned_admin_id?: string | null;
   options?: FieldOption[];
 }
 
@@ -45,10 +45,10 @@ interface FieldOption {
   display_order?: number;
 }
 
-interface StaffMember {
-  id: number;
-  full_name: string;
-  email: string | null;
+interface AdminUser {
+  id: string; // UUID
+  name: string;
+  email: string;
   domain: string | null;
   scope: string | null;
 }
@@ -58,7 +58,7 @@ interface FieldDialogProps {
   onClose: (saved: boolean) => void;
   subcategoryId: number;
   field?: Field | null;
-  subcategoryDefaultAdmin?: number | null; // Admin assigned at subcategory level
+  subcategoryDefaultAdmin?: string | null; // Admin assigned at subcategory level (UUID)
 }
 
 const FIELD_TYPES = [
@@ -79,7 +79,7 @@ export function FieldDialog({
   subcategoryDefaultAdmin,
 }: FieldDialogProps) {
   const [loading, setLoading] = useState(false);
-  const [staffMembers, setStaffMembers] = useState<StaffMember[]>([]);
+  const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
   const [loadingStaff, setLoadingStaff] = useState(false);
   const [inheritFromSubcategory, setInheritFromSubcategory] = useState(true);
   const [formData, setFormData] = useState({
@@ -91,26 +91,26 @@ export function FieldDialog({
     help_text: "",
     display_order: 0,
     validation_rules: {},
-    assigned_admin_id: null as number | null,
+    assigned_admin_id: null as string | null,
   });
   const [options, setOptions] = useState<FieldOption[]>([]);
 
   useEffect(() => {
     if (open) {
-      fetchStaff();
+      fetchAdmins();
     }
   }, [open]);
 
-  const fetchStaff = async () => {
+  const fetchAdmins = async () => {
     try {
       setLoadingStaff(true);
-      const response = await fetch("/api/admin/staff");
+      const response = await fetch("/api/admin/list");
       if (response.ok) {
         const data = await response.json();
-        setStaffMembers(data.staff || []);
+        setAdminUsers(data.admins || []);
       }
     } catch (error) {
-      console.error("Error fetching staff:", error);
+      console.error("Error fetching admins:", error);
     } finally {
       setLoadingStaff(false);
     }
@@ -417,7 +417,7 @@ export function FieldDialog({
                 Inherit admin from subcategory
                 {subcategoryDefaultAdmin && (
                   <span className="text-xs text-muted-foreground ml-2 font-normal">
-                    (Currently: {staffMembers.find(s => s.id === subcategoryDefaultAdmin)?.full_name || "Unknown"})
+                    (Currently: {adminUsers.find(s => s.id === subcategoryDefaultAdmin)?.name || "Unknown"})
                   </span>
                 )}
               </Label>
@@ -426,11 +426,11 @@ export function FieldDialog({
               <div className="space-y-2 pl-6">
                 <Label htmlFor="assigned_admin_id_field">Assign Specific Admin</Label>
                 <Select
-                  value={formData.assigned_admin_id?.toString() || "none"}
+                  value={formData.assigned_admin_id || "none"}
                   onValueChange={(value) =>
                     setFormData((prev) => ({
                       ...prev,
-                      assigned_admin_id: value === "none" ? null : parseInt(value),
+                      assigned_admin_id: value === "none" ? null : value,
                     }))
                   }
                   disabled={loadingStaff}
@@ -440,10 +440,10 @@ export function FieldDialog({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">No admin</SelectItem>
-                    {staffMembers.map((staff) => (
-                      <SelectItem key={staff.id} value={staff.id.toString()}>
-                        {staff.full_name}
-                        {staff.domain && ` (${staff.domain}${staff.scope ? ` - ${staff.scope}` : ""})`}
+                    {adminUsers.map((admin) => (
+                      <SelectItem key={admin.id} value={admin.id}>
+                        {admin.name}
+                        {admin.domain && ` (${admin.domain}${admin.scope ? ` - ${admin.scope}` : ""})`}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -468,4 +468,3 @@ export function FieldDialog({
     </Dialog>
   );
 }
-

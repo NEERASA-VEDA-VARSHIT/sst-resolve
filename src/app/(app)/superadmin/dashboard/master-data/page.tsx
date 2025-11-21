@@ -6,13 +6,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { 
-	Table, 
-	TableBody, 
-	TableCell, 
-	TableHead, 
-	TableHeader, 
-	TableRow 
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow
 } from "@/components/ui/table";
 import {
 	Dialog,
@@ -22,24 +22,18 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
-import { 
-	Plus, 
-	Building2, 
-	Users, 
-	Calendar, 
-	Pencil, 
+import {
+	Plus,
+	Users,
+	Calendar,
+	Pencil,
 	Trash2,
 	Loader2,
-	AlertCircle
+	AlertCircle,
+	Settings2
 } from "lucide-react";
 import { toast } from "sonner";
-
-interface Hostel {
-	id: number;
-	name: string;
-	code: string;
-	created_at: string;
-}
+import Link from "next/link";
 
 interface ClassSection {
 	id: number;
@@ -54,13 +48,6 @@ interface Batch {
 }
 
 export default function MasterDataPage() {
-	// State for hostels
-	const [hostels, setHostels] = useState<Hostel[]>([]);
-	const [hostelDialog, setHostelDialog] = useState(false);
-	const [hostelForm, setHostelForm] = useState({ name: "", code: "" });
-	const [editingHostel, setEditingHostel] = useState<Hostel | null>(null);
-	const [hostelLoading, setHostelLoading] = useState(false);
-
 	// State for sections
 	const [sections, setSections] = useState<ClassSection[]>([]);
 	const [sectionDialog, setSectionDialog] = useState(false);
@@ -80,105 +67,9 @@ export default function MasterDataPage() {
 
 	// Fetch data on mount
 	useEffect(() => {
-		fetchHostels();
 		fetchSections();
 		fetchBatches();
 	}, []);
-
-	// ==================== HOSTELS ====================
-	const fetchHostels = async () => {
-		try {
-			const res = await fetch("/api/superadmin/hostels");
-			if (res.ok) {
-				const data = await res.json();
-				setHostels(data.hostels || []);
-			}
-		} catch (error) {
-			console.error("Error fetching hostels:", error);
-		}
-	};
-
-	const handleHostelSubmit = async () => {
-		if (!hostelForm.name.trim() || !hostelForm.code.trim()) {
-			toast.error("Please fill all fields");
-			return;
-		}
-
-		setHostelLoading(true);
-		try {
-			if (editingHostel) {
-				// Update
-				const res = await fetch(`/api/superadmin/hostels/${editingHostel.id}`, {
-					method: "PATCH",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify(hostelForm),
-				});
-
-				if (res.ok) {
-					toast.success("Hostel updated successfully");
-					fetchHostels();
-					closeHostelDialog();
-				} else {
-					const error = await res.json();
-					toast.error(error.error || "Failed to update hostel");
-				}
-			} else {
-				// Create
-				const res = await fetch("/api/superadmin/hostels", {
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify(hostelForm),
-				});
-
-				if (res.ok) {
-					toast.success("Hostel created successfully");
-					fetchHostels();
-					closeHostelDialog();
-				} else {
-					const error = await res.json();
-					toast.error(error.error || "Failed to create hostel");
-				}
-			}
-		} catch (error) {
-			toast.error("An error occurred");
-		} finally {
-			setHostelLoading(false);
-		}
-	};
-
-	const handleDeleteHostel = async (id: number) => {
-		try {
-			const res = await fetch(`/api/superadmin/hostels/${id}`, {
-				method: "DELETE",
-			});
-
-			if (res.ok) {
-				toast.success("Hostel deleted successfully");
-				fetchHostels();
-				setDeleteDialog(false);
-				setDeleteItem(null);
-			} else {
-				const error = await res.json();
-				toast.error(error.error || "Failed to delete hostel");
-			}
-		} catch (error) {
-			toast.error("An error occurred");
-		}
-	};
-
-	const openHostelDialog = (hostel?: Hostel) => {
-		if (hostel) {
-			setEditingHostel(hostel);
-			setHostelForm({ name: hostel.name, code: hostel.code });
-		}
-		setHostelDialog(true);
-	};
-
-	const closeHostelDialog = () => {
-		setHostelDialog(false);
-		setEditingHostel(null);
-		setHostelForm({ name: "", code: "" });
-	};
 
 	// ==================== SECTIONS ====================
 	const fetchSections = async () => {
@@ -202,7 +93,6 @@ export default function MasterDataPage() {
 		setSectionLoading(true);
 		try {
 			if (editingSection) {
-				// Update
 				const res = await fetch(`/api/superadmin/class-sections/${editingSection.id}`, {
 					method: "PATCH",
 					headers: { "Content-Type": "application/json" },
@@ -218,7 +108,6 @@ export default function MasterDataPage() {
 					toast.error(error.error || "Failed to update section");
 				}
 			} else {
-				// Create
 				const res = await fetch("/api/superadmin/class-sections", {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
@@ -303,7 +192,6 @@ export default function MasterDataPage() {
 		setBatchLoading(true);
 		try {
 			if (editingBatch) {
-				// Update
 				const res = await fetch(`/api/superadmin/batches/${editingBatch.id}`, {
 					method: "PATCH",
 					headers: { "Content-Type": "application/json" },
@@ -319,7 +207,6 @@ export default function MasterDataPage() {
 					toast.error(error.error || "Failed to update batch");
 				}
 			} else {
-				// Create
 				const res = await fetch("/api/superadmin/batches", {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
@@ -386,9 +273,6 @@ export default function MasterDataPage() {
 		if (!deleteItem) return;
 
 		switch (deleteItem.type) {
-			case "hostel":
-				handleDeleteHostel(deleteItem.id);
-				break;
 			case "section":
 				handleDeleteSection(deleteItem.id);
 				break;
@@ -400,19 +284,23 @@ export default function MasterDataPage() {
 
 	return (
 		<div className="container mx-auto py-8 space-y-6">
-			<div>
-				<h1 className="text-3xl font-bold">Master Data Management</h1>
-				<p className="text-muted-foreground">
-					Manage hostels, class sections, and batches for the institution
-				</p>
+			<div className="flex items-center justify-between">
+				<div>
+					<h1 className="text-3xl font-bold">Master Data Management</h1>
+					<p className="text-muted-foreground">
+						Manage class sections and batches for students
+					</p>
+				</div>
+				<Button asChild>
+					<Link href="/superadmin/dashboard/domains">
+						<Settings2 className="w-4 w-4 mr-2" />
+						Manage Domains & Scopes
+					</Link>
+				</Button>
 			</div>
 
-			<Tabs defaultValue="hostels" className="w-full">
-				<TabsList className="grid w-full grid-cols-3">
-					<TabsTrigger value="hostels" className="flex items-center gap-2">
-						<Building2 className="h-4 w-4" />
-						Hostels
-					</TabsTrigger>
+			<Tabs defaultValue="sections" className="w-full">
+				<TabsList className="grid w-full grid-cols-2">
 					<TabsTrigger value="sections" className="flex items-center gap-2">
 						<Users className="h-4 w-4" />
 						Class Sections
@@ -422,69 +310,6 @@ export default function MasterDataPage() {
 						Batches
 					</TabsTrigger>
 				</TabsList>
-
-				{/* ==================== HOSTELS TAB ==================== */}
-				<TabsContent value="hostels">
-					<Card>
-						<CardHeader className="flex flex-row items-center justify-between">
-							<div>
-								<CardTitle>Hostels</CardTitle>
-								<CardDescription>Manage hostel information</CardDescription>
-							</div>
-							<Button onClick={() => openHostelDialog()}>
-								<Plus className="h-4 w-4 mr-2" />
-								Add Hostel
-							</Button>
-						</CardHeader>
-						<CardContent>
-							<Table>
-								<TableHeader>
-									<TableRow>
-										<TableHead>ID</TableHead>
-										<TableHead>Name</TableHead>
-										<TableHead>Code</TableHead>
-										<TableHead>Created At</TableHead>
-										<TableHead className="text-right">Actions</TableHead>
-									</TableRow>
-								</TableHeader>
-								<TableBody>
-									{hostels.length === 0 ? (
-										<TableRow>
-											<TableCell colSpan={5} className="text-center text-muted-foreground">
-												No hostels found
-											</TableCell>
-										</TableRow>
-									) : (
-										hostels.map((hostel) => (
-											<TableRow key={hostel.id}>
-												<TableCell>{hostel.id}</TableCell>
-												<TableCell className="font-medium">{hostel.name}</TableCell>
-												<TableCell>{hostel.code}</TableCell>
-												<TableCell>{new Date(hostel.created_at).toLocaleDateString()}</TableCell>
-												<TableCell className="text-right space-x-2">
-													<Button
-														variant="ghost"
-														size="sm"
-														onClick={() => openHostelDialog(hostel)}
-													>
-														<Pencil className="h-4 w-4" />
-													</Button>
-													<Button
-														variant="ghost"
-														size="sm"
-														onClick={() => confirmDelete("hostel", hostel.id, hostel.name)}
-													>
-														<Trash2 className="h-4 w-4 text-destructive" />
-													</Button>
-												</TableCell>
-											</TableRow>
-										))
-									)}
-								</TableBody>
-							</Table>
-						</CardContent>
-					</Card>
-				</TabsContent>
 
 				{/* ==================== SECTIONS TAB ==================== */}
 				<TabsContent value="sections">
@@ -547,7 +372,7 @@ export default function MasterDataPage() {
 					</Card>
 				</TabsContent>
 
-				{/* ==================== BATCHES TAB ==================== */}
+				{/* ====================BATCHES TAB ==================== */}
 				<TabsContent value="batches">
 					<Card>
 						<CardHeader className="flex flex-row items-center justify-between">
@@ -608,47 +433,6 @@ export default function MasterDataPage() {
 					</Card>
 				</TabsContent>
 			</Tabs>
-
-			{/* ==================== HOSTEL DIALOG ==================== */}
-			<Dialog open={hostelDialog} onOpenChange={setHostelDialog}>
-				<DialogContent>
-					<DialogHeader>
-						<DialogTitle>{editingHostel ? "Edit Hostel" : "Add Hostel"}</DialogTitle>
-						<DialogDescription>
-							{editingHostel ? "Update hostel information" : "Create a new hostel"}
-						</DialogDescription>
-					</DialogHeader>
-					<div className="space-y-4">
-						<div>
-							<Label htmlFor="hostel-name">Hostel Name</Label>
-							<Input
-								id="hostel-name"
-								value={hostelForm.name}
-								onChange={(e) => setHostelForm({ ...hostelForm, name: e.target.value })}
-								placeholder="e.g., Neeladri"
-							/>
-						</div>
-						<div>
-							<Label htmlFor="hostel-code">Hostel Code</Label>
-							<Input
-								id="hostel-code"
-								value={hostelForm.code}
-								onChange={(e) => setHostelForm({ ...hostelForm, code: e.target.value })}
-								placeholder="e.g., NLD"
-							/>
-						</div>
-					</div>
-					<DialogFooter>
-						<Button variant="outline" onClick={closeHostelDialog}>
-							Cancel
-						</Button>
-						<Button onClick={handleHostelSubmit} disabled={hostelLoading}>
-							{hostelLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-							{editingHostel ? "Update" : "Create"}
-						</Button>
-					</DialogFooter>
-				</DialogContent>
-			</Dialog>
 
 			{/* ==================== SECTION DIALOG ==================== */}
 			<Dialog open={sectionDialog} onOpenChange={setSectionDialog}>

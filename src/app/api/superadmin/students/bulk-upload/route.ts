@@ -53,9 +53,25 @@ interface MasterDataCache {
 
 async function loadMasterDataCache(): Promise<MasterDataCache> {
 	const [hostelList, sectionList, batchList] = await Promise.all([
-		db.select().from(hostels).where(eq(hostels.is_active, true)),
-		db.select().from(class_sections).where(eq(class_sections.is_active, true)),
-		db.select().from(batches).where(eq(batches.is_active, true)),
+		db.select({
+			id: hostels.id,
+			name: hostels.name,
+			code: hostels.code,
+			is_active: hostels.is_active,
+		}).from(hostels).where(eq(hostels.is_active, true)),
+		db.select({
+			id: class_sections.id,
+			name: class_sections.name,
+			code: class_sections.code,
+			is_active: class_sections.is_active,
+		}).from(class_sections).where(eq(class_sections.is_active, true)),
+		db.select({
+			id: batches.id,
+			name: batches.name,
+			code: batches.code,
+			year: batches.year,
+			is_active: batches.is_active,
+		}).from(batches).where(eq(batches.is_active, true)),
 	]);
 
 	return {
@@ -293,7 +309,7 @@ export async function POST(request: NextRequest) {
 					email: cleanEmail(row.email),
 					full_name: cleanFullName(row.full_name),
 					user_number: row.user_number.trim(),
-					hostel_id: row.hostel?.trim() 
+					hostel_id: row.hostel?.trim()
 						? masterDataCache.hostels.get(row.hostel.trim().toLowerCase()) || null
 						: null,
 					room_number: row.room_number?.trim() || null,
