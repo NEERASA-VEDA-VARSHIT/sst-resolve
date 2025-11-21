@@ -28,14 +28,12 @@ import {
 import { getOrCreateUser } from "@/lib/user-sync";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 
-type SearchParams = Promise<{ page?: string; period?: string }> | { page?: string; period?: string };
-
 export default async function AdminAnalyticsPage({
   searchParams,
 }: {
-  searchParams: SearchParams;
+  searchParams?: Promise<{ page?: string; period?: string }>;
 }) {
-  const resolvedSearch = await searchParams;
+  const resolvedSearch = searchParams ? await searchParams : {};
   const page = Number(resolvedSearch?.page) || 1;
   const period = resolvedSearch?.period || "all";
 

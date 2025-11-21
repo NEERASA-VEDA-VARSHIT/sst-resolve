@@ -16,7 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 export default async function CommitteeDashboardPage({ 
   searchParams 
 }: { 
-  searchParams?: Promise<Record<string, string | string[] | undefined>> | Record<string, string | string[] | undefined>
+  searchParams?: Promise<Record<string, string | string[] | undefined>>
 }) {
   const { userId } = await auth();
 
@@ -34,8 +34,8 @@ export default async function CommitteeDashboardPage({
     redirect("/student/dashboard");
   }
 
-  // Await searchParams if it's a Promise (Next.js 15)
-  const resolvedSearchParams = searchParams instanceof Promise ? await searchParams : (searchParams || {});
+  // Await searchParams (Next.js 15)
+  const resolvedSearchParams = searchParams ? await searchParams : {};
   const params = resolvedSearchParams || {};
   const search = (typeof params["search"] === "string" ? params["search"] : params["search"]?.[0]) || "";
   const statusFilter = (typeof params["status"] === "string" ? params["status"] : params["status"]?.[0]) || "";

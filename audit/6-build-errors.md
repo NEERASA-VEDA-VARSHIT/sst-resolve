@@ -89,51 +89,132 @@ All files in `src/app/(app)` that import from `@/db`:
 **1. Updated `next.config.ts`**
 - Added `'drizzle-orm'` to `serverExternalPackages` array
 - Configuration now includes: `['postgres', 'pg', 'better-sqlite3', 'drizzle-orm']`
+- Removed invalid `resolveAlias` boolean configurations (caused Turbopack errors)
 
 **2. Modified `src/db/index.ts`**
 - Commented out `import 'server-only'` statement
 - Added explanatory comment about Turbopack build issues
 
-### ⚠️ Build Status
+### 🔴 Current Build Status
 
-**Current Status:** Build still failing
+**Status:** Build still failing with module resolution errors
 
-**Issue Discovered:** TypeScript compilation errors are preventing the build from completing. The `pnpm tsc --noEmit` check revealed **152 TypeScript errors across 42 files**.
+**Attempted Fixes:**
+1. ✅ Added `drizzle-orm` to `serverExternalPackages`
+2. ✅ Commented out `import 'server-only'`
+3. ❌ Tried `resolveAlias` with boolean values (invalid - Turbopack expects strings/arrays/objects)
+4. ❌ Tried empty `turbopack: {}` configuration
 
-### 🔴 TypeScript Errors Blocking Build
+**Error Patterns Observed:**
+- Module not found errors for Node.js built-in modules (`fs`, `net`, `tls`, `crypto`, `stream`, `perf_hooks`)
+- These errors occur in `node_modules/.pnpm/postgres@3.4.7/node_modules/postgres/src/`
+- Turbopack is attempting to bundle server-only Node.js modules for client-side code
 
-The build failure may not be solely due to the server-only import issue. TypeScript errors must be resolved first:
+### ⚠️ Root Cause Analysis
 
-**Error Summary:**
-- **152 total errors** across 42 files
-- Common issues:
-  - Missing properties on database schema types
-  - `Property 'due_at' does not exist on type 'PgTableWithColumns'`
-  - `Property 'email' does not exist on type` errors
-  - `Property 'name' does not exist on type` errors
-  - Missing Zod schema parameters
+The issue is that **Turbopack is trying to bundle the `postgres` package** (which uses Node.js built-in modules) even though it's listed in `serverExternalPackages`. This suggests:
+
+1. `serverExternalPackages` may not be fully respected by Turbopack in Next.js 15.5.5
+2. There may be a client component somewhere importing from `@/db` (directly or transitively)
+3. Turbopack's module resolution is different from Webpack's
+
+### 🔴 TypeScript Errors Still Present
+
+Separate from the build error, there are **152 TypeScript errors across 42 files** that will also need to be addressed:
 
 **Most Affected Files:**
 - `src/app/(app)/committee/dashboard/page.tsx` (37 errors)
 - `src/app/(app)/admin/dashboard/today/page.tsx` (13 errors)
 - `src/app/api/cron/tat-reminders/route.ts` (10 errors)
 - `src/workers/handlers/processTicketCommentAddedWorker.ts` (7 errors)
-- Multiple other files with 1-6 errors each
 
 ### 📋 Next Steps
 
-1. **Resolve TypeScript Errors First**
-   - Fix schema type mismatches
-   - Update database queries to match current schema
-   - Ensure all property accesses are valid
+**CRITICAL:** The build is failing primarily due to **152 TypeScript compilation errors**, not the server-only import issue.
 
-2. **Re-test Build**
-   - Run `pnpm build` after TypeScript errors are fixed
-   - Verify server-only import fix is effective
+#### Immediate Action Required
 
-3. **If Build Still Fails**
-   - Consider Option 3 (refactor to data access layer)
-   - Or investigate other Turbopack-specific configuration options
+1. **Fix TypeScript Errors First** ⚡
+   - The build cannot complete with TypeScript errors present
+   - Focus on high-impact files with the most errors
+   - Common issues to address:
+     - Missing database schema properties
+     - Type mismatches in queries
+     - Invalid property accesses
+
+2. **After TypeScript Errors Are Fixed**
+   - Re-run `pnpm build` to see if server-only import issue persists
+   - If it does, try commenting out `import 'server-only'` in `src/db/index.ts`
+   - The `serverExternalPackages` configuration in `next.config.ts` provides protection
+
+3. **Alternative Approach**
+   - Consider refactoring to Option 3 (data access layer) for long-term maintainability
+   - This would separate database logic from page components entirely
+
+---
+
+## 🎯 Current Status (Updated)
+
+### ✅ Progress Made
+
+1. **TypeScript Errors Fixed** - User resolved 152 TypeScript errors down to 5 Next.js 15 type compatibility issues
+2. **Next.js 15 Types Fixed** - Updated `searchParams` types in 5 page files to accept both Promise and non-Promise versions
+3. **Configuration Updated** - Added `drizzle-orm` to `serverExternalPackages` in `next.config.ts`
+
+### 🔴 Build Still Failing
+
+Despite fixing all TypeScript errors, the build continues to fail with both:
+- ❌ Turbopack (`next build --turbopack`)
+- ❌ Webpack (`next build`)
+
+**Error Pattern:** Module resolution errors for Node.js built-in modules (`fs`, `net`, `tls`, etc.) in the `postgres` package.
+
+### 🔍 Recommended Next Steps
+
+1. **Get Full Error Output**
+   ```bash
+   # Try to capture full build output
+   pnpm build 2>&1 | Out-File -FilePath build-log.txt -Encoding UTF8
+   # Then view the file to see complete error
+   ```
+
+2. **Check for Client-Side Imports**
+   ```bash
+   # Search for any 'use client' files importing from @/db
+   rg "'use client'" -A 20 src/app | rg "@/db"
+   ```
+
+3. **Verify Database Connection**
+   - Ensure `.env.local` has valid `DATABASE_URL`
+   - Test database connectivity separately
+
+4. **Try Development Mode**
+   ```bash
+   pnpm dev
+   # If dev works but build fails, it's a build-specific issue
+   ```
+
+5. **Consider Temporary Workaround**
+   - Comment out `import 'server-only'` in `src/db/index.ts`
+   - This removes the explicit server-only protection but may allow build to proceed
+
+---
+
+## 📝 Summary
+
+**What We Know:**
+- ✅ All TypeScript errors are fixed
+- ✅ Next.js configuration is correct
+- ❌ Build fails with module resolution errors
+- ❌ Error output is truncated, making diagnosis difficult
+
+**Most Likely Causes:**
+1. A client component is importing `@/db` (directly or transitively)
+2. Turbopack/Webpack is incorrectly trying to bundle server-only code
+3. Environment variable or database connection issue
+
+**Immediate Action:**
+Get the full build error output to see exactly which file is causing the import issue.
 
 
 

@@ -15,7 +15,7 @@ import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
 import { isAdminLevel } from "@/conf/constants";
 
-export default async function AdminDashboardPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> | Record<string, string | string[] | undefined> }) {
+export default async function AdminDashboardPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   const { userId } = await auth();
 
   if (!userId) {
@@ -54,8 +54,8 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
     throw new Error('Failed to load admin profile');
   }
 
-  // Await searchParams if it's a Promise (Next.js 15)
-  const resolvedSearchParams = searchParams instanceof Promise ? await searchParams : (searchParams || {});
+  // Await searchParams (Next.js 15)
+  const resolvedSearchParams = searchParams ? await searchParams : {};
   const params = resolvedSearchParams || {};
   const activeTab = (typeof params["tab"] === "string" ? params["tab"] : params["tab"]?.[0]) || "tickets";
   const searchQuery = (typeof params["search"] === "string" ? params["search"] : params["search"]?.[0]) || "";

@@ -18,7 +18,7 @@ import { normalizeStatusForComparison } from "@/lib/utils";
 // Create alias for users table to use for assigned admin
 const assignedAdmin = alias(users, 'assigned_admin');
 
-export default async function SuperAdminDashboardPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> | Record<string, string | string[] | undefined> }) {
+export default async function SuperAdminDashboardPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   const { userId } = await auth();
 
   if (!userId) {
@@ -35,7 +35,7 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
     redirect('/student/dashboard');
   }
 
-  const resolvedSearchParams = searchParams instanceof Promise ? await searchParams : (searchParams || {});
+  const resolvedSearchParams = searchParams ? await searchParams : {};
   const params = resolvedSearchParams || {};
   const category = (typeof params["category"] === "string" ? params["category"] : params["category"]?.[0]) || "";
   const subcategory = (typeof params["subcategory"] === "string" ? params["subcategory"] : params["subcategory"]?.[0]) || "";

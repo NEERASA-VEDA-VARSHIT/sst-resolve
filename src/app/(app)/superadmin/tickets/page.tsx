@@ -10,7 +10,7 @@ import { FileText } from "lucide-react";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
 
-export default async function SuperAdminAllTicketsPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> | Record<string, string | string[] | undefined> }) {
+export default async function SuperAdminAllTicketsPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   const { userId } = await auth();
   if (!userId) redirect("/");
 
@@ -21,7 +21,7 @@ export default async function SuperAdminAllTicketsPage({ searchParams }: { searc
   const role = await getUserRoleFromDB(userId);
   if (role !== "super_admin") redirect("/student/dashboard");
 
-  const resolvedSearchParams = searchParams instanceof Promise ? await searchParams : (searchParams || {});
+  const resolvedSearchParams = searchParams ? await searchParams : {};
   const params = resolvedSearchParams || {};
   const category = (typeof params["category"] === "string" ? params["category"] : params["category"]?.[0]) || "";
   const subcategory = (typeof params["subcategory"] === "string" ? params["subcategory"] : params["subcategory"]?.[0]) || "";
