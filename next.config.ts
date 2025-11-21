@@ -2,14 +2,6 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   /* config options here */
-  eslint: {
-    // Allow production builds to succeed even if there are ESLint errors
-    ignoreDuringBuilds: true,
-  },
-  typescript: {
-    // Allow production builds to complete even if there are type errors
-    ignoreBuildErrors: true,
-  },
   images: {
     remotePatterns: [
       {
@@ -19,9 +11,15 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  // Note: Using Turbopack (--turbopack flag in build scripts)
-  // The 'server-only' package in src/db/index.ts handles server-only modules
-  // No webpack config needed - Turbopack respects 'server-only' automatically
+  // Explicitly configure Turbopack to eliminate webpack warning
+  // Using --turbopack flag in build scripts
+  experimental: {
+    // Mark server-only packages as external (prevents client bundling)
+    // This works with both Turbopack and Webpack
+    serverComponentsExternalPackages: ['postgres', 'pg', 'better-sqlite3'],
+    // Turbopack configuration - empty object tells Next.js we're using Turbopack
+    turbo: {},
+  },
 };
 
 export default nextConfig;
