@@ -7,42 +7,92 @@ import { sendEmail, getStatusUpdateEmail, getTATSetEmail, getCommentAddedEmail, 
 import { getStatusIdByValue } from "@/lib/status-helpers";
 import { calculateTATDate } from "@/utils";
 
-// ... (rest of imports/setup)
-
-// Inside ticket_close case:
-				case "ticket_close": {
+export async function POST(request: NextRequest) {
 	try {
-		// Fetch ticket with joins
-		const [ticketData] = await db
-			.select({
-				ticket: tickets,
-				status: ticket_statuses,
-				category: categories,
-				creator: users,
-			})
-			.from(tickets)
-			.leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
-			.leftJoin(categories, eq(tickets.category_id, categories.id))
-			.leftJoin(users, eq(tickets.created_by, users.id))
-			.where(eq(tickets.id, ticketId))
-			.limit(1);
+		const body = await request.json();
+		const interaction = body;
 
-		if (!ticketData || !ticketData.ticket) {
-			return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
-		}
+		// Handle different interaction types
+		switch (interaction.type) {
+			case "block_actions": {
+				const action = interaction.actions?.[0];
+				if (!action) {
+					return NextResponse.json({ text: "OK" });
+				}
 
-		const { ticket, category, creator } = ticketData;
-		const details = ticket.metadata ? (ticket.metadata as any) : {};
-		// Get original email Message-ID and subject for threading BEFORE updating
-		const originalMessageId = details.originalEmailMessageId;
-		const originalSubject = details.originalEmailSubject;
+				switch (action.action_id) {
+					case "ticket_close": {
+						const ticketId = parseInt(action.value || "0");
+						if (isNaN(ticketId)) {
+							return NextResponse.json({ error: "Invalid ticket ID" }, { status: 400 });
+						}
 
-		// Get CLOSED status ID
-		const closedStatusId = await getStatusIdByValue("CLOSED");
+						// Fetch ticket with joins
+						const [ticketData] = await db
+							.select({
+								ticket: tickets,
+								status: ticket_statuses,
+								category: categories,
+								creator: users,
+							})
+							.from(tickets)
+							.leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
+							.leftJoin(categories, eq(tickets.category_id, categories.id))
+							.leftJoin(users, eq(tickets.created_by, users.id))
+							.where(eq(tickets.id, ticketId))
+							.limit(1);
 
-		if (closedStatusId) {
-			// Handle modal submissions
-			if (interaction.type === "view_submission") {
+						if (!ticketData || !ticketData.ticket) {
+							return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
+						}
+
+						const { ticket, category, creator } = ticketData;
+						const details = ticket.metadata ? (ticket.metadata as any) : {};
+						const originalMessageId = details.originalEmailMessageId;
+						const originalSubject = details.originalEmailSubject;
+
+						// Get CLOSED status ID
+						const closedStatusId = await getStatusIdByValue("CLOSED");
+
+						if (closedStatusId) {
+							await db
+								.update(tickets)
+								.set({ status_id: closedStatusId, updated_at: new Date() })
+								.where(eq(tickets.id, ticketId));
+
+							// Send notifications asynchronously
+							(async () => {
+								try {
+									const studentEmail = creator ? await getStudentEmail(creator.id) : null;
+									if (studentEmail) {
+										const emailTemplate = getStatusUpdateEmail(
+											ticket.id,
+											"CLOSED",
+											category?.name || "General"
+										);
+										await sendEmail({
+											to: studentEmail,
+											subject: emailTemplate.subject,
+											html: emailTemplate.html,
+											ticketId: ticket.id,
+											threadMessageId: originalMessageId,
+											originalSubject: originalSubject,
+										});
+									}
+								} catch (emailError) {
+									console.error("Error sending close email:", emailError);
+								}
+							})();
+						}
+
+						return NextResponse.json({ text: "OK" });
+					}
+					default:
+						return NextResponse.json({ text: "OK" });
+				}
+			}
+			case "view_submission": {
+				// Handle modal submissions (TAT and comment modals)
 				const metadata = JSON.parse(interaction.view.private_metadata || "{}");
 				const ticketId = metadata.ticketId;
 
@@ -70,13 +120,9 @@ import { calculateTATDate } from "@/utils";
 					}
 
 					const { ticket, category, creator } = ticketData;
-
 					const markInProgress = metadata.markInProgress || false;
-
 					const details = ticket.metadata ? (ticket.metadata as any) : {};
 					const isExtension = details.tat ? true : false;
-
-					// Get original email Message-ID and subject for threading BEFORE updating
 					const originalMessageId = details.originalEmailMessageId;
 					const originalSubject = details.originalEmailSubject;
 
@@ -130,12 +176,9 @@ import { calculateTATDate } from "@/utils";
 					});
 
 					// Send email and Slack updates asynchronously (don't await)
-					// This prevents Slack timeout while still performing the actions
 					(async () => {
 						try {
-							// Send email notification to student
 							const studentEmail = creator ? await getStudentEmail(creator.id) : null;
-
 							if (studentEmail) {
 								const emailTemplate = getTATSetEmail(
 									ticket.id,
@@ -168,7 +211,6 @@ import { calculateTATDate } from "@/utils";
 						const categoryName = category?.name || "General";
 						if (categoryName === "Hostel" || categoryName === "College") {
 							const slackMessageTs = details.slackMessageTs;
-
 							if (slackMessageTs) {
 								const tatMessage = isExtension
 									? `⏱️ *TAT Extended*\n\nTurnaround Time updated to: *${tatValue}*\nTarget Date: ${new Date(tatDate).toLocaleDateString()}\nExtended by <@${interaction.user.id || interaction.user.name}>`
@@ -230,15 +272,12 @@ import { calculateTATDate } from "@/utils";
 					}
 
 					const { ticket, category, creator } = ticketData;
-
 					const details = ticket.metadata ? (ticket.metadata as any) : {};
 					if (!details.comments) details.comments = [];
-
-					// Get original email Message-ID and subject for threading BEFORE updating
 					const originalMessageId = details.originalEmailMessageId;
 					const originalSubject = details.originalEmailSubject;
-
 					const authorName = interaction.user.name || interaction.user.id;
+
 					details.comments.push({
 						text: commentValue,
 						author: authorName,
@@ -273,7 +312,6 @@ import { calculateTATDate } from "@/utils";
 					});
 
 					// Post comment and send email asynchronously (don't await)
-					// This prevents Slack timeout while still performing the actions
 					(async () => {
 						// Post comment as thread reply in Slack
 						const categoryName = category?.name || "General";
@@ -310,7 +348,6 @@ import { calculateTATDate } from "@/utils";
 						// Send email notification to student for admin comments
 						try {
 							const studentEmail = creator ? await getStudentEmail(creator.id) : null;
-
 							if (studentEmail) {
 								const emailTemplate = getCommentAddedEmail(
 									ticket.id,
@@ -340,11 +377,14 @@ import { calculateTATDate } from "@/utils";
 
 					return response;
 				}
-			}
 
-			return NextResponse.json({ text: "OK" });
-		} catch (error) {
-			console.error("Error handling Slack interaction:", error);
-			return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+				return NextResponse.json({ text: "OK" });
+			}
+			default:
+				return NextResponse.json({ text: "OK" });
 		}
+	} catch (error) {
+		console.error("Error handling Slack interaction:", error);
+		return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
 	}
+}

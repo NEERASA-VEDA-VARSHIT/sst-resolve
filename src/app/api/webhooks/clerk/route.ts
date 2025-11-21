@@ -3,7 +3,7 @@ import { Webhook } from "svix";
 import { headers } from "next/headers";
 import { db, users } from "@/db";
 import { eq } from "drizzle-orm";
-import { syncUserFromClerk } from "@/lib/user-sync";
+import { getOrCreateUser } from "@/lib/user-sync";
 
 /**
  * Clerk Webhook Handler
@@ -133,9 +133,9 @@ async function handleUserCreated(eventData: any) {
 			return;
 		}
 
-		// Create user record (role will be assigned via user_roles table in syncUserFromClerk)
-		// Use syncUserFromClerk which handles role assignment automatically
-		const newUser = await syncUserFromClerk(clerkUserId);
+		// Create user record (role will be assigned via user_roles table in getOrCreateUser)
+		// Use getOrCreateUser which handles role assignment automatically
+		const newUser = await getOrCreateUser(clerkUserId);
 
 		console.log(`[Clerk Webhook] Created user record: ${newUser.id} for Clerk user: ${clerkUserId} with default role: student`);
 	} catch (error) {
@@ -153,7 +153,7 @@ async function handleUserUpdated(eventData: any) {
 		const clerkUserId = eventData.id;
 
 		// Use sync utility to update user
-		await syncUserFromClerk(clerkUserId);
+		await getOrCreateUser(clerkUserId);
 
 		console.log(`[Clerk Webhook] Updated user record for Clerk user: ${clerkUserId}`);
 	} catch (error) {

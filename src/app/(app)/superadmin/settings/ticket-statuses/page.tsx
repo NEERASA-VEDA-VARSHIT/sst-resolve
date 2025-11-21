@@ -26,7 +26,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Plus, Pencil, Trash2, ChevronUp, ChevronDown, Loader2, Check, X } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 
 interface TicketStatus {
     id: number;
@@ -54,7 +54,6 @@ export default function StatusManagementClientPage() {
         is_active: true,
         is_final: false,
     });
-    const { toast } = useToast();
 
     useEffect(() => {
         fetchStatuses();
@@ -69,18 +68,10 @@ export default function StatusManagementClientPage() {
             if (data.success) {
                 setStatuses(data.data);
             } else {
-                toast({
-                    title: "Error",
-                    description: data.error || "Failed to fetch statuses",
-                    variant: "destructive",
-                });
+                toast.error(data.error || "Failed to fetch statuses");
             }
         } catch (error) {
-            toast({
-                title: "Error",
-                description: "Failed to fetch statuses",
-                variant: "destructive",
-            });
+            toast.error("Failed to fetch statuses");
         } finally {
             setLoading(false);
         }
@@ -131,23 +122,14 @@ export default function StatusManagementClientPage() {
             const data = await res.json();
 
             if (data.success) {
-                toast({
-                    title: "Success",
-                    description: editingStatus ? "Status updated successfully" : "Status created successfully",
-                });
+                toast.success(editingStatus ? "Status updated successfully" : "Status created successfully");
                 setIsDialogOpen(false);
                 fetchStatuses();
             } else {
-                toast({
-                    title: "Error",
-                    description: data.error || "Failed to save status",
-                    variant: "destructive",
-                });
+                toast.error(data.error || "Failed to save status");
             }
         } catch (error) {
-            toast({
-                title: "Error",
-                description: "Failed to save status",
+            toast.error("Failed to save status");
                 variant: "destructive",
             });
         }
@@ -166,24 +148,13 @@ export default function StatusManagementClientPage() {
             const data = await res.json();
 
             if (data.success) {
-                toast({
-                    title: "Success",
-                    description: "Status deleted successfully",
-                });
+                toast.success("Status deleted successfully");
                 fetchStatuses();
             } else {
-                toast({
-                    title: "Error",
-                    description: data.error || "Failed to delete status",
-                    variant: "destructive",
-                });
+                toast.error(data.error || "Failed to delete status");
             }
         } catch (error) {
-            toast({
-                title: "Error",
-                description: "Failed to delete status",
-                variant: "destructive",
-            });
+            toast.error("Failed to delete status");
         }
     };
 
@@ -213,11 +184,7 @@ export default function StatusManagementClientPage() {
 
             fetchStatuses();
         } catch (error) {
-            toast({
-                title: "Error",
-                description: "Failed to reorder statuses",
-                variant: "destructive",
-            });
+            toast.error("Failed to reorder statuses");
         }
     };
 

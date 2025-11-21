@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Plus, Users } from "lucide-react";
 import { StatsCards } from "@/components/dashboard/StatsCards";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { enumToStatus } from "@/db/status-mapper";
+import { enumToStatus } from "@/lib/status-helpers";
 
 export default async function CommitteeDashboardPage({ 
   searchParams 

@@ -14,7 +14,7 @@ import { getOrCreateUser } from "@/lib/user-sync";
 import { CommentForm } from "@/components/tickets/CommentForm";
 import { RatingForm } from "@/components/tickets/RatingForm";
 import { CommitteeActions } from "@/components/tickets/CommitteeActions";
-import { enumToStatus } from "@/db/status-mapper";
+import { enumToStatus } from "@/lib/status-helpers";
 import { normalizeStatusForComparison, formatStatus } from "@/lib/utils";
 
 export default async function CommitteeTicketPage({ params }: { params: Promise<{ ticketId: string }> }) {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, tickets, users, ticket_statuses, categories } from "@/db/schema";
+import { db } from "@/db";
+import { tickets, users, ticket_statuses, categories } from "@/db/schema";
 import { eq, and, or, isNotNull, aliasedTable } from "drizzle-orm";
 import { postThreadReplyToChannel } from "@/lib/slack";
 import { sendEmail } from "@/lib/email";

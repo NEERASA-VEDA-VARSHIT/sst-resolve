@@ -19,8 +19,6 @@ import { deleteImage } from "@/lib/cloudinary"; // must exist in your lib
  *   - Returns: 200 OK with success message
  * ============================================
  */
- * }
- */
 
 export async function DELETE(request: NextRequest) {
   try {
