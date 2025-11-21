@@ -7,7 +7,7 @@ import { getOrCreateUser } from "@/lib/user-sync";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, Settings, ArrowLeft } from "lucide-react";
+import { Settings, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { CategoryManager } from "@/components/admin/CategoryManager";
 

@@ -51,8 +51,19 @@ export async function GET(
         }
 
         // Fetch user info for each message
+        type SlackMessage = {
+            ts?: string;
+            text?: string;
+            user?: string;
+            bot_profile?: {
+                name?: string;
+                icons?: {
+                    image_48?: string;
+                };
+            };
+        };
         const messages = await Promise.all(
-            result.messages.map(async (msg: any) => {
+            result.messages.map(async (msg: SlackMessage) => {
                 if (msg.user) {
                     try {
                         const userInfo = await slack!.users.info({ user: msg.user });
@@ -90,12 +101,13 @@ export async function GET(
         console.log(`[Slack API] Fetched ${messages.length} messages`);
 
         return NextResponse.json({ messages });
-    } catch (error: any) {
+    } catch (error) {
         console.error("[Slack API] Error fetching thread:", error);
+        const errorMessage = error instanceof Error ? error.message : "Unknown error";
         return NextResponse.json(
             {
                 error: "Failed to fetch Slack thread",
-                message: error.message,
+                message: errorMessage,
             },
             { status: 500 }
         );

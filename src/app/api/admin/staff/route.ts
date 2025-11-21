@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db, users, domains, scopes, roles } from "@/db";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
+import type { InferSelectModel } from "drizzle-orm";
 
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
     try {
         const { userId } = await auth();
 
@@ -169,7 +170,10 @@ export async function PATCH(request: NextRequest) {
             if (roleRecord) roleId = roleRecord.id;
         }
 
-        const updateData: any = {
+        type UserUpdate = Partial<InferSelectModel<typeof users>> & {
+            updated_at: Date;
+        };
+        const updateData: UserUpdate = {
             updated_at: new Date(),
         };
         if (domainId) updateData.primary_domain_id = domainId;

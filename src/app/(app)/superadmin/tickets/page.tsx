@@ -9,6 +9,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { FileText } from "lucide-react";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
+import type { TicketMetadata } from "@/db/types";
+import type { Ticket } from "@/db/types-only";
 
 export default async function SuperAdminAllTicketsPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   const { userId } = await auth();
@@ -37,7 +39,8 @@ export default async function SuperAdminAllTicketsPage({ searchParams }: { searc
   const offset = (page - 1) * limit;
 
   // Build server-side where conditions (simple, case-insensitive where possible)
-  const whereClauses: any[] = [];
+  type WhereClause = ReturnType<typeof sql>;
+  const whereClauses: WhereClause[] = [];
   // Note: status, category, subcategory filters disabled due to schema changes
   // These would require joins with ticket_statuses and categories tables
   // and subcategory is stored in metadata JSON
@@ -73,7 +76,24 @@ export default async function SuperAdminAllTicketsPage({ searchParams }: { searc
     whereClauses.push(sql`${tickets.created_at} <= ${to}`);
   }
 
-  let allTickets: any[] = [];
+  type TicketRow = {
+    id: number;
+    created_at: Date;
+    updated_at: Date;
+    status_id: number;
+    category_id: number | null;
+    created_by: string;
+    assigned_to: string | null;
+    description: string | null;
+    location: string | null;
+    metadata: unknown;
+    escalation_level: number;
+    resolved_at: Date | null;
+    acknowledged_at: Date | null;
+    resolution_due_at: Date | null;
+    rating: number | null;
+  };
+  let allTickets: TicketRow[] = [];
   let total = 0;
   try {
     // total count with same filters
@@ -132,9 +152,9 @@ export default async function SuperAdminAllTicketsPage({ searchParams }: { searc
     const startOfToday = new Date(now); startOfToday.setHours(0, 0, 0, 0);
     const endOfToday = new Date(now); endOfToday.setHours(23, 59, 59, 999);
     allTickets = allTickets.filter(t => {
-      // Use authoritative due_at field first, fallback to metadata
-      const metadata = (t.metadata as any) || {};
-      const tatDate = t.due_at || (metadata?.tatDate ? new Date(metadata.tatDate) : null);
+      // Use authoritative resolution_due_at field first, fallback to metadata
+      const metadata = (t.metadata as TicketMetadata | null) || {};
+      const tatDate = t.resolution_due_at || (metadata?.tatDate ? new Date(metadata.tatDate) : null);
       const hasTat = !!tatDate && !isNaN(tatDate.getTime());
 
       if (tat === "has") return hasTat;
@@ -202,7 +222,11 @@ export default async function SuperAdminAllTicketsPage({ searchParams }: { searc
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {allTickets.map((ticket) => (
-            <TicketCard key={ticket.id} ticket={ticket} basePath="/superadmin/dashboard" />
+            <TicketCard 
+              key={ticket.id} 
+              ticket={ticket as Ticket & { status?: string | null; category_name?: string | null; creator_name?: string | null; creator_email?: string | null; }} 
+              basePath="/superadmin/dashboard" 
+            />
           ))}
         </div>
       )}

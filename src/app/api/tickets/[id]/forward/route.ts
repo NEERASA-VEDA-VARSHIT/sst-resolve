@@ -73,7 +73,8 @@ export async function POST(
                 { status: 400 }
             );
 
-        let { targetAdminId, reason } = parsed.data;
+        let { targetAdminId } = parsed.data;
+        const { reason } = parsed.data;
 
         // --------------------------------------------------
         // LOAD TICKET

@@ -113,9 +113,9 @@ export async function POST(request: NextRequest) {
       .returning();
 
     return NextResponse.json(newSubSubcategory, { status: 201 });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error creating sub-subcategory:", error);
-    if (error.code === "23505") {
+    if (error && typeof error === 'object' && 'code' in error && error.code === "23505") {
       return NextResponse.json(
         { error: "Sub-subcategory slug already exists for this subcategory" },
         { status: 400 }

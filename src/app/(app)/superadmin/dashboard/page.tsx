@@ -9,15 +9,15 @@ import { Card, CardContent } from "@/components/ui/card";
 import Link from "next/link";
 import { AdminTicketFilters } from "@/components/admin/AdminTicketFilters";
 import { Button } from "@/components/ui/button";
-import { FileText, Clock, CheckCircle2, AlertCircle, Users, BarChart3, Calendar, TrendingUp, Shield, Settings, Building2 } from "lucide-react";
+import { FileText, Shield, Settings, Building2, Users, Calendar, AlertCircle, BarChart3 } from "lucide-react";
 import { StatsCards } from "@/components/dashboard/StatsCards";
 import { PaginationControls } from "@/components/dashboard/PaginationControls";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
 import { normalizeStatusForComparison } from "@/lib/utils";
 
-// Create alias for users table to use for assigned admin
-const assignedAdmin = alias(users, 'assigned_admin');
+// Create alias for users table to use for assigned admin (unused but kept for potential future use)
+// const assignedAdmin = alias(users, 'assigned_admin');
 
 export default async function SuperAdminDashboardPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   const { userId } = await auth();

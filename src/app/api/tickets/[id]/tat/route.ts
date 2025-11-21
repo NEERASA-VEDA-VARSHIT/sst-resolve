@@ -8,6 +8,7 @@ import { SetTATSchema } from "@/schema/ticket.schema";
 import { calculateTATDate } from "@/utils";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
+import type { TicketMetadata } from "@/db/types";
 
 /**
  * ============================================
@@ -92,7 +93,7 @@ export async function POST(
 		}
 
 		// Parse existing metadata and get original email Message-ID and subject BEFORE updating
-		const metadata: any = ticket.metadata || {};
+		const metadata: TicketMetadata = (ticket.metadata as TicketMetadata) || {};
 		let originalMessageId: string | undefined;
 		let originalSubject: string | undefined;
 		if (metadata.originalEmailMessageId) {
@@ -126,27 +127,24 @@ export async function POST(
 
 		// Track TAT extension count
 		if (isExtension) {
-			metadata.tatExtendedAt = new Date().toISOString();
-			metadata.tatExtensionCount = (metadata.tatExtensionCount || 0) + 1;
 			metadata.tatExtensions = metadata.tatExtensions || [];
 			metadata.tatExtensions.push({
-				previousTAT: previousTAT,
+				previousTAT: previousTAT || "",
 				newTAT: tatText,
-				previousTATDate: previousTATDate,
+				previousTATDate: previousTATDate || "",
 				newTATDate: tatDate.toISOString(),
 				extendedAt: new Date().toISOString(),
 				extendedBy: userId,
 			});
 		} else {
 			// First TAT set, initialize extension tracking
-			metadata.tatExtensionCount = 0;
 			metadata.tatExtensions = [];
 		}
 
 		// Update ticket with TAT and optionally mark as in_progress
 		// Also assign ticket to the admin taking action
 		const dbUser = await getOrCreateUser(userId);
-		const updateData: any = {
+		const updateData: { metadata: TicketMetadata; updated_at: Date; assigned_to: string; status_id?: number } = {
 			metadata: metadata,
 			updated_at: new Date(),
 			assigned_to: dbUser.id,
@@ -245,11 +243,13 @@ export async function POST(
 						console.warn(`⚠️ No slackMessageTs found for ticket #${ticket.id} - Slack thread not posted`);
 					}
 				}
-			} catch (slackError: any) {
+				} catch (slackError) {
+				const error = slackError instanceof Error ? slackError : new Error(String(slackError));
+				const errorWithCode = slackError as { code?: string; data?: unknown };
 				console.error(`❌ Error posting TAT update to Slack thread for ticket #${ticket.id}:`, {
-					message: slackError.message,
-					code: slackError.code,
-					data: slackError.data,
+					message: error.message,
+					code: errorWithCode.code,
+					data: errorWithCode.data,
 				});
 				// Don't fail the request if Slack posting fails
 			}

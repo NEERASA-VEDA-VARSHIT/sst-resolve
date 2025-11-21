@@ -352,14 +352,14 @@ export default async function CommitteeTicketPage({ params }: { params: Promise<
                           <span>{typeof comment.author === 'string' ? comment.author : "Unknown"}</span>
                           {(() => {
                             const createdAt = comment.createdAt;
-                            if (!createdAt) return null;
+                            if (!createdAt) return null as React.ReactNode;
                             if (typeof createdAt === 'string') {
                               return <span>{new Date(createdAt).toLocaleString()}</span>;
                             }
                             if (createdAt instanceof Date) {
                               return <span>{createdAt.toLocaleString()}</span>;
                             }
-                            return null;
+                            return null as React.ReactNode;
                           })()}
                         </div>
                       </CardContent>

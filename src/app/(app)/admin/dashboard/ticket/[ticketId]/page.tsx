@@ -105,28 +105,7 @@ export default async function AdminTicketPage({ params }: { params: Promise<{ ti
   const statusValueStr = typeof ticket.status === 'string' 
     ? ticket.status 
     : (ticket.status && typeof ticket.status === 'object' && 'value' in ticket.status ? ticket.status.value : null);
-  const normalizedStatus = normalizeStatusForComparison(statusValueStr);
-
-  const getStatusBadgeClass = (status: string | null | undefined) => {
-    const normalized = normalizeStatusForComparison(status);
-    if (!normalized) return "bg-muted text-foreground";
-    switch (normalized) {
-      case "open":
-        return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 border-transparent";
-      case "reopened":
-        return "bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200 border-transparent";
-      case "in_progress":
-        return "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200 border-transparent";
-      case "awaiting_student_response":
-        return "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200 border-transparent";
-      case "resolved":
-        return "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200 border-transparent";
-      case "closed":
-        return "bg-gray-200 text-gray-800 dark:bg-gray-800 dark:text-gray-200 border-transparent";
-      default:
-        return "bg-muted text-foreground";
-    }
-  };
+  // normalizedStatus and getStatusBadgeClass removed - unused
 
   // Check for TAT
   const tatDate = ticket.due_at || (metadata?.tatDate ? new Date(metadata.tatDate) : null);

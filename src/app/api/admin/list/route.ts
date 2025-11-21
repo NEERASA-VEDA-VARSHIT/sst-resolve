@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth, clerkClient } from "@clerk/nextjs/server";
 import { db, users, roles, domains, scopes } from "@/db";
-import { eq, and, or, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
+
+interface ClerkUser {
+	id: string;
+	firstName: string | null;
+	lastName: string | null;
+	emailAddresses?: Array<{ emailAddress: string }>;
+}
 
 export async function GET(request: NextRequest) {
 	try {
@@ -51,10 +58,10 @@ export async function GET(request: NextRequest) {
 			adminsWithClerkId.map(async (admin) => {
 				try {
 					// Try to get latest details from Clerk, fallback to DB
-					let user: any = null;
+					let user: ClerkUser | null = null;
 					try {
-						user = await client.users.getUser(admin.clerk_id);
-					} catch (e) {
+						user = await client.users.getUser(admin.clerk_id) as ClerkUser;
+					} catch {
 						// Ignore Clerk fetch error, use DB data
 					}
 
@@ -87,7 +94,15 @@ export async function GET(request: NextRequest) {
 		);
 
 		// If include_committee is requested, fetch users with committee role from database
-		let committeeUsers: any[] = [];
+		let committeeUsers: Array<{
+			id: string;
+			firstName: string | null;
+			lastName: string | null;
+			emailAddresses: Array<{ emailAddress: string }>;
+			name: string;
+			email: string;
+			publicMetadata: { role: string };
+		}> = [];
 		if (includeCommittee) {
 			try {
 				// Get all users with committee role
@@ -107,10 +122,10 @@ export async function GET(request: NextRequest) {
 				// For now, let's try to fetch from Clerk if possible, but fallback to DB
 
 				committeeUsers = await Promise.all(committeeRoleUsers.map(async (dbUser) => {
-					let clerkUser: any = null;
+					let clerkUser: ClerkUser | null = null;
 					try {
-						clerkUser = await client.users.getUser(dbUser.clerk_id);
-					} catch (e) {
+						clerkUser = await client.users.getUser(dbUser.clerk_id) as ClerkUser;
+					} catch {
 						// Ignore
 					}
 

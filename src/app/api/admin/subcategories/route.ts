@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
       const subcatsWithData = await Promise.all(
         subcats.map(async (subcat) => {
           // Fetch sub-subcategories if requested
-          let subSubcategories: any[] = [];
+          let subSubcategories: (typeof sub_subcategories.$inferSelect)[] = [];
           if (includeSubSubcategories) {
             subSubcategories = await db
               .select()
@@ -71,7 +71,12 @@ export async function GET(request: NextRequest) {
           }
 
           // Fetch fields if requested
-          let fields: any[] = [];
+          type FieldRow = {
+            id: number;
+            subcategory_id: number;
+            [key: string]: unknown;
+          };
+          let fields: FieldRow[] = [];
           if (includeFields) {
             const fieldsData = await db
               .select({
@@ -210,7 +215,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(newSubcategory, { status: 201 });
   } catch (error) {
     console.error("Error creating subcategory:", error);
-    const errorMessage = error instanceof Error ? error.message : "Failed to create subcategory";
     if (error && typeof error === 'object' && 'code' in error && error.code === "23505") {
       return NextResponse.json({ error: "Subcategory slug already exists for this category" }, { status: 400 });
     }

@@ -123,7 +123,7 @@ export default function MasterDataPage() {
 					toast.error(error.error || "Failed to create section");
 				}
 			}
-		} catch (error) {
+		} catch {
 			toast.error("An error occurred");
 		} finally {
 			setSectionLoading(false);
@@ -145,7 +145,7 @@ export default function MasterDataPage() {
 				const error = await res.json();
 				toast.error(error.error || "Failed to delete section");
 			}
-		} catch (error) {
+		} catch {
 			toast.error("An error occurred");
 		}
 	};
@@ -222,7 +222,7 @@ export default function MasterDataPage() {
 					toast.error(error.error || "Failed to create batch");
 				}
 			}
-		} catch (error) {
+		} catch {
 			toast.error("An error occurred");
 		} finally {
 			setBatchLoading(false);
@@ -244,7 +244,7 @@ export default function MasterDataPage() {
 				const error = await res.json();
 				toast.error(error.error || "Failed to delete batch");
 			}
-		} catch (error) {
+		} catch {
 			toast.error("An error occurred");
 		}
 	};

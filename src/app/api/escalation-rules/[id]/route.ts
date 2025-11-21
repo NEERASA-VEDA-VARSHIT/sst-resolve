@@ -130,7 +130,14 @@ export async function PATCH(
       return NextResponse.json({ error: "Escalation rule not found" }, { status: 404 });
     }
 
-    const updateData: any = {
+    const updateData: { 
+      updated_at: Date; 
+      domain_id?: number; 
+      scope_id?: number | null;
+      level?: number;
+      user_id?: string | null;
+      notify_channel?: string;
+    } = {
       updated_at: new Date(),
     };
 

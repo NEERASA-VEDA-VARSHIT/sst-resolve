@@ -31,7 +31,7 @@ export async function PATCH(
     }
 
     const body = await request.json();
-    const updateData: any = { updated_at: new Date() };
+    const updateData: Partial<typeof subcategories.$inferInsert> & { updated_at: Date } = { updated_at: new Date() };
 
     if (body.name !== undefined) updateData.name = body.name;
     if (body.slug !== undefined) updateData.slug = body.slug;
@@ -39,7 +39,7 @@ export async function PATCH(
     if (body.display_order !== undefined) updateData.display_order = body.display_order;
     if (body.active !== undefined) updateData.active = body.active;
     if (body.assigned_admin_id !== undefined) {
-      updateData.assigned_admin_id = body.assigned_admin_id === null || body.assigned_admin_id === "" ? null : parseInt(String(body.assigned_admin_id));
+      updateData.assigned_admin_id = body.assigned_admin_id === null || body.assigned_admin_id === "" ? null : String(body.assigned_admin_id);
     }
 
     const [updated] = await db
@@ -60,9 +60,9 @@ export async function PATCH(
     }
 
     return NextResponse.json(updated);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error updating subcategory:", error);
-    if (error.code === "23505") {
+    if (error && typeof error === 'object' && 'code' in error && error.code === "23505") {
       return NextResponse.json({ error: "Subcategory slug already exists" }, { status: 400 });
     }
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

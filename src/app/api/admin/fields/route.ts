@@ -175,8 +175,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Create options if field_type is "select" and options are provided
+    type FieldOption = { label?: string; value: string; display_order?: number };
     if (field_type === "select" && Array.isArray(options) && options.length > 0) {
-      const optionValues = options.map((opt: any, index: number) => ({
+      const optionValues = options.map((opt: FieldOption, index: number) => ({
         field_id: newField.id,
         label: opt.label || opt.value,
         value: opt.value,
@@ -193,14 +194,13 @@ export async function POST(request: NextRequest) {
         .select()
         .from(field_options)
         .where(eq(field_options.field_id, newField.id))
-        .orderBy(field_options.display_order);
+        .orderBy(asc(field_options.display_order));
       return NextResponse.json({ ...newField, options: fieldOptions }, { status: 201 });
     }
 
     return NextResponse.json({ ...newField, options: [] }, { status: 201 });
   } catch (error) {
     console.error("Error creating field:", error);
-    const errorMessage = error instanceof Error ? error.message : "Failed to create field";
     if (error && typeof error === 'object' && 'code' in error && error.code === "23505") {
       return NextResponse.json({ error: "Field slug already exists for this subcategory" }, { status: 400 });
     }

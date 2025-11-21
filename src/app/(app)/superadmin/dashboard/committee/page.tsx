@@ -1,9 +1,9 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { db, tickets, ticket_statuses } from "@/db";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { TicketCard } from "@/components/layout/TicketCard";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Users, Calendar, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -22,13 +22,52 @@ export default async function SuperAdminCommitteePage() {
   if (role !== "super_admin") redirect("/student/dashboard");
 
   // Get all tickets for super admin (with limit to prevent performance issues)
+  type TicketRowRaw = {
+    id: number;
+    title: string | null;
+    description: string | null;
+    location: string | null;
+    status_id: number;
+    category_id: number | null;
+    subcategory_id: number | null;
+    sub_subcategory_id: number | null;
+    created_by: string;
+    assigned_to: string | null;
+    acknowledged_by: string | null;
+    group_id: number | null;
+    escalation_level: number;
+    tat_extended_count: number;
+    last_escalation_at: Date | null;
+    acknowledgement_tat_hours: number | null;
+    resolution_tat_hours: number | null;
+    acknowledgement_due_at: Date | null;
+    resolution_due_at: Date | null;
+    acknowledged_at: Date | null;
+    reopened_at: Date | null;
+    sla_breached_at: Date | null;
+    reopen_count: number;
+    rating: number | null;
+    feedback_type: string | null;
+    rating_submitted: Date | null;
+    feedback: string | null;
+    is_public: boolean;
+    admin_link: string | null;
+    student_link: string | null;
+    slack_thread_id: string | null;
+    external_ref: string | null;
+    metadata: unknown;
+    created_at: Date;
+    updated_at: Date;
+    resolved_at: Date | null;
+    status_value: string | null | undefined;
+  };
   type TicketWithStatus = typeof tickets.$inferSelect & {
     status_value: string | null;
     status: string | null;
   };
   let allTickets: TicketWithStatus[] = [];
   try {
-    const ticketRows = await db
+    const ticketRowsRaw: TicketRowRaw[] = await db
       .select({
         id: tickets.id,
         title: tickets.title,
@@ -73,11 +112,27 @@ export default async function SuperAdminCommitteePage() {
       .orderBy(desc(tickets.created_at))
       .limit(1000); // Reasonable limit for committee view
     
-    allTickets = ticketRows.map(t => ({
-      ...t,
-      status_value: t.status_value ?? null,
-      status: t.status_value ?? null,
-    })) as TicketWithStatus[];
+    // Fetch full ticket records to ensure all fields are present
+    const ticketIds = ticketRowsRaw.map(t => t.id);
+    const fullTickets = await db
+      .select()
+      .from(tickets)
+      .where(inArray(tickets.id, ticketIds));
+    
+    const fullTicketMap = new Map(fullTickets.map(t => [t.id, t]));
+    
+    allTickets = ticketRowsRaw.map(t => {
+      const fullTicket = fullTicketMap.get(t.id);
+      if (!fullTicket) {
+        // Skip if full ticket not found (shouldn't happen, but type-safe)
+        return null;
+      }
+      return {
+        ...fullTicket,
+        status_value: t.status_value ?? null,
+        status: t.status_value ?? null,
+      } as TicketWithStatus;
+    }).filter((t): t is TicketWithStatus => t !== null);
   } catch (error) {
     console.error('[Super Admin Committee] Error fetching tickets:', error);
     // Continue with empty array

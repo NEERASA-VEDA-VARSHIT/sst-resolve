@@ -5,6 +5,7 @@ import { categories } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
+import type { InferSelectModel } from "drizzle-orm";
 
 // PATCH: Update a category
 export async function PATCH(
@@ -31,7 +32,10 @@ export async function PATCH(
     }
 
     const body = await request.json();
-    const updateData: any = {
+    type CategoryUpdate = Partial<InferSelectModel<typeof categories>> & {
+      updated_at: Date;
+    };
+    const updateData: CategoryUpdate = {
       updated_at: new Date(),
     };
 
@@ -43,7 +47,9 @@ export async function PATCH(
     if (body.sla_hours !== undefined) updateData.sla_hours = body.sla_hours;
     if (body.display_order !== undefined) updateData.display_order = body.display_order;
     if (body.active !== undefined) updateData.active = body.active;
-    if (body.domain_id !== undefined) updateData.domain_id = body.domain_id ? parseInt(String(body.domain_id)) : null;
+    if (body.domain_id !== undefined && body.domain_id) {
+      updateData.domain_id = parseInt(String(body.domain_id));
+    }
     if (body.scope_id !== undefined) updateData.scope_id = body.scope_id === null || body.scope_id === "" ? null : parseInt(String(body.scope_id));
     if (body.default_admin_id !== undefined) {
       updateData.default_admin_id = body.default_admin_id === null || body.default_admin_id === "" ? null : String(body.default_admin_id);
@@ -60,9 +66,9 @@ export async function PATCH(
     }
 
     return NextResponse.json(updated);
-  } catch (error: any) {
+  } catch (error) {
     console.error("Error updating category:", error);
-    if (error.code === "23505") {
+    if (error && typeof error === 'object' && 'code' in error && error.code === "23505") {
       return NextResponse.json({ error: "Category slug already exists" }, { status: 400 });
     }
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

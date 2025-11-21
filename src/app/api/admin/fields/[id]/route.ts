@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import { category_fields, field_options, users } from "@/db/schema";
+import { category_fields, field_options } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
 import { archiveAndDeleteField } from "@/lib/deleteFieldWithArchive";
+import type { InferSelectModel } from "drizzle-orm";
 
 export async function PATCH(
   request: NextRequest,
@@ -31,7 +32,10 @@ export async function PATCH(
     }
 
     const body = await request.json();
-    const updateData: any = { updated_at: new Date() };
+    type FieldUpdate = Partial<InferSelectModel<typeof category_fields>> & {
+      updated_at: Date;
+    };
+    const updateData: FieldUpdate = { updated_at: new Date() };
 
     if (body.name !== undefined) updateData.name = body.name;
     if (body.slug !== undefined) updateData.slug = body.slug;
@@ -43,7 +47,7 @@ export async function PATCH(
     if (body.display_order !== undefined) updateData.display_order = body.display_order;
     if (body.active !== undefined) updateData.active = body.active;
     if (body.assigned_admin_id !== undefined) {
-      updateData.assigned_admin_id = body.assigned_admin_id === null || body.assigned_admin_id === "" ? null : parseInt(String(body.assigned_admin_id));
+      updateData.assigned_admin_id = body.assigned_admin_id === null || body.assigned_admin_id === "" ? null : String(body.assigned_admin_id);
     }
 
     const [updated] = await db
@@ -63,7 +67,13 @@ export async function PATCH(
 
       // Insert new options
       if (body.options.length > 0) {
-        const optionValues = body.options.map((opt: any, index: number) => ({
+        type OptionInput = {
+          label?: string;
+          value: string;
+          display_order?: number;
+          active?: boolean;
+        };
+        const optionValues = body.options.map((opt: OptionInput, index: number) => ({
           field_id: fieldId,
           label: opt.label || opt.value,
           value: opt.value,
@@ -83,9 +93,9 @@ export async function PATCH(
       .orderBy(asc(field_options.display_order));
 
     return NextResponse.json({ ...updated, options: fieldOptions });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Error updating field:", error);
-    if (error.code === "23505") {
+    if (error && typeof error === 'object' && 'code' in error && error.code === "23505") {
       return NextResponse.json({ error: "Field slug already exists" }, { status: 400 });
     }
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

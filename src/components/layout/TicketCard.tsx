@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 
 import type { Ticket } from "@/db/types-only";
+import type { TicketMetadata } from "@/db/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -86,10 +87,11 @@ function computeTatInfo(date?: Date | null) {
 ---------------------------------------------------- */
 
 export function TicketCard({ ticket, basePath = "/student/dashboard", disableLink = false }: TicketCardProps) {
-  const metadata = (ticket.metadata as any) ?? {};
+  const metadata = (ticket.metadata as TicketMetadata) ?? {};
 
   // TAT calculation - use resolution_due_at or metadata
-  const tatDate = (ticket as any).due_at || ticket.resolution_due_at || (metadata?.tatDate ? new Date(metadata.tatDate) : null);
+  const ticketWithExtras = ticket as typeof ticket & { due_at?: Date | null };
+  const tatDate = ticketWithExtras.due_at || ticket.resolution_due_at || (metadata?.tatDate ? new Date(metadata.tatDate) : null);
   const { overdue, label: tatLabel } = computeTatInfo(tatDate);
 
   // Comment count (if present in metadata)
@@ -180,14 +182,7 @@ export function TicketCard({ ticket, basePath = "/student/dashboard", disableLin
                   </Badge>
                 )}
 
-                {metadata.subSubcategory && (
-                  <Badge
-                    variant="secondary"
-                    className="text-xs font-medium bg-primary/5 text-primary/80 border-primary/10"
-                  >
-                    {metadata.subSubcategory}
-                  </Badge>
-                )}
+                {/* Note: subSubcategory is not in TicketMetadata type, removed for now */}
               </div>
             </div>
           </div>

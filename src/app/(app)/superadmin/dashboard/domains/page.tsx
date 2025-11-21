@@ -25,9 +25,7 @@ import {
     Plus,
     Building2,
     Pencil,
-    Trash2,
     Loader2,
-    AlertCircle,
     ArrowLeft
 } from "lucide-react";
 import { toast } from "sonner";
@@ -134,7 +132,7 @@ export default function DomainsPage() {
                     toast.error(error.error || "Failed to create domain");
                 }
             }
-        } catch (error) {
+        } catch {
             toast.error("An error occurred");
         } finally {
             setDomainLoading(false);
@@ -205,7 +203,7 @@ export default function DomainsPage() {
                     toast.error(error.error || "Failed to create scope");
                 }
             }
-        } catch (error) {
+        } catch {
             toast.error("An error occurred");
         } finally {
             setScopeLoading(false);

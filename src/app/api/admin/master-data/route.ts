@@ -8,7 +8,7 @@ import { getUserRoleFromDB } from "@/lib/db-roles";
  * GET /api/admin/master-data
  * Fetch all master data needed for admin forms (domains, scopes, categories, committees)
  */
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
     try {
         const { userId } = await auth();
         if (!userId) {

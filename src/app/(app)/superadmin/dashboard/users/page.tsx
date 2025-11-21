@@ -24,7 +24,7 @@ export default async function SuperAdminUsersPage() {
 
   const users = userList.data.map(user => {
     const emailAddresses = Array.isArray(user.emailAddresses)
-      ? user.emailAddresses.map((email: any) => ({
+      ? user.emailAddresses.map((email: { emailAddress?: string | null }) => ({
         emailAddress: typeof email?.emailAddress === 'string' ? email.emailAddress : String(email?.emailAddress || ''),
       }))
       : [];

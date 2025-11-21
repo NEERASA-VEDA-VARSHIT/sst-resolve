@@ -121,8 +121,8 @@ export async function POST(request: NextRequest) {
 
 					const { ticket, category, creator } = ticketData;
 					const markInProgress = metadata.markInProgress || false;
-					const details = ticket.metadata ? (ticket.metadata as any) : {};
-					const isExtension = details.tat ? true : false;
+					const details: TicketMetadata = ticket.metadata ? (ticket.metadata as TicketMetadata) : {};
+					const isExtension = !!details.tat;
 					const originalMessageId = details.originalEmailMessageId;
 					const originalSubject = details.originalEmailSubject;
 
@@ -133,12 +133,10 @@ export async function POST(request: NextRequest) {
 					details.tatDate = tatDate.toISOString();
 					details.tatSetAt = new Date().toISOString();
 					details.tatSetBy = interaction.user.name || interaction.user.id;
-					if (isExtension) {
-						details.tatExtendedAt = new Date().toISOString();
-					}
+					// Note: TAT extension tracking is handled via tatExtensions array, not tatExtendedAt
 
 					// Update ticket with TAT and optionally mark as IN_PROGRESS
-					const updateData: any = { metadata: details };
+					const updateData: { metadata: TicketMetadata; status_id?: number } = { metadata: details };
 
 					if (markInProgress) {
 						const inProgressStatusId = await getStatusIdByValue("IN_PROGRESS");
@@ -275,7 +273,7 @@ export async function POST(request: NextRequest) {
 					}
 
 					const { ticket, category, creator } = ticketData;
-					const details = ticket.metadata ? (ticket.metadata as any) : {};
+					const details: TicketMetadata = ticket.metadata ? (ticket.metadata as TicketMetadata) : {};
 					if (!details.comments) details.comments = [];
 					const originalMessageId = details.originalEmailMessageId;
 					const originalSubject = details.originalEmailSubject;

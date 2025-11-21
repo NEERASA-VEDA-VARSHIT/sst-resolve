@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { db, category_profile_fields, categories } from "@/db";
+import { db, category_profile_fields } from "@/db";
 import { eq } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 
@@ -113,8 +113,14 @@ export async function POST(
 
 		// Insert new configurations
 		if (fields.length > 0) {
+			type FieldInput = {
+				field_name: string;
+				required?: boolean;
+				editable?: boolean;
+				display_order?: number;
+			};
 			await db.insert(category_profile_fields).values(
-				fields.map((field: any, index: number) => ({
+				fields.map((field: FieldInput, index: number) => ({
 					category_id: categoryId,
 					field_name: field.field_name,
 					required: field.required ?? false,

@@ -7,6 +7,7 @@ import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
 import { statusToEnum } from "@/lib/status-helpers";
 import { getStatusIdByValue } from "@/lib/status-helpers";
+import type { TicketMetadata } from "@/db/types";
 
 /**
  * ============================================
@@ -65,9 +66,9 @@ export async function POST(request: NextRequest) {
     // Update metadata with optional bulk-close comment and set status
     const now = new Date();
     for (const row of rows) {
-      let metadata: any = {};
+      let metadata: TicketMetadata = {};
       try {
-        metadata = row.metadata ? (typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata) : {};
+        metadata = row.metadata ? (typeof row.metadata === 'string' ? JSON.parse(row.metadata) as TicketMetadata : row.metadata as TicketMetadata) : {};
       } catch { }
 
       if (comment) {
@@ -83,7 +84,7 @@ export async function POST(request: NextRequest) {
         metadata.comments = comments;
       }
 
-      const updateData: any = {
+      const updateData: { status_id: number; updated_at: Date; metadata: TicketMetadata } = {
         status_id: targetStatusId,
         updated_at: now,
         metadata: metadata,

@@ -38,7 +38,7 @@ export default function NotificationSettingsPage() {
 
             if (!response.ok) throw new Error("Failed to save");
             toast.success("Settings saved successfully");
-        } catch (error) {
+		} catch {
             toast.error("Failed to save settings");
         } finally {
             setLoading(false);
@@ -54,7 +54,7 @@ export default function NotificationSettingsPage() {
 
             if (!response.ok) throw new Error("Connection test failed");
             toast.success("Slack connection successful!");
-        } catch (error) {
+		} catch {
             toast.error("Slack connection failed");
         } finally {
             setTesting(false);

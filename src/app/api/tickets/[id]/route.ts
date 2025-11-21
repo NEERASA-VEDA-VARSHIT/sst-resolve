@@ -181,7 +181,8 @@ export async function PATCH(
 
     const { id } = await params;
     const body = await request.json();
-    let { status, comment, commentType } = body;
+    let { status } = body;
+    const { comment, commentType } = body;
 
     // Get ticket to check ownership
     const ticketId = parseInt(id);

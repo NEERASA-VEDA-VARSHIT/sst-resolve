@@ -242,9 +242,9 @@ export async function POST(request: NextRequest) {
       .returning();
 
     return NextResponse.json(newCategory, { status: 201 });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Error creating category:", error);
-    if (error.code === "23505") {
+    if (error && typeof error === 'object' && 'code' in error && error.code === "23505") {
       return NextResponse.json({ error: "Category slug already exists" }, { status: 400 });
     }
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

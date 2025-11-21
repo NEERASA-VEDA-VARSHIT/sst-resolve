@@ -70,7 +70,7 @@ export default function StatusManagementClientPage() {
             } else {
                 toast.error(data.error || "Failed to fetch statuses");
             }
-        } catch (error) {
+		} catch {
             toast.error("Failed to fetch statuses");
         } finally {
             setLoading(false);
@@ -128,7 +128,7 @@ export default function StatusManagementClientPage() {
             } else {
                 toast.error(data.error || "Failed to save status");
             }
-        } catch (error) {
+		} catch {
             toast.error("Failed to save status");
         }
     };
@@ -151,7 +151,7 @@ export default function StatusManagementClientPage() {
             } else {
                 toast.error(data.error || "Failed to delete status");
             }
-        } catch (error) {
+		} catch {
             toast.error("Failed to delete status");
         }
     };
@@ -181,7 +181,7 @@ export default function StatusManagementClientPage() {
             ]);
 
             fetchStatuses();
-        } catch (error) {
+		} catch {
             toast.error("Failed to reorder statuses");
         }
     };
