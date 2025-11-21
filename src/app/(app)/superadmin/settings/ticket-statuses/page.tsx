@@ -130,8 +130,6 @@ export default function StatusManagementClientPage() {
             }
         } catch (error) {
             toast.error("Failed to save status");
-                variant: "destructive",
-            });
         }
     };
 
