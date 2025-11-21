@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
 		const offset = (page - 1) * limit;
 
 		// Build query
-		let whereConditions: any[] = [];
+		const whereConditions: any[] = [];
 
 		if (search) {
 			whereConditions.push(

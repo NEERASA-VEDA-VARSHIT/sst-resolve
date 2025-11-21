@@ -173,7 +173,7 @@ export function ImageUploader({
             No images uploaded yet
           </p>
           <p className="text-xs text-muted-foreground/60 mt-1">
-            Click "Upload Image" to add attachments
+            Click &quot;Upload Image&quot; to add attachments
           </p>
         </div>
       )}

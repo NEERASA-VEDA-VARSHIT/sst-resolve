@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { tickets, notification_settings, ticket_statuses, users, categories, admin_assignments } from "@/db/schema";
+import { tickets, notification_settings, users, categories } from "@/db/schema";
 import { and, gte, lt, ne, eq, aliasedTable } from "drizzle-orm";
 import { sendEmail } from "@/lib/email";
 import { postToSlackChannel } from "@/lib/slack";
@@ -62,7 +62,6 @@ export async function GET(request: NextRequest) {
 
     // Use regular joins instead of relational query API
     const assignedUser = aliasedTable(users, "assigned_user");
-    const adminUser = aliasedTable(users, "admin_user");
     
     const dueTicketRows = await db
       .select({
@@ -156,7 +155,7 @@ export async function GET(request: NextRequest) {
         return acc;
       }, {} as Record<string, typeof dueTickets>);
 
-      for (const [adminId, adminTickets] of Object.entries(ticketsByAdmin)) {
+      for (const [, adminTickets] of Object.entries(ticketsByAdmin)) {
         const admin = adminTickets[0]?.assigned_admin;
         if (!admin || !admin.user?.email) continue;
 
@@ -324,7 +323,7 @@ function formatSlackTATReminder(tickets: any[], categoryName: string): string {
 
   for (const [adminName, adminTickets] of Object.entries(ticketsByAdmin)) {
     message += `\n👤 *${adminName}*\n`;
-    // @ts-ignore
+    // @ts-expect-error - adminTickets type needs proper typing
     adminTickets.forEach((t: any) => {
       const ticketUrl = `${baseUrl}/admin/dashboard/ticket/${t.id}`;
       message += ` • <${ticketUrl}|#${t.id}> - ${t.title || "No title"}\n`;

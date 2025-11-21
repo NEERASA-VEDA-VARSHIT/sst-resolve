@@ -176,8 +176,8 @@ export async function createTicket(args: {
   }
 
   // NEW: Store field IDs for future lookup (snapshot-on-delete approach)
-  let usedFieldIds: number[] = [];
-  let dynamicFields: Record<string, { field_id: number; value: any }> = {};
+  const usedFieldIds: number[] = [];
+  const dynamicFields: Record<string, { field_id: number; value: any }> = {};
 
   if (subcategoryRecord?.id && detailsObj) {
     // Fetch current active fields to map slugs to IDs

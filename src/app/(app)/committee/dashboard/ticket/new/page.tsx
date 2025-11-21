@@ -16,7 +16,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import Link from "next/link";
 import { ArrowLeft, HelpCircle, AlertCircle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { COMMITTEE_SUBCATEGORIES } from "@/lib/categories";
+import { COMMITTEE_SUBCATEGORIES } from "@/lib/categories-constants";
 
 export default function CommitteeNewTicketPage() {
   const router = useRouter();
@@ -33,7 +33,7 @@ export default function CommitteeNewTicketPage() {
   // Calculate form completion progress and check if form is valid
   const { formProgress, isFormValid } = useMemo(() => {
     let completed = 0;
-    let total = 2; // subcategory, description
+    const total = 2; // subcategory, description
     
     if (formData.subcategory) completed++;
     if (formData.description?.trim()) completed++;

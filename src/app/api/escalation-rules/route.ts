@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db, escalation_rules, users, domains, scopes } from "@/db";
-import { eq, and, or, isNull, inArray } from "drizzle-orm";
-import { asc } from "drizzle-orm";
+import { eq, and, isNull, inArray } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
 
 // GET - Get all escalation rules
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const { userId } = await auth();
 

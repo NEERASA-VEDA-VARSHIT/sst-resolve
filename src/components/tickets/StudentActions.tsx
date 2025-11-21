@@ -58,7 +58,7 @@ export function StudentActions({ ticketId, currentStatus }: { ticketId: number; 
 							Reopen Ticket
 						</h3>
 						<p className="text-sm text-blue-700 dark:text-blue-300">
-							If your issue wasn't resolved, you can reopen this ticket for further assistance
+							If your issue wasn&apos;t resolved, you can reopen this ticket for further assistance
 						</p>
 					</div>
 					<Button

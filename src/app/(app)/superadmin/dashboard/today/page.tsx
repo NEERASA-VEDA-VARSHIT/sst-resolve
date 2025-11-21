@@ -66,7 +66,7 @@ export default async function SuperAdminTodayPendingPage() {
     .orderBy(desc(tickets.created_at));
   
   // Transform to include status field for compatibility
-  let allTickets = allTicketRows.map(t => ({
+  const allTickets = allTicketRows.map(t => ({
     ...t,
     status: t.status_value || null,
   }));

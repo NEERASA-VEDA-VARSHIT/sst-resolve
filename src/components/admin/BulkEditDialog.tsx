@@ -271,7 +271,7 @@ export function BulkEditDialog({
                                 placeholder="No change (leave empty)"
                             />
                             <p className="text-xs text-muted-foreground mt-1">
-                                Leave empty for no change, or type "null" to clear
+                                Leave empty for no change, or type &quot;null&quot; to clear
                             </p>
                         </div>
                     </div>

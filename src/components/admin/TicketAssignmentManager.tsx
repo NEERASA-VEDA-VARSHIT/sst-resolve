@@ -185,7 +185,7 @@ export function TicketAssignmentManager() {
                 <div className="flex-1">
                   <p className="font-semibold">Domain + Scope Matching</p>
                   <p className="text-sm text-muted-foreground">
-                    Final fallback: Matches ticket category/location to admin's domain/scope assignment.
+                    Final fallback: Matches ticket category/location to admin&apos;s domain/scope assignment.
                   </p>
                   <Button variant="link" size="sm" className="mt-2 p-0 h-auto" asChild>
                     <Link href="/superadmin/dashboard/staff">

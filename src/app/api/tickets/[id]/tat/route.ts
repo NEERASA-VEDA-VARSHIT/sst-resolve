@@ -92,7 +92,7 @@ export async function POST(
 		}
 
 		// Parse existing metadata and get original email Message-ID and subject BEFORE updating
-		let metadata: any = ticket.metadata || {};
+		const metadata: any = ticket.metadata || {};
 		let originalMessageId: string | undefined;
 		let originalSubject: string | undefined;
 		if (metadata.originalEmailMessageId) {

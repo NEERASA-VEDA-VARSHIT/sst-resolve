@@ -208,7 +208,7 @@ export function CategoryAssignmentsManager({ categoryId }: { categoryId: number 
                     ) : assignments.length === 0 ? (
                         <div className="text-center py-8 text-muted-foreground">
                             <p>No admins assigned to this category yet</p>
-                            <p className="text-sm mt-1">Click "Add Admin" to assign admins</p>
+                            <p className="text-sm mt-1">Click &quot;Add Admin&quot; to assign admins</p>
                         </div>
                     ) : (
                         <div className="space-y-3">

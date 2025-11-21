@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, tickets, ticket_statuses, categories, users } from "@/db";
 import { eq } from "drizzle-orm";
-import { WebClient } from "@slack/web-api";
 import { postThreadReply } from "@/lib/slack";
 import { sendEmail, getStatusUpdateEmail, getTATSetEmail, getCommentAddedEmail, getStudentEmail } from "@/lib/email";
 import { getStatusIdByValue } from "@/lib/status-helpers";

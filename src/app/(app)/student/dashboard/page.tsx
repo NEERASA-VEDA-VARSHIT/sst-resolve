@@ -267,7 +267,7 @@ export default async function StudentDashboardPage({
             </div>
             <h3 className="text-lg font-semibold">No tickets yet</h3>
             <p className="text-muted-foreground max-w-sm">
-              Get started by creating your first support ticket. We're here to
+              Get started by creating your first support ticket. We&apos;re here to
               help!
             </p>
             <Link

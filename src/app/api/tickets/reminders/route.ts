@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { tickets, ticket_statuses } from "@/db/schema";
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { postThreadReply } from "@/lib/slack";
-import { sendEmail, getTATReminderEmail, getStudentEmail } from "@/lib/email";
+import { sendEmail, getTATReminderEmail } from "@/lib/email";
 
 /**
  * ============================================

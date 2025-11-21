@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { domains, scopes } from "@/db/schema";
 
 export async function GET() {
     try {

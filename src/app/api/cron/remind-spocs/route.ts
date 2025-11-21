@@ -87,7 +87,7 @@ export async function GET(request: NextRequest) {
                 (now.getTime() - tatDate.getTime()) / (1000 * 60 * 60);
               reminderReason = `TAT overdue by ${Math.floor(hoursOverdue)} hours`;
             }
-          } catch (e) {
+          } catch {
             // Ignore parse errors
           }
         }

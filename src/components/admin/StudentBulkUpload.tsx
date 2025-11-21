@@ -205,8 +205,8 @@ export function StudentBulkUpload() {
 							<div className="text-sm space-y-1 max-h-64 overflow-y-auto">
 								{errors.slice(0, 20).map((error, index) => (
 									<p key={index}>
-										Row {error.row}, Field "{error.field}": {error.message}
-										{error.value && ` (Value: "${error.value}")`}
+										Row {error.row}, Field &quot;{error.field}&quot;: {error.message}
+										{error.value && ` (Value: &quot;${error.value}&quot;)`}
 									</p>
 								))}
 								{errors.length > 20 && (
@@ -237,7 +237,7 @@ export function StudentBulkUpload() {
 					<div>
 						<p className="font-medium">Optional Fields:</p>
 						<ul className="list-disc list-inside text-muted-foreground ml-2">
-							<li>hostel - Must be "Neeladri" or "Velankani"</li>
+							<li>hostel - Must be &quot;Neeladri&quot; or &quot;Velankani&quot;</li>
 							<li>room_number - Room number</li>
 							<li>class_section - Must be A, B, C, or D</li>
 							<li>batch_year - Year (e.g., 2027)</li>
@@ -251,7 +251,7 @@ export function StudentBulkUpload() {
 						</p>
 						<ul className="list-disc list-inside text-muted-foreground ml-2">
 							<li>Existing students will be updated based on email match</li>
-							<li>New students will be created if email doesn't exist</li>
+							<li>New students will be created if email doesn&apos;t exist</li>
 							<li>All data is validated before processing</li>
 							<li>Students can only edit mobile number after creation</li>
 						</ul>

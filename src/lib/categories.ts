@@ -2,8 +2,12 @@
  * Category Schema Helper Functions
  * Reusable Drizzle-based functions to fetch category-related data
  * with proper type safety and consistent mapping
+ * 
+ * WARNING: This file is server-only and should NOT be imported in client components.
+ * For client components, use @/lib/categories-constants for constants only.
  */
 
+import 'server-only';
 import { db } from "@/db";
 import { 
   categories, 
