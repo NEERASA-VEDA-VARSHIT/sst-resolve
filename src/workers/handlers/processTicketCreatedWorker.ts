@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { categories, tickets, users } from "@/db/schema";
+import { categories, tickets, users, ticket_statuses } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getTicketCreatedEmail, sendEmail } from "@/lib/email";
 import { postToSlackChannel } from "@/lib/slack";
@@ -20,7 +20,7 @@ type TicketRecord = {
   legacyCategory: string | null;
   legacySubcategory: string | null;
   createdBy: string | null;
-  status: string;
+  statusId: number | null;
 };
 
 type UserRecord = {
@@ -107,9 +107,11 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
         legacyCategory: tickets.category,
         legacySubcategory: tickets.subcategory,
         createdBy: tickets.created_by,
-        status: tickets.status,
+        statusId: tickets.status_id,
+        statusValue: ticket_statuses.value,
       })
       .from(tickets)
+      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
       .where(eq(tickets.id, ticketId))
       .limit(1);
 
@@ -126,8 +128,10 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
       legacyCategory: ticketRow.legacyCategory,
       legacySubcategory: ticketRow.legacySubcategory,
       createdBy: ticketRow.createdBy,
-      status: ticketRow.status,
+      statusId: ticketRow.statusId,
     };
+    
+    const ticketStatusValue = ticketRow.statusValue || "open";
 
     let categoryName = payload.category || ticket.legacyCategory || "General";
     if (ticket.categoryId) {
@@ -356,7 +360,7 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
         creator?.name ? `User: ${creator.name}` : undefined,
         contactLines.length ? `Contact: ${contactLines.join(" | ")}` : undefined,
         ticket.description ? `Description: ${ticket.description}` : undefined,
-        `Status: ${formatStatus(ticket.status)}`,
+        `Status: ${formatStatus(ticketStatusValue)}`,
       ]
         .filter(Boolean)
         .join("\n");
@@ -480,4 +484,3 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
     throw error;
   }
 }
-

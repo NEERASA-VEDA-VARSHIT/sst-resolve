@@ -14,15 +14,36 @@ import { getUserRoleFromDB } from "@/lib/db-roles";
  */
 export async function GET(request: NextRequest) {
 	try {
-		const { searchParams } = new URL(request.url);
-		const userId = searchParams.get("userId");
+		let userId: string | null = null;
+		
+		try {
+			const { searchParams } = new URL(request.url);
+			userId = searchParams.get("userId");
+		} catch (urlError) {
+			console.error("[Auth Role] Error parsing URL:", urlError);
+			return NextResponse.json(
+				{ role: "student" },
+				{
+					status: 200,
+					headers: {
+						"Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+					},
+				}
+			);
+		}
 
 		if (!userId) {
 			return NextResponse.json({ error: "userId required" }, { status: 400 });
 		}
 
 		// Fetch role from database (single source of truth)
-		const role = await getUserRoleFromDB(userId);
+		let role: string = "student";
+		try {
+			role = await getUserRoleFromDB(userId);
+		} catch (dbError) {
+			console.error("[Auth Role] Error fetching role from DB:", dbError);
+			// Continue with default "student" role
+		}
 
 		return NextResponse.json(
 			{ role },
@@ -37,7 +58,8 @@ export async function GET(request: NextRequest) {
 			}
 		);
 	} catch (error) {
-		console.error("Error fetching role for middleware:", error);
+		console.error("[Auth Role] Unexpected error:", error);
+		console.error("[Auth Role] Error stack:", error instanceof Error ? error.stack : "No stack trace");
 		// Return default role on error to prevent blocking
 		return NextResponse.json(
 			{ role: "student" },
