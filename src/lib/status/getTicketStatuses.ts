@@ -1,19 +1,12 @@
+import 'server-only';
 import { db } from "@/db";
 import { ticket_statuses, tickets } from "@/db/schema";
 import { asc, eq, sql } from "drizzle-orm";
 import { unstable_cache } from "next/cache";
+import type { TicketStatus } from "./types";
 
-export interface TicketStatus {
-    id: number;
-    value: string;
-    label: string;
-    description: string | null;
-    progress_percent: number;
-    badge_color: string | null;
-    is_active: boolean;
-    is_final: boolean;
-    display_order: number;
-}
+// Re-export the type for convenience
+export type { TicketStatus } from "./types";
 
 /**
  * Fetch all active ticket statuses from the database, ordered by display_order

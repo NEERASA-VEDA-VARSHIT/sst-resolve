@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import type { TicketStatus } from "@/lib/status/getTicketStatuses";
+import type { TicketStatus } from "@/lib/status/types";
 
 // Dynamic import to avoid Radix hydration mismatch issues
 const TicketSearch = dynamic(

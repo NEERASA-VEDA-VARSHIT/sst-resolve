@@ -14,7 +14,7 @@ import {
 import { Search, X, Filter, ArrowUpDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import type { TicketStatus } from "@/lib/status/getTicketStatuses";
+import type { TicketStatus } from "@/lib/status/types";
 
 interface CategoryOption {
   value: string;
