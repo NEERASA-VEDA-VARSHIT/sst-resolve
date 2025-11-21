@@ -220,7 +220,14 @@ export async function GET(request: NextRequest) {
   }
 }
 
-function renderTATReminderEmail(tickets: any[], adminName: string): string {
+interface TATReminderTicket {
+  id: number;
+  title?: string | null;
+  category?: { name?: string | null } | null;
+  due_at?: Date | string | null;
+  resolution_due_at?: Date | string | null;
+}
+function renderTATReminderEmail(tickets: TATReminderTicket[], adminName: string): string {
   const ticketList = tickets
     .map(
       (t) => `
@@ -228,7 +235,7 @@ function renderTATReminderEmail(tickets: any[], adminName: string): string {
         <strong>Ticket #${t.id}</strong><br>
         ${t.title || "No title"}<br>
         <span class="category">Category: ${t.category?.name || "Unknown"}</span><br>
-        <span class="due">Due: ${new Date(t.due_at || t.resolution_due_at).toLocaleString()}</span>
+        <span class="due">Due: ${(t.due_at || t.resolution_due_at ? new Date(t.due_at || t.resolution_due_at || '').toLocaleString() : 'N/A')}</span>
       </div>
     `
     )
@@ -301,9 +308,14 @@ function renderTATReminderEmail(tickets: any[], adminName: string): string {
   `;
 }
 
-function formatSlackTATReminder(tickets: any[], categoryName: string): string {
+interface SlackTATReminderTicket {
+  id: number;
+  title?: string | null;
+  assigned_admin?: { full_name?: string | null } | null;
+}
+function formatSlackTATReminder(tickets: SlackTATReminderTicket[], categoryName: string): string {
   // Group by Admin Name
-  const ticketsByAdmin = tickets.reduce((acc: any, ticket: any) => {
+  const ticketsByAdmin = tickets.reduce((acc: Record<string, SlackTATReminderTicket[]>, ticket: SlackTATReminderTicket) => {
     const adminName = ticket.assigned_admin?.full_name || "Unassigned";
     if (!acc[adminName]) acc[adminName] = [];
     acc[adminName].push(ticket);
@@ -323,8 +335,7 @@ function formatSlackTATReminder(tickets: any[], categoryName: string): string {
 
   for (const [adminName, adminTickets] of Object.entries(ticketsByAdmin)) {
     message += `\n👤 *${adminName}*\n`;
-    // @ts-expect-error - adminTickets type needs proper typing
-    adminTickets.forEach((t: any) => {
+    adminTickets.forEach((t: SlackTATReminderTicket) => {
       const ticketUrl = `${baseUrl}/admin/dashboard/ticket/${t.id}`;
       message += ` • <${ticketUrl}|#${t.id}> - ${t.title || "No title"}\n`;
     });

@@ -68,10 +68,11 @@ export async function PATCH(
             },
             { status: 200 }
         );
-    } catch (error: any) {
+    } catch (error) {
         console.error("Update user role error:", error);
+        const errorMessage = error instanceof Error ? error.message : "Failed to update user role";
         return NextResponse.json(
-            { error: error.message || "Failed to update user role" },
+            { error: errorMessage },
             { status: 500 }
         );
     }

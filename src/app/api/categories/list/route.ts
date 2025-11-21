@@ -4,7 +4,7 @@ import { categories } from "@/db/schema";
 import { eq, asc, desc } from "drizzle-orm";
 
 // GET: Fetch all active categories (for ticket creation dropdown)
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const allCategories = await db
       .select({

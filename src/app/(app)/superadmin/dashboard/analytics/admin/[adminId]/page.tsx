@@ -123,7 +123,7 @@ export default async function AdminDetailPage({
     student_link: string | null;
     slack_thread_id: string | null;
     external_ref: string | null;
-    metadata: any;
+    metadata: unknown;
     created_at: Date;
     updated_at: Date;
     resolved_at: Date | null;
@@ -248,7 +248,7 @@ export default async function AdminDetailPage({
 
   // In Progress tickets (status = IN_PROGRESS or AWAITING_STUDENT)
   const inProgressTickets = allTickets.filter(t => {
-    const statusStr = typeof t.status === 'string' ? t.status : (t.status as any)?.value || null;
+    const statusStr = typeof t.status === 'string' ? t.status : (t.status && typeof t.status === 'object' && t.status !== null && 'value' in t.status ? (t.status as { value?: string }).value : null) || null;
     const normalizedStatus = normalizeStatusForComparison(statusStr);
     return normalizedStatus === "in_progress" || normalizedStatus === "awaiting_student_response" || normalizedStatus === "awaiting_student";
   });
@@ -322,9 +322,9 @@ export default async function AdminDetailPage({
   const categoryBreakdown: Record<string, { total: number; open: number; inProgress: number; resolved: number }> = {};
   allTickets.forEach(t => {
     // Use metadata.subcategory if available, otherwise category_name
-    const metadata = t.metadata as any;
-    const subcategory = metadata?.subcategory;
-    const catName = subcategory || t.category_name || "Uncategorized";
+    const metadata = t.metadata && typeof t.metadata === 'object' && t.metadata !== null ? t.metadata as Record<string, unknown> : null;
+    const subcategory = metadata && typeof metadata.subcategory === 'string' ? metadata.subcategory : undefined;
+    const catName = (subcategory || t.category_name || "Uncategorized") as string;
 
     if (!categoryBreakdown[catName]) {
       categoryBreakdown[catName] = { total: 0, open: 0, inProgress: 0, resolved: 0 };

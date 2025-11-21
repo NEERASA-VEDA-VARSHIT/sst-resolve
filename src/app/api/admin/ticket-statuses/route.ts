@@ -2,13 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { ticket_statuses } from "@/db/schema";
-import { eq, asc, max, sql } from "drizzle-orm";
+import { eq, asc, max } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/db-roles";
-import { getOrCreateUser } from "@/lib/user-sync";
 import { revalidateTag } from "next/cache";
 
 // GET /api/admin/ticket-statuses - Fetch all statuses (including inactive)
-export async function GET(request: NextRequest) {
+export async function GET() {
     try {
         const { userId } = await auth();
         if (!userId) {

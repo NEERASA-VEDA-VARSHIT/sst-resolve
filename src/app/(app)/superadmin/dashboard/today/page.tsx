@@ -2,6 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { db, tickets, ticket_statuses } from "@/db";
 import { desc, eq } from "drizzle-orm";
+import type { TicketMetadata } from "@/db/types";
 import { TicketCard } from "@/components/layout/TicketCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Calendar, AlertTriangle, CheckCircle2, ArrowLeft } from "lucide-react";
@@ -85,8 +86,8 @@ export default async function SuperAdminTodayPendingPage() {
     if (!hasPendingStatus) return false;
     
     // Use authoritative resolution_due_at field first, fallback to metadata
-    const metadata = (t.metadata as any) || {};
-    const tatDate = t.resolution_due_at || (metadata?.tatDate ? new Date(metadata.tatDate) : null);
+    const metadata = (t.metadata as TicketMetadata) || {};
+    const tatDate = t.resolution_due_at || (metadata?.tatDate && typeof metadata.tatDate === 'string' ? new Date(metadata.tatDate) : null);
     
     if (!tatDate || isNaN(tatDate.getTime())) return false;
     
@@ -113,8 +114,8 @@ export default async function SuperAdminTodayPendingPage() {
     }
     
     // Use authoritative resolution_due_at field first, fallback to metadata
-    const metadata = (t.metadata as any) || {};
-    const tatDate = t.resolution_due_at || (metadata?.tatDate ? new Date(metadata.tatDate) : null);
+    const metadata = (t.metadata as TicketMetadata) || {};
+    const tatDate = t.resolution_due_at || (metadata?.tatDate && typeof metadata.tatDate === 'string' ? new Date(metadata.tatDate) : null);
     
     if (!tatDate || isNaN(tatDate.getTime())) return false;
     
@@ -200,7 +201,11 @@ export default async function SuperAdminTodayPendingPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {todayPending.map((t) => (
               <div key={t.id} className={overdueTodayIds.has(t.id) ? "ring-2 ring-orange-400 dark:ring-orange-500 rounded-lg" : ""}>
-                <TicketCard ticket={t as any} basePath="/superadmin/dashboard" />
+                <TicketCard ticket={{
+                  ...t,
+                  status: t.status_value || null,
+                  category_name: null,
+                }} basePath="/superadmin/dashboard" />
               </div>
             ))}
           </div>

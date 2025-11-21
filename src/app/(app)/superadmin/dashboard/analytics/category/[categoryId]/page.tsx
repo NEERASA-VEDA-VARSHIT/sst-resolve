@@ -525,9 +525,52 @@ export default async function CategoryAnalyticsDetailPage({
             <p className="text-muted-foreground text-center py-8">No tickets found for this category yet.</p>
           ) : (
             <div className="space-y-4">
-              {allTickets.map((ticket) => (
-                <TicketCard key={ticket.id} ticket={ticket as any} basePath="/superadmin/dashboard" />
-              ))}
+              {allTickets.map((ticket) => {
+                // Map to full Ticket type with required fields
+                const ticketForCard = {
+                  id: ticket.id,
+                  title: null,
+                  description: ticket.description,
+                  location: ticket.location,
+                  status_id: 0, // Will be set from status_value if needed
+                  category_id: ticket.category_id,
+                  subcategory_id: null,
+                  sub_subcategory_id: null,
+                  created_by: ticket.created_by,
+                  assigned_to: ticket.assigned_to,
+                  acknowledged_by: null,
+                  group_id: null,
+                  escalation_level: ticket.escalation_level,
+                  tat_extended_count: 0,
+                  last_escalation_at: null,
+                  acknowledgement_tat_hours: null,
+                  resolution_tat_hours: null,
+                  acknowledgement_due_at: null,
+                  resolution_due_at: ticket.due_at,
+                  acknowledged_at: null,
+                  reopened_at: null,
+                  sla_breached_at: null,
+                  reopen_count: 0,
+                  rating: ticket.rating,
+                  feedback_type: null,
+                  rating_submitted: null,
+                  feedback: null,
+                  is_public: false,
+                  admin_link: null,
+                  student_link: null,
+                  slack_thread_id: null,
+                  external_ref: null,
+                  metadata: ticket.metadata,
+                  created_at: ticket.created_at,
+                  updated_at: ticket.updated_at,
+                  resolved_at: ticket.resolved_at,
+                  status: ticket.status || null,
+                  category_name: ticket.category_name || null,
+                };
+                return (
+                  <TicketCard key={ticket.id} ticket={ticketForCard} basePath="/superadmin/dashboard" />
+                );
+              })}
             </div>
           )}
         </CardContent>

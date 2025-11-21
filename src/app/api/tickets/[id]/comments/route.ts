@@ -6,6 +6,7 @@ import { AddCommentSchema } from "@/schema/ticket.schema";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
 import { auth } from "@clerk/nextjs/server";
+import type { TicketMetadata } from "@/db/types";
 
 /**
  * ============================================
@@ -80,16 +81,16 @@ export async function GET(
       if (!localId || ticket.created_by !== localId)
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-      const metadata = (ticket.metadata as any) || {};
+      const metadata = (ticket.metadata as TicketMetadata & { comments?: Array<Record<string, unknown>> }) || {};
       const comments = (metadata.comments || []).filter(
-        (c: any) => !c.isInternal
+        (c: Record<string, unknown>) => !c.isInternal
       );
 
       return NextResponse.json(comments, { status: 200 });
     }
 
     // Committee / Staff / Admin / Superadmin → all comments
-    const metadata = (ticket.metadata as any) || {};
+    const metadata = (ticket.metadata as TicketMetadata & { comments?: Array<Record<string, unknown>> }) || {};
     const comments = metadata.comments || [];
 
     return NextResponse.json(comments, { status: 200 });
@@ -206,7 +207,7 @@ export async function POST(
         .where(eq(tickets.id, ticketId))
         .limit(1);
 
-      const metadata: any = freshTicket?.metadata || {};
+      const metadata = (freshTicket?.metadata as TicketMetadata & { comments?: Array<Record<string, unknown>> }) || {};
       if (!Array.isArray(metadata.comments)) metadata.comments = [];
       metadata.comments.push(commentObj);
 

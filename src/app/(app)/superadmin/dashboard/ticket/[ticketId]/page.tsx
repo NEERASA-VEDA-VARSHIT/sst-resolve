@@ -14,6 +14,7 @@ import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
 import { normalizeStatusForComparison } from "@/lib/utils";
 import { TicketStatusBadge } from "@/components/tickets/TicketStatusBadge";
+import type { TicketMetadata } from "@/db/types";
 
 // Force dynamic rendering for real-time ticket data
 export const dynamic = "force-dynamic";
@@ -98,12 +99,17 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
     }));
 
   // Parse metadata (JSONB) with error handling
-  let metadata: any = {};
+  type TicketMetadataWithExtras = TicketMetadata & {
+    subcategory?: string;
+    comments?: Array<Record<string, unknown>>;
+    images?: string[];
+  };
+  let metadata: TicketMetadataWithExtras = {};
   let subcategory: string | null = null;
-  let comments: any[] = [];
+  let comments: Array<Record<string, unknown>> = [];
 
   try {
-    metadata = (ticket.metadata as any) || {};
+    metadata = (ticket.metadata as TicketMetadataWithExtras) || {};
     subcategory = metadata?.subcategory || null;
     comments = Array.isArray(metadata?.comments) ? metadata.comments : [];
   } catch (error) {
@@ -221,7 +227,7 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
                   </div>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                     {metadata.images
-                      .filter((imageUrl: any): imageUrl is string => typeof imageUrl === 'string' && imageUrl.trim().length > 0)
+                      .filter((imageUrl: unknown): imageUrl is string => typeof imageUrl === 'string' && imageUrl.trim().length > 0)
                       .map((imageUrl: string, index: number) => (
                         <a
                           key={index}
@@ -263,17 +269,19 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
             <CardContent className="space-y-4">
               {comments.length > 0 ? (
                 <div className="space-y-3">
-                  {comments.map((comment: any, idx: number) => {
+                  {comments.map((comment: Record<string, unknown>, idx: number) => {
                     if (!comment || typeof comment !== 'object') return null;
                     const isInternal = comment.isInternal || comment.type === "internal_note" || comment.type === "super_admin_note";
-                    const commentText = comment.text || comment.message || '';
-                    const commentAuthor = comment.author || comment.created_by || 'Unknown';
+                    const commentText = typeof comment.text === 'string' ? comment.text : typeof comment.message === 'string' ? comment.message : '';
+                    const commentAuthor = typeof comment.author === 'string' ? comment.author : typeof comment.created_by === 'string' ? comment.created_by : 'Unknown';
                     let commentDate: Date | null = null;
 
                     try {
                       if (comment.createdAt) {
-                        commentDate = new Date(comment.createdAt);
-                        if (isNaN(commentDate.getTime())) commentDate = null;
+                        if (typeof comment.createdAt === 'string' || comment.createdAt instanceof Date) {
+                          commentDate = new Date(comment.createdAt);
+                          if (isNaN(commentDate.getTime())) commentDate = null;
+                        }
                       }
                     } catch {
                       commentDate = null;

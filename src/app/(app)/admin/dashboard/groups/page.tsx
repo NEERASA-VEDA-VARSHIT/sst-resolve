@@ -1,7 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
-import { tickets, users, roles, domains, scopes } from "@/db/schema";
+import { tickets, users, domains, scopes } from "@/db/schema";
 import { desc, eq, or, and, isNull } from "drizzle-orm";
 import { TicketGrouping } from "@/components/admin/TicketGrouping";
 import { SelectableTicketList } from "@/components/admin/SelectableTicketList";

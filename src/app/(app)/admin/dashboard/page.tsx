@@ -1,16 +1,17 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { db, tickets, users, categories, ticket_statuses, domains } from "@/db";
-import { desc, eq, or, isNull, inArray, aliasedTable } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
+import type { TicketMetadata } from "@/db/types";
 import { TicketCard } from "@/components/layout/TicketCard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import Link from "next/link";
 import { clerkClient } from "@clerk/nextjs/server";
 import { AdminTicketFilters } from "@/components/admin/AdminTicketFilters";
 import { StatsCards } from "@/components/dashboard/StatsCards";
 import { Button } from "@/components/ui/button";
-import { FileText, Clock, CheckCircle2, AlertCircle, TrendingUp, Calendar, Users } from "lucide-react";
+import { FileText, AlertCircle, TrendingUp, Calendar } from "lucide-react";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
 import { isAdminLevel } from "@/conf/constants";
@@ -109,7 +110,19 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
   // Transform to match TicketCard expected format
   // We need to fetch the full ticket data to satisfy TicketCard type requirements
   const ticketIds = ticketRows.map(t => t.id);
-  let allTickets: any[] = [];
+  type TicketWithExtras = typeof tickets.$inferSelect & {
+    status_value?: string | null;
+    status_label?: string | null;
+    status_badge_color?: string | null;
+    category_name?: string | null;
+    creator_first_name?: string | null;
+    creator_last_name?: string | null;
+    creator_email?: string | null;
+    status?: string | null;
+    creator_name?: string | null;
+    due_at?: Date | null;
+  };
+  let allTickets: TicketWithExtras[] = [];
   
   if (ticketIds.length > 0) {
     const fullTicketRows = await db
@@ -121,25 +134,33 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
     const fullTicketMap = new Map(fullTicketRows.map(t => [t.id, t]));
     
     // Merge the full ticket data with the joined data
-    allTickets = ticketRows.map(ticket => {
-      const fullTicket = fullTicketMap.get(ticket.id);
-      return {
-        ...fullTicket, // This includes all required Ticket fields
-        // Override with joined data
-        status_id: ticket.status_id,
-        status_value: ticket.status_value,
-        status_label: ticket.status_label,
-        status_badge_color: ticket.status_badge_color,
-        category_name: ticket.category_name,
-        creator_first_name: ticket.creator_first_name,
-        creator_last_name: ticket.creator_last_name,
-        creator_email: ticket.creator_email,
-        // Additional fields for TicketCard
-        status: ticket.status_value || null,
-        creator_name: [ticket.creator_first_name, ticket.creator_last_name].filter(Boolean).join(' ').trim() || null,
-        due_at: ticket.resolution_due_at,
-      };
-    });
+    const mappedTickets = ticketRows
+      .map(ticket => {
+        const fullTicket = fullTicketMap.get(ticket.id);
+        if (!fullTicket) {
+          // If full ticket not found, skip this ticket
+          return null;
+        }
+        return {
+          ...fullTicket, // This includes all required Ticket fields
+          // Override with joined data
+          status_id: ticket.status_id,
+          status_value: ticket.status_value,
+          status_label: ticket.status_label,
+          status_badge_color: ticket.status_badge_color,
+          category_name: ticket.category_name,
+          creator_first_name: ticket.creator_first_name,
+          creator_last_name: ticket.creator_last_name,
+          creator_email: ticket.creator_email,
+          // Additional fields for TicketCard
+          status: ticket.status_value || null,
+          creator_name: [ticket.creator_first_name, ticket.creator_last_name].filter(Boolean).join(' ').trim() || null,
+          due_at: ticket.resolution_due_at,
+        } as TicketWithExtras;
+      })
+      .filter((t): t is TicketWithExtras => t !== null);
+    
+    allTickets = mappedTickets;
   }
 
   // Get category names and domains for all tickets (for filtering logic)
@@ -220,7 +241,7 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
       const idMatch = t.id.toString().includes(query);
       const descMatch = (t.description || "").toLowerCase().includes(query);
       // Get subcategory from metadata
-      const metadata = (t.metadata as any) || {};
+      const metadata = (t.metadata as TicketMetadata & { subcategory?: string }) || {};
       const subcatName = metadata.subcategory || "";
       const subcatMatch = subcatName.toLowerCase().includes(query);
       return idMatch || descMatch || subcatMatch;
@@ -239,7 +260,7 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
   // Subcategory filter
   if (subcategory) {
     allTickets = allTickets.filter(t => {
-      const metadata = (t.metadata as any) || {};
+      const metadata = (t.metadata as TicketMetadata & { subcategory?: string }) || {};
       const subcatName = metadata.subcategory || "";
       return subcatName.toLowerCase().includes(subcategory.toLowerCase());
     });
@@ -280,7 +301,7 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
   // User filter
   if (user) {
     allTickets = allTickets.filter(t => {
-      const metadata = (t.metadata as any) || {};
+      const metadata = (t.metadata as TicketMetadata & { userEmail?: string; userName?: string }) || {};
       const userInfo = metadata.userEmail || metadata.userName || "";
       return userInfo.toLowerCase().includes(user.toLowerCase());
     });
@@ -307,8 +328,8 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
     endOfToday.setHours(23, 59, 59, 999);
     allTickets = allTickets.filter(t => {
       // Use metadata.tatDate for TAT filtering
-      const metadata = (t.metadata as any) || {};
-      const metadataTatDate = metadata.tatDate ? new Date(metadata.tatDate) : null;
+      const metadata = (t.metadata as TicketMetadata) || {};
+      const metadataTatDate = metadata.tatDate && typeof metadata.tatDate === 'string' ? new Date(metadata.tatDate) : null;
       const tatDate = metadataTatDate;
       const hasTat = !!tatDate && !isNaN(tatDate.getTime());
 
@@ -330,15 +351,16 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
 
   const client = await clerkClient();
   const userList = await client.users.getUserList();
-  const clerkUsers = userList.data.map(user => ({
+  // Clerk users list for future use
+  userList.data.map(user => ({
     id: String(user.id || ''),
     firstName: user.firstName || null,
     lastName: user.lastName || null,
     emailAddresses: Array.isArray(user.emailAddresses)
-      ? user.emailAddresses.map((email: any) => ({ emailAddress: typeof email?.emailAddress === 'string' ? email.emailAddress : '' }))
+      ? user.emailAddresses.map((email: { emailAddress?: string }) => ({ emailAddress: typeof email?.emailAddress === 'string' ? email.emailAddress : '' }))
       : [],
     publicMetadata: user.publicMetadata && typeof user.publicMetadata === 'object'
-      ? { role: (user.publicMetadata as any)?.role || undefined }
+      ? { role: (user.publicMetadata as Record<string, unknown>)?.role as string | undefined || undefined }
       : { role: undefined },
   }));
 
@@ -364,8 +386,8 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
     const isNotResolved = (t.status?.toUpperCase() || "") !== "RESOLVED";
     if (!isNotResolved) return false;
     // Use metadata.tatDate for TAT
-    const metadata = (t.metadata as any) || {};
-    const metadataTatDate = metadata.tatDate ? new Date(metadata.tatDate) : null;
+    const metadata = (t.metadata as TicketMetadata) || {};
+    const metadataTatDate = metadata.tatDate && typeof metadata.tatDate === 'string' ? new Date(metadata.tatDate) : null;
     const tatDate = metadataTatDate;
     if (!tatDate || isNaN(tatDate.getTime())) return false;
     return tatDate.getTime() >= startOfToday.getTime() && tatDate.getTime() <= endOfToday.getTime();

@@ -7,7 +7,7 @@ import { getUserRoleFromDB } from "@/lib/db-roles";
 import { fastAuthCheck, isAuthError } from "@/lib/fast-auth";
 
 // GET - Get all committees (for admin tagging dropdown)
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     // Fast auth check (skips user sync for read operation)
     const authResult = await fastAuthCheck(["admin", "super_admin", "committee"]);

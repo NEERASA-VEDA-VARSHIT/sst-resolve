@@ -1,7 +1,8 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { db, tickets, categories, users, roles, ticket_statuses } from "@/db";
-import { desc, eq, and, isNull, or, sql, count } from "drizzle-orm";
+import { db, tickets, categories, users, ticket_statuses } from "@/db";
+import { desc, eq, isNull, or, sql, count } from "drizzle-orm";
+import type { TicketMetadata } from "@/db/types";
 import { alias } from "drizzle-orm/pg-core";
 import { TicketCard } from "@/components/layout/TicketCard";
 import { Card, CardContent } from "@/components/ui/card";
@@ -63,7 +64,55 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
 
   // Get total count of tickets matching the conditions (for pagination)
   let totalCount = 0;
-  let ticketRows: any[] = [];
+  type TicketRowRaw = {
+    id: number;
+    title: string | null;
+    description: string | null;
+    location: string | null;
+    status_id: number;
+    status: string | null;
+    category_id: number | null;
+    subcategory_id: number | null;
+    sub_subcategory_id: number | null;
+    created_by: string;
+    assigned_to: string | null;
+    acknowledged_by: string | null;
+    group_id: number | null;
+    escalation_level: number;
+    tat_extended_count: number;
+    last_escalation_at: Date | null;
+    acknowledgement_tat_hours: number | null;
+    resolution_tat_hours: number | null;
+    acknowledgement_due_at: Date | null;
+    resolution_due_at: Date | null;
+    acknowledged_at: Date | null;
+    reopened_at: Date | null;
+    sla_breached_at: Date | null;
+    reopen_count: number;
+    rating: number | null;
+    feedback_type: string | null;
+    rating_submitted: Date | null;
+    feedback: string | null;
+    is_public: boolean;
+    admin_link: string | null;
+    student_link: string | null;
+    slack_thread_id: string | null;
+    external_ref: string | null;
+    metadata: unknown;
+    created_at: Date;
+    updated_at: Date;
+    resolved_at: Date | null;
+    category_name: string | null;
+    creator_first_name: string | null;
+    creator_last_name: string | null;
+    creator_email: string | null;
+  };
+  type TicketRow = TicketRowRaw & {
+    creator_name: string | null;
+    assigned_staff_name?: string | null;
+    assigned_staff_email?: string | null;
+  };
+  let ticketRows: TicketRow[] = [];
   try {
     const [totalResult] = await db
       .select({ count: count() })
@@ -74,7 +123,7 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
 
     // Fetch tickets with joins for category and creator info
     // Note: We'll fetch assigned admin info separately to avoid alias issues
-    ticketRows = await db
+    const ticketRowsRaw: TicketRowRaw[] = await db
       .select({
         // All ticket columns explicitly
         id: tickets.id,
@@ -130,8 +179,14 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
       .offset(offsetValue);
 
     // Fetch assigned admin info separately for tickets that have an assigned_to
-    const assignedToIds = [...new Set(ticketRows.map(t => t.assigned_to).filter(Boolean))];
-    let assignedAdmins: Record<string, any> = {};
+    const assignedToIds = [...new Set(ticketRowsRaw.map(t => t.assigned_to).filter(Boolean))];
+    type AdminInfo = {
+      id: string;
+      first_name: string | null;
+      last_name: string | null;
+      email: string | null;
+    };
+    let assignedAdmins: Record<string, AdminInfo> = {};
 
     if (assignedToIds.length > 0) {
       const admins = await db
@@ -148,6 +203,7 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
         admins.map(admin => [
           admin.id,
           {
+            id: admin.id,
             first_name: admin.first_name || null,
             last_name: admin.last_name || null,
             email: admin.email
@@ -157,7 +213,7 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
     }
 
     // Add assigned admin info to ticket rows
-    ticketRows = ticketRows.map(row => ({
+    ticketRows = ticketRowsRaw.map(row => ({
       ...row,
       creator_name: [row.creator_first_name, row.creator_last_name].filter(Boolean).join(" ").trim() || null,
       assigned_staff_name: row.assigned_to ? [assignedAdmins[row.assigned_to]?.first_name, assignedAdmins[row.assigned_to]?.last_name].filter(Boolean).join(" ").trim() : null,
@@ -203,8 +259,8 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
     const endOfToday = new Date(now);
     endOfToday.setHours(23, 59, 59, 999);
     filteredTickets = filteredTickets.filter(t => {
-      const metadata = (t.metadata as any) || {};
-      const tatDate = t.resolution_due_at || (metadata?.tatDate ? new Date(metadata.tatDate) : null);
+      const metadata = (t.metadata as TicketMetadata) || {};
+      const tatDate = t.resolution_due_at || (metadata?.tatDate && typeof metadata.tatDate === 'string' ? new Date(metadata.tatDate) : null);
       const hasTat = !!tatDate;
 
       if (tat === "has") return hasTat;
@@ -297,8 +353,8 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
   const todayPending = allTickets.filter(t => {
     const normalized = normalizeStatusForComparison(t.status);
     if (!["open", "in_progress", "awaiting_student_response", "reopened"].includes(normalized)) return false;
-    const metadata = (t.metadata as any) || {};
-    const tatDate = t.resolution_due_at || (metadata?.tatDate ? new Date(metadata.tatDate) : null);
+    const metadata = (t.metadata as TicketMetadata) || {};
+    const tatDate = t.resolution_due_at || (metadata?.tatDate && typeof metadata.tatDate === 'string' ? new Date(metadata.tatDate) : null);
     if (!tatDate) return false;
     return tatDate.getTime() >= startOfToday.getTime() && tatDate.getTime() <= endOfToday.getTime();
   }).length;
@@ -438,7 +494,11 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
             <>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 {allTickets.map((ticket) => (
-                  <TicketCard key={ticket.id} ticket={ticket} basePath="/superadmin/dashboard" />
+                  <TicketCard key={ticket.id} ticket={{
+                    ...ticket,
+                    created_at: ticket.created_at || new Date(),
+                    updated_at: ticket.updated_at || new Date(),
+                  }} basePath="/superadmin/dashboard" />
                 ))}
               </div>
 

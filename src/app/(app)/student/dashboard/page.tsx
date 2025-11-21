@@ -133,7 +133,7 @@ export default async function StudentDashboardPage({
   // -----------------------------
   // 4. SQL Sorting
   // -----------------------------
-  let orderBy: any;
+  let orderBy: ReturnType<typeof desc> | ReturnType<typeof asc> | undefined;
 
   switch (sortBy) {
     case "oldest":
@@ -164,23 +164,45 @@ export default async function StudentDashboardPage({
   // -----------------------------
   // 5. Fetch Filtered Tickets
   // -----------------------------
-  const allTickets = await db
+  const allTicketsRaw = await db
     .select({
       id: tickets.id,
+      title: tickets.title,
       description: tickets.description,
-      status: ticket_statuses.value,
       location: tickets.location,
-      created_by: tickets.created_by,
+      status_id: tickets.status_id,
       category_id: tickets.category_id,
+      subcategory_id: tickets.subcategory_id,
+      sub_subcategory_id: tickets.sub_subcategory_id,
+      created_by: tickets.created_by,
+      assigned_to: tickets.assigned_to,
+      acknowledged_by: tickets.acknowledged_by,
+      group_id: tickets.group_id,
+      escalation_level: tickets.escalation_level,
+      tat_extended_count: tickets.tat_extended_count,
+      last_escalation_at: tickets.last_escalation_at,
+      acknowledgement_tat_hours: tickets.acknowledgement_tat_hours,
+      resolution_tat_hours: tickets.resolution_tat_hours,
+      acknowledgement_due_at: tickets.acknowledgement_due_at,
+      resolution_due_at: tickets.resolution_due_at,
+      acknowledged_at: tickets.acknowledged_at,
+      reopened_at: tickets.reopened_at,
+      sla_breached_at: tickets.sla_breached_at,
+      reopen_count: tickets.reopen_count,
+      rating: tickets.rating,
+      feedback_type: tickets.feedback_type,
+      rating_submitted: tickets.rating_submitted,
+      feedback: tickets.feedback,
+      is_public: tickets.is_public,
+      admin_link: tickets.admin_link,
+      student_link: tickets.student_link,
+      slack_thread_id: tickets.slack_thread_id,
+      external_ref: tickets.external_ref,
+      metadata: tickets.metadata,
       created_at: tickets.created_at,
       updated_at: tickets.updated_at,
-      due_at: tickets.resolution_due_at,
-      escalation_level: tickets.escalation_level,
-      metadata: tickets.metadata,
       resolved_at: tickets.resolved_at,
-      rating: tickets.rating,
-      feedback: tickets.feedback,
-
+      status: ticket_statuses.value,
       category_name: categories.name,
       creator_first_name: users.first_name,
       creator_last_name: users.last_name,
@@ -192,6 +214,12 @@ export default async function StudentDashboardPage({
     .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
     .where(and(...conditions))
     .orderBy(orderBy);
+  
+  // Map to TicketCard format
+  const allTickets = allTicketsRaw.map(ticket => ({
+    ...ticket,
+    creator_name: [ticket.creator_first_name, ticket.creator_last_name].filter(Boolean).join(' ').trim() || null,
+  }));
 
   // -----------------------------
   // 6. Stats Query (Optimized) - using status_id joins
@@ -286,10 +314,7 @@ export default async function StudentDashboardPage({
           {allTickets.map((ticket) => (
             <TicketCard 
               key={ticket.id} 
-              ticket={{
-                ...ticket,
-                creator_name: [ticket.creator_first_name, ticket.creator_last_name].filter(Boolean).join(' ').trim() || null,
-              } as any} 
+              ticket={ticket} 
             />
           ))}
         </div>

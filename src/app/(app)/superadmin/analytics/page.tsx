@@ -208,6 +208,15 @@ export default async function SuperAdminAnalyticsPage() {
         };
 
         // === CATEGORY ANALYSIS ===
+        type CategoryStat = {
+            name: string;
+            total: number;
+            resolved: number;
+            pending: number;
+            escalated: number;
+            avgRating: number;
+            ratedCount: number;
+        };
         const categoryStats = Object.values(
             allTickets.reduce((acc, ticket) => {
                 const categoryName = ticket.category_name || "Uncategorized";
@@ -236,7 +245,7 @@ export default async function SuperAdminAnalyticsPage() {
                     acc[categoryName].ratedCount++;
                 }
                 return acc;
-            }, {} as Record<string, any>)
+            }, {} as Record<string, CategoryStat>)
         ).map(cat => ({
             ...cat,
             avgRating: cat.ratedCount > 0 ? cat.avgRating / cat.ratedCount : 0,
@@ -517,7 +526,7 @@ export default async function SuperAdminAnalyticsPage() {
                                         return (
                                             <div key={status.id} className="flex items-center justify-between p-3 border rounded-lg">
                                                 <div className="flex items-center gap-3">
-                                                    <Badge variant={status.badge_color as any || "default"}>
+                                                    <Badge variant={(status.badge_color as "default" | "secondary" | "destructive" | "outline") || "default"}>
                                                         {status.label}
                                                     </Badge>
                                                     <div>

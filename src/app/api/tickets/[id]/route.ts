@@ -7,6 +7,7 @@ import { postThreadReply } from "@/lib/slack";
 import { TICKET_STATUS } from "@/conf/constants";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
+import type { TicketMetadata } from "@/db/types";
 // Removed: statusToEnum - status values are already in correct format from database
 
 /** Utility: Ensure user owns the ticket */
@@ -294,7 +295,7 @@ export async function PATCH(
       }
 
       // Parse metadata (JSONB) for comments
-      const metadata = (ticket.metadata as any) || {};
+      const metadata = (ticket.metadata as TicketMetadata) || {};
       if (!metadata.comments) {
         metadata.comments = [];
       }
@@ -350,7 +351,7 @@ export async function PATCH(
       let originalMessageId: string | undefined;
       let originalSubject: string | undefined;
       try {
-        const metadata = (ticket.metadata as any) || {};
+        const metadata = (ticket.metadata as TicketMetadata) || {};
         originalMessageId = metadata.originalEmailMessageId;
         originalSubject = metadata.originalEmailSubject;
         if (originalMessageId) {
@@ -380,7 +381,7 @@ export async function PATCH(
       }
 
       // Assign ticket to admin when they change status (if admin)
-      const updateData: any = { status_id: statusRow.id, updated_at: new Date() };
+      const updateData: Partial<typeof tickets.$inferInsert> = { status_id: statusRow.id, updated_at: new Date() };
 
       // Set reopened_at timestamp when ticket is reopened (check enumStatus too)
       if (isReopening || enumStatus === "REOPENED") {
@@ -432,7 +433,7 @@ export async function PATCH(
       }
 
       // Get metadata for notifications
-      const updatedMetadata = (updatedTicket.metadata as any) || {};
+      const updatedMetadata = (updatedTicket.metadata as TicketMetadata) || {};
       const slackMessageTs = updatedMetadata?.slackMessageTs;
       const slackChannel = updatedMetadata?.slackChannel;
 

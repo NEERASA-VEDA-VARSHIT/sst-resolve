@@ -22,7 +22,11 @@ export default async function SuperAdminCommitteePage() {
   if (role !== "super_admin") redirect("/student/dashboard");
 
   // Get all tickets for super admin (with limit to prevent performance issues)
-  let allTickets: Array<typeof tickets.$inferSelect & { status_value: string | null }> = [];
+  type TicketWithStatus = typeof tickets.$inferSelect & {
+    status_value: string | null;
+    status: string | null;
+  };
+  let allTickets: TicketWithStatus[] = [];
   try {
     const ticketRows = await db
       .select({
@@ -71,8 +75,9 @@ export default async function SuperAdminCommitteePage() {
     
     allTickets = ticketRows.map(t => ({
       ...t,
-      status: t.status_value || null,
-    })) as any;
+      status_value: t.status_value ?? null,
+      status: t.status_value ?? null,
+    })) as TicketWithStatus[];
   } catch (error) {
     console.error('[Super Admin Committee] Error fetching tickets:', error);
     // Continue with empty array
@@ -84,7 +89,7 @@ export default async function SuperAdminCommitteePage() {
 
   const totalCommittee = committeeTickets.length;
   const openCommittee = committeeTickets.filter(t => {
-    const status = ((t as any).status || "").toLowerCase();
+    const status = ((t as { status?: string | null }).status || "").toLowerCase();
     return !["closed", "resolved"].includes(status);
   }).length;
 

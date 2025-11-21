@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { claimNextOutboxRow, markOutboxSuccess, markOutboxFailure } from "@/workers/utils";
 import { processTicketCreated } from "@/workers/handlers/processTicketCreatedWorker";
 
+type TicketCreatedPayload = {
+  ticket_id: number;
+  created_by_clerk?: string;
+  category?: string;
+};
+
 /**
  * Cron endpoint to process outbox events
  * Should be called periodically (e.g., every minute) to process pending notifications
@@ -39,20 +45,34 @@ export async function GET(request: NextRequest) {
           case "ticket.created":
           case "ticket.created.v1":
             // Safety check: ensure payload is a valid object before processing
-            let ticketPayload: any = {};
+            let ticketPayload: TicketCreatedPayload;
             try {
               if (payload && typeof payload === 'object' && !Array.isArray(payload) && payload !== null) {
                 // Deep clone to avoid any reference issues
-                ticketPayload = JSON.parse(JSON.stringify(payload));
+                const parsed = JSON.parse(JSON.stringify(payload)) as Record<string, unknown>;
+                // Ensure ticket_id exists
+                if (typeof parsed.ticket_id === 'number') {
+                  ticketPayload = {
+                    ticket_id: parsed.ticket_id,
+                    created_by_clerk: typeof parsed.created_by_clerk === 'string' ? parsed.created_by_clerk : undefined,
+                    category: typeof parsed.category === 'string' ? parsed.category : undefined,
+                  };
+                } else {
+                  console.warn(`[Outbox] Missing ticket_id in payload for event ${id}`);
+                  throw new Error('Invalid payload: missing ticket_id');
+                }
               } else {
                 console.warn(`[Outbox] Invalid payload type for event ${id}, using empty object:`, typeof payload);
-                ticketPayload = {};
+                throw new Error('Invalid payload type');
               }
             } catch (error) {
               console.error(`[Outbox] Error processing payload for event ${id}:`, error);
-              ticketPayload = {};
+              // Skip this event if payload is invalid
+              await markOutboxFailure(id, error instanceof Error ? error.message : 'Invalid payload');
+              errors++;
+              continue;
             }
-            await processTicketCreated(id, ticketPayload as any);
+            await processTicketCreated(id, ticketPayload);
             await markOutboxSuccess(id);
             processed++;
             break;
@@ -69,9 +89,10 @@ export async function GET(request: NextRequest) {
             errors++;
             break;
         }
-      } catch (error: any) {
+      } catch (error) {
         console.error(`[Outbox] Error processing event ${outboxRow.id}:`, error);
-        await markOutboxFailure(outboxRow.id, error?.message || "Unknown error");
+        const errorMessage = error instanceof Error ? error.message : "Unknown error";
+        await markOutboxFailure(outboxRow.id, errorMessage);
         errors++;
       }
     }
@@ -82,10 +103,11 @@ export async function GET(request: NextRequest) {
       errors,
       message: `Processed ${processed} events${errors > 0 ? `, ${errors} errors` : ""}`,
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("[Outbox Cron] Fatal error:", error);
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json(
-      { error: "Internal server error", message: error?.message },
+      { error: "Internal server error", message: errorMessage },
       { status: 500 }
     );
   }

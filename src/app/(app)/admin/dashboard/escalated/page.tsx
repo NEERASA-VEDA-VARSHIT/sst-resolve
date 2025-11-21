@@ -111,7 +111,7 @@ export default async function AdminEscalatedAnalyticsPage() {
       // Priority 2: Show unassigned tickets that match admin's domain/scope
       // This allows admins to pick up unassigned tickets in their domain
       if (!t.assigned_to) {
-        const categoryName = t.category_name || (t.metadata && typeof t.metadata === "object" ? (t.metadata as any).category : null);
+        const categoryName = t.category_name || (t.metadata && typeof t.metadata === "object" ? (t.metadata as Record<string, unknown>).category as string | null : null);
         return ticketMatchesAdminAssignment(
           { category: categoryName, location: t.location },
           adminAssignment
@@ -256,7 +256,11 @@ export default async function AdminEscalatedAnalyticsPage() {
                       </Badge>
                     </div>
                   )}
-                  <TicketCard ticket={t as any} basePath="/admin/dashboard" />
+                  <TicketCard ticket={{
+                    ...t,
+                    status: t.status_value || null,
+                    category_name: t.category_name || null,
+                  }} basePath="/admin/dashboard" />
                 </div>
               );
             })}

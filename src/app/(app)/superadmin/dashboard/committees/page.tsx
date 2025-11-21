@@ -117,7 +117,7 @@ export default function CommitteesManagementPage() {
       if (response.ok) {
         const data = await response.json();
         // Use committee users if available, otherwise filter from admins
-        const committeeUsers = data.committeeUsers || (data.admins || []).filter((user: any) => {
+        const committeeUsers = data.committeeUsers || (data.admins || []).filter((user: { publicMetadata?: { role?: string } }) => {
           return user.publicMetadata?.role === "committee";
         });
         setClerkUsers(committeeUsers);
@@ -485,7 +485,7 @@ export default function CommitteesManagementPage() {
                 <div>
                   <p className="text-sm font-medium mb-2">Members ({members.length})</p>
                   {members.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No members assigned. Click "Manage Members" to add users.</p>
+                    <p className="text-sm text-muted-foreground">No members assigned. Click &quot;Manage Members&quot; to add users.</p>
                   ) : (
                     <div className="space-y-2">
                       {members.map((member) => {

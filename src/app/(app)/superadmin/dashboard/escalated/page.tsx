@@ -188,7 +188,11 @@ export default async function SuperAdminEscalatedPage() {
                       </Badge>
                     </div>
                   )}
-                  <TicketCard ticket={t as any} basePath="/superadmin/dashboard" />
+                  <TicketCard ticket={{
+                    ...t,
+                    status: t.status_value || null,
+                    category_name: null, // Will be fetched separately if needed
+                  }} basePath="/superadmin/dashboard" />
                 </div>
               );
             })}

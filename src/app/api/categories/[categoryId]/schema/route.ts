@@ -1,10 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, categories, subcategories, category_fields, field_options, sub_subcategories } from "@/db";
-import { eq, and, asc, sql } from "drizzle-orm";
+import { db, categories } from "@/db";
+import { eq, sql } from "drizzle-orm";
 
 // Cache category schemas in memory (simple in-memory cache)
 // In production, use Redis or a proper caching layer
-const schemaCache = new Map<number, { data: any; timestamp: number }>();
+interface CategorySchema {
+  category: {
+    id: number;
+    name: string;
+    slug: string;
+    description: string | null;
+    icon: string | null;
+    color: string | null;
+    sla_hours: number;
+  };
+  subcategories: Array<Record<string, unknown>>;
+}
+const schemaCache = new Map<number, { data: CategorySchema; timestamp: number }>();
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 /**
@@ -60,7 +72,7 @@ export async function GET(
       ORDER BY display_order ASC, created_at DESC
     `);
 
-    const subcategoriesData = subcategoriesResult.map((row: any) => ({
+    const subcategoriesData = subcategoriesResult.map((row: Record<string, unknown>) => ({
       id: row.id,
       category_id: row.category_id,
       name: row.name,
@@ -74,7 +86,7 @@ export async function GET(
 
     // Fetch sub-subcategories for all subcategories
     const subcategoryIds = subcategoriesData.map((sc) => sc.id);
-    let subSubcategoriesData: any[] = [];
+    let subSubcategoriesData: Array<Record<string, unknown>> = [];
     
     if (subcategoryIds.length > 0) {
       const subSubcatsResult = await db.execute(sql`
@@ -85,7 +97,7 @@ export async function GET(
         ORDER BY display_order ASC
       `);
 
-      subSubcategoriesData = subSubcatsResult.map((row: any) => ({
+      subSubcategoriesData = subSubcatsResult.map((row: Record<string, unknown>) => ({
         id: row.id,
         subcategory_id: row.subcategory_id,
         name: row.name,
@@ -99,7 +111,7 @@ export async function GET(
     }
 
     // Fetch all fields for all subcategories in one query
-    let fieldsData: any[] = [];
+    let fieldsData: Array<Record<string, unknown>> = [];
     if (subcategoryIds.length > 0) {
       const fieldsResult = await db.execute(sql`
         SELECT id, subcategory_id, name, slug, field_type, required, placeholder, help_text, validation_rules, display_order, active, created_at, updated_at
@@ -109,7 +121,7 @@ export async function GET(
         ORDER BY display_order ASC
       `);
 
-      fieldsData = fieldsResult.map((row: any) => ({
+      fieldsData = fieldsResult.map((row: Record<string, unknown>) => ({
         id: row.id,
         subcategory_id: row.subcategory_id,
         name: row.name,
@@ -128,7 +140,7 @@ export async function GET(
 
     // Fetch all options for all select fields in one query
     const fieldIds = fieldsData.filter((f) => f.field_type === "select").map((f) => f.id);
-    let optionsData: any[] = [];
+    let optionsData: Array<Record<string, unknown>> = [];
 
     if (fieldIds.length > 0) {
       const optionsResult = await db.execute(sql`
@@ -139,7 +151,7 @@ export async function GET(
         ORDER BY display_order ASC
       `);
 
-      optionsData = optionsResult.map((row: any) => ({
+      optionsData = optionsResult.map((row: Record<string, unknown>) => ({
         id: row.id,
         field_id: row.field_id,
         label: row.label,

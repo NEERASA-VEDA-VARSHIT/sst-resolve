@@ -2,6 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { db, tickets, ticket_statuses, categories } from "@/db";
 import { desc, eq, isNull, or } from "drizzle-orm";
+import type { TicketMetadata } from "@/db/types";
 import { TicketCard } from "@/components/layout/TicketCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Calendar, AlertTriangle, CheckCircle2, ArrowLeft } from "lucide-react";
@@ -112,7 +113,7 @@ export default async function AdminTodayPendingPage() {
       // This allows admins to pick up unassigned tickets in their domain
       if (!t.assigned_to) {
         // Get category name from join or metadata
-        const categoryName = t.category_name || (t.metadata && typeof t.metadata === "object" ? (t.metadata as any).category : null);
+        const categoryName = t.category_name || (t.metadata && typeof t.metadata === "object" ? (t.metadata as Record<string, unknown>).category as string | null : null);
         return ticketMatchesAdminAssignment(
           { category: categoryName, location: t.location },
           adminAssignment
@@ -130,8 +131,9 @@ export default async function AdminTodayPendingPage() {
   const todayYear = now.getFullYear();
   const todayMonth = now.getMonth();
   const todayDate = now.getDate();
-  const startOfToday = new Date(todayYear, todayMonth, todayDate, 0, 0, 0, 0);
-  const endOfToday = new Date(todayYear, todayMonth, todayDate, 23, 59, 59, 999);
+  // Note: startOfToday and endOfToday are calculated but not used in current logic
+  // const startOfToday = new Date(todayYear, todayMonth, todayDate, 0, 0, 0, 0);
+  // const endOfToday = new Date(todayYear, todayMonth, todayDate, 23, 59, 59, 999);
 
   // "Pending today": tickets with TAT date falling today (should be resolved today)
   // Fetch dynamic ticket statuses
@@ -156,8 +158,8 @@ export default async function AdminTodayPendingPage() {
 
       // Fallback to metadata
       if (t.metadata && typeof t.metadata === "object") {
-        const metadata = t.metadata as any;
-        if (metadata?.tatDate) {
+        const metadata = t.metadata as TicketMetadata;
+        if (metadata?.tatDate && typeof metadata.tatDate === 'string') {
           const tatDate = new Date(metadata.tatDate);
           if (!isNaN(tatDate.getTime())) {
             const tatYear = tatDate.getFullYear();
@@ -171,8 +173,8 @@ export default async function AdminTodayPendingPage() {
       // Legacy fallback to metadata JSON
       if (t.metadata && typeof t.metadata === "object") {
         try {
-          const d = t.metadata as any;
-          if (d?.tatDate) {
+          const d = t.metadata as TicketMetadata;
+          if (d?.tatDate && typeof d.tatDate === 'string') {
             const tatDate = new Date(d.tatDate);
             if (!isNaN(tatDate.getTime())) {
               const tatYear = tatDate.getFullYear();
@@ -215,8 +217,8 @@ export default async function AdminTodayPendingPage() {
 
           // Fallback to metadata
           if (t.metadata && typeof t.metadata === "object") {
-            const metadata = t.metadata as any;
-            if (metadata?.tatDate) {
+            const metadata = t.metadata as TicketMetadata;
+            if (metadata?.tatDate && typeof metadata.tatDate === 'string') {
               const tatDate = new Date(metadata.tatDate);
               if (!isNaN(tatDate.getTime())) {
                 return tatDate.getTime() < now.getTime();
@@ -241,8 +243,8 @@ export default async function AdminTodayPendingPage() {
           return !isNaN(date.getTime()) ? date : null;
         }
         if (t.metadata && typeof t.metadata === "object") {
-          const metadata = t.metadata as any;
-          if (metadata?.tatDate) {
+          const metadata = t.metadata as TicketMetadata;
+          if (metadata?.tatDate && typeof metadata.tatDate === 'string') {
             const date = new Date(metadata.tatDate);
             return !isNaN(date.getTime()) ? date : null;
           }
@@ -335,7 +337,11 @@ export default async function AdminTodayPendingPage() {
               const isOverdue = overdueTodayIds.has(t.id);
               return (
                 <div key={t.id} className={isOverdue ? "ring-2 ring-orange-400 dark:ring-orange-500 rounded-lg" : ""}>
-                  <TicketCard ticket={t as any} basePath="/admin/dashboard" />
+                  <TicketCard ticket={{
+                    ...t,
+                    status: t.status_value || null,
+                    category_name: t.category_name || null,
+                  }} basePath="/admin/dashboard" />
                 </div>
               );
             })}

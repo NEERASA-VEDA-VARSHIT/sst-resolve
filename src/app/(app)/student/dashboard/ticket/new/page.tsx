@@ -79,10 +79,16 @@ export default async function NewTicketPage() {
   }));
 
   // Fetch profile fields
-  const categoryProfileFields = await db
+  const categoryProfileFieldsRaw = await db
     .select()
     .from(category_profile_fields)
     .orderBy(asc(category_profile_fields.display_order));
+  
+  // Map to ProfileFieldConfig format (add storage_key from field_name)
+  const categoryProfileFields = categoryProfileFieldsRaw.map(field => ({
+    ...field,
+    storage_key: field.field_name.toLowerCase().replace(/\s+/g, '_'),
+  }));
 
   // Dynamic fields - no active filtering (hard delete approach)
   const categoryFields = await db
@@ -106,12 +112,12 @@ export default async function NewTicketPage() {
     <TicketForm
       dbUserId={dbUser.id}
       student={normalizedStudent}
-      categories={categoryList as any}
-      subcategories={subcategoriesWithSubs as any}
-      profileFields={categoryProfileFields as any}
-      dynamicFields={categoryFields as any}
-      fieldOptions={optionsList as any}
-      hostels={hostelsList as any}
+      categories={categoryList}
+      subcategories={subcategoriesWithSubs}
+      profileFields={categoryProfileFields}
+      dynamicFields={categoryFields}
+      fieldOptions={optionsList}
+      hostels={hostelsList}
     />
   );
 }

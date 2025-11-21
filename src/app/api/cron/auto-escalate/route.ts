@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, tickets, ticket_statuses } from "@/db";
-import { and, lt, or, eq, isNull, ne } from "drizzle-orm";
+import { db, tickets } from "@/db";
+import { and, eq, ne } from "drizzle-orm";
 import { postThreadReply } from "@/lib/slack";
-import { sendEmail, getEscalationEmail, getStudentEmail } from "@/lib/email";
+import type { TicketMetadata } from "@/db/types";
 import { appConfig, cronConfig } from "@/conf/config";
 import { TICKET_STATUS, DEFAULTS } from "@/conf/constants";
 import { getStatusIdByValue } from "@/lib/status-helpers";
@@ -157,7 +157,7 @@ export async function GET(request: NextRequest) {
 					continue;
 				}
 
-				const updateData: any = {
+				const updateData: Partial<typeof tickets.$inferInsert> = {
 					escalation_level: newEscalationCount,
 					last_escalation_at: new Date(),
 					status_id: escalatedStatusId,
@@ -181,13 +181,13 @@ export async function GET(request: NextRequest) {
 					.where(eq(tickets.id, ticket.id));
 
 				// Send Slack notification
-				let details: any = {};
+				let details: TicketMetadata = {};
 				if (ticket.metadata) {
 					try {
 						details = typeof ticket.metadata === 'string' 
-							? JSON.parse(ticket.metadata) 
-							: ticket.metadata;
-					} catch (e) {
+							? JSON.parse(ticket.metadata) as TicketMetadata
+							: ticket.metadata as TicketMetadata;
+					} catch {
 						// Ignore parse errors
 					}
 				}
@@ -200,11 +200,11 @@ export async function GET(request: NextRequest) {
 						try {
 							// Determine escalation reason (PRD v3.0)
 							let reason = `inactivity (${daysInactive} days)`;
-							const tatExtensionCount = details.tatExtensionCount || 0;
+							const tatExtensionCount = details.tatExtensions?.length || 0;
 							
 							if (tatExtensionCount >= DEFAULTS.MAX_TAT_EXTENSIONS) {
 								reason = `exceeded TAT extension limit (${tatExtensionCount} extensions)`;
-							} else if (details.tatDate) {
+							} else if (details.tatDate && typeof details.tatDate === 'string') {
 								const tatDate = new Date(details.tatDate);
 								if (tatDate.getTime() < now.getTime()) {
 									const hoursOverdue = (now.getTime() - tatDate.getTime()) / (1000 * 60 * 60);

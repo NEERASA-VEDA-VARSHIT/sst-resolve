@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const { userId } = await auth();
     
@@ -86,7 +86,7 @@ export async function GET(request: NextRequest) {
               firstName: clerkUser.firstName,
               lastName: clerkUser.lastName,
               emailAddresses: Array.isArray(clerkUser.emailAddresses)
-                ? clerkUser.emailAddresses.map((email: any) => ({
+                ? clerkUser.emailAddresses.map((email: { emailAddress?: string }) => ({
                     emailAddress: typeof email?.emailAddress === 'string' ? email.emailAddress : ''
                   }))
                 : [],

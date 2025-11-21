@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -26,7 +25,7 @@ export default function CommitteeNewTicketPage() {
     category: "Committee",
     subcategory: "",
     description: "",
-    details: {} as Record<string, any>,
+    details: {} as Record<string, unknown>,
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
 

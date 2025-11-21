@@ -23,6 +23,7 @@ import { buildTimeline } from "@/lib/ticket/buildTimeline";
 import { normalizeStatusForComparison } from "@/lib/utils";
 import { getTicketStatuses, buildProgressMap } from "@/lib/status/getTicketStatuses";
 import { format } from "date-fns";
+import type { TicketMetadata } from "@/db/types";
 
 // Force dynamic rendering for real-time ticket data
 export const dynamic = "force-dynamic";
@@ -32,7 +33,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 30;
 
 // Icon map for timeline
-const ICON_MAP: Record<string, React.ComponentType<any>> = {
+const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   Calendar,
   CheckCircle2,
   Clock,
@@ -64,7 +65,7 @@ export default async function StudentTicketPage({ params }: { params: Promise<{ 
   if (!data) notFound();
 
   const { ticket, category, subcategory, subSubcategory, creator, student, assignedStaff, spoc, profileFields, dynamicFields, comments, sla } = data;
-  const metadata = ticket.metadata as any || {};
+  const metadata = (ticket.metadata as TicketMetadata) || {};
 
   // Resolve profile field values
   const resolvedProfileFields = resolveProfileFields(
@@ -291,25 +292,28 @@ export default async function StudentTicketPage({ params }: { params: Promise<{ 
               <h3 className="text-base font-semibold">Timeline</h3>
             </div>
             <div className="space-y-3">
-              {timelineEntries.map((entry: any, index: number) => {
+              {timelineEntries.map((entry: Record<string, unknown>, index: number) => {
                 // Safeguard against missing icon - fallback to AlertCircle
-                const IconComponent = ICON_MAP[entry.icon] ?? AlertCircle;
+                const iconKey = typeof entry.icon === 'string' ? entry.icon : '';
+                const IconComponent = ICON_MAP[iconKey] ?? AlertCircle;
+                const title = typeof entry.title === 'string' ? entry.title : '';
+                const entryDate = entry.date && (typeof entry.date === 'string' || entry.date instanceof Date) ? entry.date : null;
                 return (
                   <div key={index} className="flex items-start gap-3">
-                    <div className={`p-2 rounded-lg ${entry.color}`}>
-                      <IconComponent className={`w-4 h-4 ${entry.textColor}`} />
+                    <div className={`p-2 rounded-lg ${typeof entry.color === 'string' ? entry.color : ''}`}>
+                      <IconComponent className={`w-4 h-4 ${typeof entry.textColor === 'string' ? entry.textColor : ''}`} />
                     </div>
                     <div>
                       <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
-                        {entry.title}
+                        {title}
                       </p>
-                      {entry.date && (
+                      {entryDate && (
                         <>
                           <p className="text-sm font-semibold">
-                            {format(entry.date, 'MMM d, yyyy')}
+                            {format(entryDate, 'MMM d, yyyy')}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            {format(entry.date, 'h:mm a')}
+                            {format(entryDate, 'h:mm a')}
                           </p>
                         </>
                       )}
@@ -337,31 +341,36 @@ export default async function StudentTicketPage({ params }: { params: Promise<{ 
               {comments.length > 0 ? (
                 <ScrollArea className="max-h-[400px] pr-4">
                   <div className="space-y-4">
-                    {comments.map((comment: any, idx: number) => (
-                      <div key={idx} className="rounded-lg border bg-gradient-to-br from-muted/50 to-muted/30 p-4">
-                        <p className="text-base whitespace-pre-wrap leading-relaxed mb-3 text-foreground">
-                          {comment.text}
-                        </p>
-                        <Separator className="my-3" />
-                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                          {comment.author && (
-                            <div className="flex items-center gap-1.5">
-                              <User className="w-3.5 h-3.5" />
-                              <span className="font-medium">{comment.author}</span>
-                            </div>
-                          )}
-                          {comment.created_at && (
-                            <>
-                              <span className="text-muted-foreground/50">•</span>
+                    {comments.map((comment: Record<string, unknown>, idx: number) => {
+                      const commentText = typeof comment.text === 'string' ? comment.text : '';
+                      const commentAuthor = typeof comment.author === 'string' ? comment.author : null;
+                      const commentCreatedAt = comment.created_at && (typeof comment.created_at === 'string' || comment.created_at instanceof Date) ? comment.created_at : null;
+                      return (
+                        <div key={idx} className="rounded-lg border bg-gradient-to-br from-muted/50 to-muted/30 p-4">
+                          <p className="text-base whitespace-pre-wrap leading-relaxed mb-3 text-foreground">
+                            {commentText}
+                          </p>
+                          <Separator className="my-3" />
+                          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                            {commentAuthor && (
                               <div className="flex items-center gap-1.5">
-                                <Calendar className="w-3.5 h-3.5" />
-                                <span>{format(comment.created_at, 'MMM d, yyyy h:mm a')}</span>
+                                <User className="w-3.5 h-3.5" />
+                                <span className="font-medium">{commentAuthor}</span>
                               </div>
-                            </>
-                          )}
+                            )}
+                            {commentCreatedAt && (
+                              <>
+                                <span className="text-muted-foreground/50">•</span>
+                                <div className="flex items-center gap-1.5">
+                                  <Calendar className="w-3.5 h-3.5" />
+                                  <span>{format(commentCreatedAt, 'MMM d, yyyy h:mm a')}</span>
+                                </div>
+                              </>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </ScrollArea>
               ) : (
@@ -421,7 +430,7 @@ export default async function StudentTicketPage({ params }: { params: Promise<{ 
                 <h3 className="text-base font-semibold">Attachments</h3>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {ticket.attachments.map((attachment: any, index: number) => (
+                {ticket.attachments.map((attachment: { url: string }, index: number) => (
                   <div key={index} className="relative group">
                     <img
                       src={attachment.url}

@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Calendar, ArrowLeft, User, MapPin, FileText, Clock, AlertTriangle, Image as ImageIcon, MessageSquare } from "lucide-react";
 import { db, tickets, categories, users, ticket_statuses, roles } from "@/db";
 import { eq, aliasedTable } from "drizzle-orm";
+import type { TicketMetadata } from "@/db/types";
 import { AdminActions } from "@/components/tickets/AdminActions";
 import { CommitteeTagging } from "@/components/admin/CommitteeTagging";
 import { SlackThreadView } from "@/components/tickets/SlackThreadView";
@@ -13,7 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
-import { normalizeStatusForComparison, formatStatus } from "@/lib/utils";
+import { normalizeStatusForComparison } from "@/lib/utils";
 import { TicketStatusBadge } from "@/components/tickets/TicketStatusBadge";
 import { slackConfig } from "@/conf/config";
 
@@ -82,12 +83,17 @@ export default async function AdminTicketPage({ params }: { params: Promise<{ ti
   };
 
   // Parse metadata (JSONB) with error handling
-  let metadata: any = {};
+  type TicketMetadataWithExtras = TicketMetadata & {
+    subcategory?: string;
+    comments?: Array<Record<string, unknown>>;
+    images?: string[];
+  };
+  let metadata: TicketMetadataWithExtras = {};
   let subcategory: string | null = null;
-  let comments: any[] = [];
+  let comments: Array<Record<string, unknown>> = [];
 
   try {
-    metadata = (ticket.metadata as any) || {};
+    metadata = (ticket.metadata as TicketMetadataWithExtras) || {};
     subcategory = metadata?.subcategory || null;
     comments = Array.isArray(metadata?.comments) ? metadata.comments : [];
   } catch (error) {
@@ -228,7 +234,7 @@ export default async function AdminTicketPage({ params }: { params: Promise<{ ti
                   </div>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                     {metadata.images
-                      .filter((imageUrl: any): imageUrl is string => typeof imageUrl === 'string' && imageUrl.trim().length > 0)
+                      .filter((imageUrl: unknown): imageUrl is string => typeof imageUrl === 'string' && imageUrl.trim().length > 0)
                       .map((imageUrl: string, index: number) => (
                         <a
                           key={index}
@@ -270,15 +276,15 @@ export default async function AdminTicketPage({ params }: { params: Promise<{ ti
             <CardContent className="space-y-4">
               {comments.length > 0 ? (
                 <div className="space-y-3">
-                  {comments.map((comment: any, idx: number) => {
+                  {comments.map((comment: Record<string, unknown>, idx: number) => {
                     if (!comment || typeof comment !== 'object') return null;
                     const isInternal = comment.isInternal || comment.type === "internal_note" || comment.type === "super_admin_note";
-                    const commentText = comment.text || comment.message || '';
-                    const commentAuthor = comment.author || comment.created_by || 'Unknown';
+                    const commentText = (typeof comment.text === 'string' ? comment.text : typeof comment.message === 'string' ? comment.message : '') || '';
+                    const commentAuthor = (typeof comment.author === 'string' ? comment.author : typeof comment.created_by === 'string' ? comment.created_by : 'Unknown') || 'Unknown';
                     let commentDate: Date | null = null;
 
                     try {
-                      if (comment.createdAt) {
+                      if (comment.createdAt && (typeof comment.createdAt === 'string' || comment.createdAt instanceof Date)) {
                         commentDate = new Date(comment.createdAt);
                         if (isNaN(commentDate.getTime())) commentDate = null;
                       }

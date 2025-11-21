@@ -1,7 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { db, tickets, ticket_committee_tags, committee_members, users, ticket_statuses, categories } from "@/db";
-import { desc, eq, inArray, ilike, or, sql } from "drizzle-orm";
+import { db, tickets, ticket_committee_tags, committee_members, ticket_statuses, categories } from "@/db";
+import { desc, eq, inArray } from "drizzle-orm";
 import { getOrCreateUser } from "@/lib/user-sync";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 import { TicketCard } from "@/components/layout/TicketCard";
@@ -116,7 +116,12 @@ export default async function CommitteeDashboardPage({
     }));
 
   // Get tickets tagged to committees this user belongs to with joins
-  let taggedTickets: any[] = [];
+  type TicketWithExtras = typeof tickets.$inferSelect & {
+    status?: string | null;
+    status_value?: string | null;
+    category_name?: string | null;
+  };
+  let taggedTickets: TicketWithExtras[] = [];
   if (committeeIds.length > 0) {
     const tagRecords = await db
       .select({ ticket_id: ticket_committee_tags.ticket_id })

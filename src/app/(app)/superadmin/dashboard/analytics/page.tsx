@@ -35,7 +35,15 @@ export default async function SuperAdminAnalyticsPage() {
   }
 
   // Fetch ALL tickets for overall analytics with more details
-  let allTickets: any[] = [];
+  type TicketAnalytics = {
+    id: number;
+    status: string | null;
+    escalation_level: number;
+    created_at: Date | null;
+    resolved_at: Date | null;
+    category_name: string | null;
+  };
+  let allTickets: TicketAnalytics[] = [];
   try {
     allTickets = await db
       .select({
@@ -113,6 +121,7 @@ export default async function SuperAdminAnalyticsPage() {
   const avgResolutionHours = resolvedWithTime.length > 0
     ? Math.round(
       resolvedWithTime.reduce((sum, t) => {
+        if (!t.created_at || !t.resolved_at) return sum;
         const hours = (new Date(t.resolved_at).getTime() - new Date(t.created_at).getTime()) / (1000 * 60 * 60);
         return sum + hours;
       }, 0) / resolvedWithTime.length
@@ -120,9 +129,26 @@ export default async function SuperAdminAnalyticsPage() {
     : 0;
 
   // Per Admin Analytics
-  let adminStats: any[] = [];
+  type AdminStat = {
+    staff_id: string;
+    staff_name: string | null;
+    total: number;
+    resolved: number;
+    avgResolutionTime: number | null;
+  };
+  type AdminStatRaw = {
+    staff_id: string;
+    staff_first_name: string | null;
+    staff_last_name: string | null;
+    staff_email: string;
+    total: number;
+    open: number;
+    in_progress: number;
+    resolved: number;
+  };
+  let adminStatsRaw: AdminStatRaw[] = [];
   try {
-    adminStats = await db
+    adminStatsRaw = await db
       .select({
         staff_id: users.id,
         staff_first_name: users.first_name,
@@ -144,11 +170,34 @@ export default async function SuperAdminAnalyticsPage() {
     console.error('[Super Admin Analytics] Error fetching admin stats:', error);
     // Continue with empty array
   }
+  
+  const adminStats: AdminStat[] = adminStatsRaw.map(stat => ({
+    staff_id: stat.staff_id,
+    staff_name: [stat.staff_first_name, stat.staff_last_name].filter(Boolean).join(' ').trim() || null,
+    total: Number(stat.total) || 0,
+    resolved: Number(stat.resolved) || 0,
+    avgResolutionTime: null, // Calculate separately if needed
+  }));
 
   // Per Category Analytics
-  let categoryStats: any[] = [];
+  type CategoryStat = {
+    category_id: number | null;
+    category_name: string | null;
+    total: number;
+    resolved: number;
+    avgResolutionTime: number | null;
+  };
+  type CategoryStatRaw = {
+    category_id: number | null;
+    category_name: string | null;
+    total: number;
+    open: number;
+    in_progress: number;
+    resolved: number;
+  };
+  let categoryStatsRaw: CategoryStatRaw[] = [];
   try {
-    categoryStats = await db
+    categoryStatsRaw = await db
       .select({
         category_id: tickets.category_id,
         category_name: categories.name,
@@ -166,6 +215,14 @@ export default async function SuperAdminAnalyticsPage() {
     console.error('[Super Admin Analytics] Error fetching category stats:', error);
     // Continue with empty array
   }
+  
+  const categoryStats: CategoryStat[] = categoryStatsRaw.map(stat => ({
+    category_id: stat.category_id,
+    category_name: stat.category_name,
+    total: Number(stat.total) || 0,
+    resolved: Number(stat.resolved) || 0,
+    avgResolutionTime: null, // Calculate separately if needed
+  }));
 
   return (
     <div className="space-y-8">
@@ -445,11 +502,9 @@ export default async function SuperAdminAnalyticsPage() {
                 ) : (
                   adminStats.map((stat) => {
                     const total = Number(stat.total) || 0;
-                    const open = Number(stat.open) || 0;
-                    const inProgress = Number(stat.in_progress) || 0;
                     const resolved = Number(stat.resolved) || 0;
                     const resolutionRate = total > 0 ? Math.round((resolved / total) * 100) : 0;
-                    const staffName = [stat.staff_first_name, stat.staff_last_name].filter(Boolean).join(' ').trim();
+                    const staffName = stat.staff_name;
 
                     return (
                       <Link
@@ -460,35 +515,25 @@ export default async function SuperAdminAnalyticsPage() {
                         <div className="p-5 border-2 rounded-lg hover:shadow-md transition-all hover:border-primary cursor-pointer">
                           <div className="flex items-center justify-between mb-4">
                             <div>
-                              <p className="font-semibold text-lg">{staffName || stat.staff_email || "Unknown Admin"}</p>
-                              <p className="text-sm text-muted-foreground">{stat.staff_email}</p>
+                              <p className="font-semibold text-lg">{staffName || "Unknown Admin"}</p>
+                              <p className="text-sm text-muted-foreground">{stat.staff_id}</p>
                             </div>
                             <div className="text-right">
                               <p className="text-3xl font-bold">{total}</p>
                               <p className="text-xs text-muted-foreground">Total Tickets</p>
                             </div>
                           </div>
-                          <div className="grid grid-cols-3 gap-4 mb-4">
-                            <div className="p-3 bg-amber-50 dark:bg-amber-950/20 rounded-lg border border-amber-200 dark:border-amber-800">
-                              <p className="text-xs text-muted-foreground mb-1">Open</p>
-                              <p className="text-xl font-semibold">{open}</p>
-                              {total > 0 && (
-                                <Progress value={(open / total) * 100} className="h-1.5 mt-2" />
-                              )}
-                            </div>
-                            <div className="p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                              <p className="text-xs text-muted-foreground mb-1">In Progress</p>
-                              <p className="text-xl font-semibold">{inProgress}</p>
-                              {total > 0 && (
-                                <Progress value={(inProgress / total) * 100} className="h-1.5 mt-2" />
-                              )}
-                            </div>
+                          <div className="grid grid-cols-2 gap-4 mb-4">
                             <div className="p-3 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200 dark:border-green-800">
                               <p className="text-xs text-muted-foreground mb-1">Resolved</p>
                               <p className="text-xl font-semibold">{resolved}</p>
                               {total > 0 && (
                                 <Progress value={(resolved / total) * 100} className="h-1.5 mt-2" />
                               )}
+                            </div>
+                            <div className="p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                              <p className="text-xs text-muted-foreground mb-1">Total</p>
+                              <p className="text-xl font-semibold">{total}</p>
                             </div>
                           </div>
                           <div className="flex items-center justify-between pt-3 border-t">
@@ -523,8 +568,6 @@ export default async function SuperAdminAnalyticsPage() {
                     const categoryKey = stat.category_id ?? "uncategorized";
                     const categoryHref = `/superadmin/dashboard/analytics/category/${categoryKey}`;
                     const total = Number(stat.total) || 0;
-                    const open = Number(stat.open) || 0;
-                    const inProgress = Number(stat.in_progress) || 0;
                     const resolved = Number(stat.resolved) || 0;
                     const resolutionRate = total > 0 ? Math.round((resolved / total) * 100) : 0;
 
@@ -544,27 +587,17 @@ export default async function SuperAdminAnalyticsPage() {
                               <p className="text-xs text-muted-foreground">Total Tickets</p>
                             </div>
                           </div>
-                          <div className="grid grid-cols-3 gap-4 mb-4">
-                            <div className="p-3 bg-amber-50 dark:bg-amber-950/20 rounded-lg border border-amber-200 dark:border-amber-800">
-                              <p className="text-xs text-muted-foreground mb-1">Open</p>
-                              <p className="text-xl font-semibold">{open}</p>
-                              {total > 0 && (
-                                <Progress value={(open / total) * 100} className="h-1.5 mt-2" />
-                              )}
-                            </div>
-                            <div className="p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                              <p className="text-xs text-muted-foreground mb-1">In Progress</p>
-                              <p className="text-xl font-semibold">{inProgress}</p>
-                              {total > 0 && (
-                                <Progress value={(inProgress / total) * 100} className="h-1.5 mt-2" />
-                              )}
-                            </div>
+                          <div className="grid grid-cols-2 gap-4 mb-4">
                             <div className="p-3 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200 dark:border-green-800">
                               <p className="text-xs text-muted-foreground mb-1">Resolved</p>
                               <p className="text-xl font-semibold">{resolved}</p>
                               {total > 0 && (
                                 <Progress value={(resolved / total) * 100} className="h-1.5 mt-2" />
                               )}
+                            </div>
+                            <div className="p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                              <p className="text-xs text-muted-foreground mb-1">Total</p>
+                              <p className="text-xl font-semibold">{total}</p>
                             </div>
                           </div>
                           <div className="flex items-center justify-between pt-3 border-t">

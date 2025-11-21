@@ -1,4 +1,4 @@
-import { auth, clerkClient } from "@clerk/nextjs/server";
+import { auth } from "@clerk/nextjs/server";
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -7,9 +7,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Calendar, ArrowLeft, Clock, CheckCircle2, AlertCircle, MessageSquare, User, MapPin, FileText, Image as ImageIcon } from "lucide-react";
+import { ArrowLeft, Clock, AlertCircle, MessageSquare, User, MapPin, FileText, Image as ImageIcon, CheckCircle2 } from "lucide-react";
 import { db, tickets, ticket_committee_tags, committee_members, categories, ticket_statuses } from "@/db";
 import { eq, inArray, and } from "drizzle-orm";
+import type { TicketMetadata } from "@/db/types";
 import { getOrCreateUser } from "@/lib/user-sync";
 import { CommentForm } from "@/components/tickets/CommentForm";
 import { RatingForm } from "@/components/tickets/RatingForm";
@@ -102,10 +103,11 @@ export default async function CommitteeTicketPage({ params }: { params: Promise<
     .limit(1)).length > 0;
 
   // Parse metadata (JSONB) for comments
-  const metadata = (ticket.metadata as any) || {};
+  type TicketMetadataWithComments = TicketMetadata;
+  const metadata = (ticket.metadata as TicketMetadataWithComments) || {};
   const comments = Array.isArray(metadata?.comments) ? metadata.comments : [];
   const visibleComments = comments.filter(
-    (c: any) => c.type !== "internal_note" && c.type !== "super_admin_note"
+    (c: { type?: string }) => c.type !== "internal_note" && c.type !== "super_admin_note"
   );
 
   // Normalize status for comparisons
@@ -340,19 +342,25 @@ export default async function CommitteeTicketPage({ params }: { params: Promise<
             <CardContent className="space-y-4">
               {visibleComments.length > 0 ? (
                 <div className="space-y-3">
-                  {visibleComments.map((comment: any, idx: number) => (
+                  {visibleComments.map((comment: Record<string, unknown>, idx: number) => (
                     <Card key={idx} className="border bg-muted/30">
                       <CardContent className="p-4">
                         <p className="text-base whitespace-pre-wrap leading-relaxed mb-3">
-                          {comment.text}
+                          {typeof comment.text === 'string' ? comment.text : ''}
                         </p>
                         <div className="flex items-center justify-between text-xs text-muted-foreground">
-                          <span>{comment.author || "Unknown"}</span>
-                          {comment.createdAt && (
-                            <span>
-                              {new Date(comment.createdAt).toLocaleString()}
-                            </span>
-                          )}
+                          <span>{typeof comment.author === 'string' ? comment.author : "Unknown"}</span>
+                          {(() => {
+                            const createdAt = comment.createdAt;
+                            if (!createdAt) return null;
+                            if (typeof createdAt === 'string') {
+                              return <span>{new Date(createdAt).toLocaleString()}</span>;
+                            }
+                            if (createdAt instanceof Date) {
+                              return <span>{createdAt.toLocaleString()}</span>;
+                            }
+                            return null;
+                          })()}
                         </div>
                       </CardContent>
                     </Card>

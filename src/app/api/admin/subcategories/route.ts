@@ -208,9 +208,10 @@ export async function POST(request: NextRequest) {
       .returning();
 
     return NextResponse.json(newSubcategory, { status: 201 });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Error creating subcategory:", error);
-    if (error.code === "23505") {
+    const errorMessage = error instanceof Error ? error.message : "Failed to create subcategory";
+    if (error && typeof error === 'object' && 'code' in error && error.code === "23505") {
       return NextResponse.json({ error: "Subcategory slug already exists for this category" }, { status: 400 });
     }
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

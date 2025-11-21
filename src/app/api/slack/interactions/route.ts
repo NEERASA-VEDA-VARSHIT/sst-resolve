@@ -5,6 +5,7 @@ import { postThreadReply } from "@/lib/slack";
 import { sendEmail, getStatusUpdateEmail, getTATSetEmail, getCommentAddedEmail, getStudentEmail } from "@/lib/email";
 import { getStatusIdByValue } from "@/lib/status-helpers";
 import { calculateTATDate } from "@/utils";
+import type { TicketMetadata } from "@/db/types";
 
 export async function POST(request: NextRequest) {
 	try {
@@ -46,7 +47,7 @@ export async function POST(request: NextRequest) {
 						}
 
 						const { ticket, category, creator } = ticketData;
-						const details = ticket.metadata ? (ticket.metadata as any) : {};
+						const details = ticket.metadata ? (ticket.metadata as TicketMetadata) : {};
 						const originalMessageId = details.originalEmailMessageId;
 						const originalSubject = details.originalEmailSubject;
 
@@ -233,11 +234,14 @@ export async function POST(request: NextRequest) {
 											ccUserIds
 										);
 									}
-								} catch (err: any) {
+								} catch (err) {
+									const errorMessage = err instanceof Error ? err.message : String(err);
+									const errorCode = err && typeof err === 'object' && 'code' in err ? String(err.code) : undefined;
+									const errorData = err && typeof err === 'object' && 'data' in err ? err.data : undefined;
 									console.error(`❌ Error posting TAT update to Slack for ticket #${ticketId}:`, {
-										message: err.message,
-										code: err.code,
-										data: err.data,
+										message: errorMessage,
+										code: errorCode,
+										data: errorData,
 									});
 								}
 							}
@@ -334,11 +338,12 @@ export async function POST(request: NextRequest) {
 											ccUserIds
 										);
 									}
-								} catch (slackError: any) {
+								} catch (slackError) {
+									const errorDetails = slackError instanceof Error 
+										? { message: slackError.message }
+										: { message: String(slackError) };
 									console.error(`❌ Error posting comment to Slack thread for ticket #${ticketId}:`, {
-										message: slackError.message,
-										code: slackError.code,
-										data: slackError.data,
+										...errorDetails,
 									});
 								}
 							}

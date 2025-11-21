@@ -40,6 +40,22 @@ export interface TicketMetadata {
 	browser?: string;
 	device?: string;
 	userAgent?: string;
+
+	// Comments (stored in metadata for backward compatibility)
+	comments?: Array<{
+		text: string;
+		author: string;
+		createdAt: string; // ISO timestamp
+		source?: string;
+		type?: string;
+		isInternal?: boolean;
+	}>;
+
+	// Images (stored in metadata)
+	images?: string[];
+
+	// Subcategory (stored in metadata)
+	subcategory?: string;
 }
 
 /**

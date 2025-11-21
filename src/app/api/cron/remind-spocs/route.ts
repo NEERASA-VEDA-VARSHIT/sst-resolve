@@ -79,8 +79,8 @@ export async function GET(request: NextRequest) {
         // Case 2: Acknowledged but TAT is due/overdue
         if (ticket.acknowledged_at && ticket.metadata) {
           try {
-            const details = ticket.metadata as any;
-            const tatDate = details.tatDate ? new Date(details.tatDate) : null;
+            const details = ticket.metadata as Record<string, unknown>;
+            const tatDate = details.tatDate && typeof details.tatDate === 'string' ? new Date(details.tatDate) : null;
             if (tatDate && tatDate.getTime() <= now.getTime()) {
               needsReminder = true;
               const hoursOverdue =
@@ -100,8 +100,8 @@ export async function GET(request: NextRequest) {
         // Send Slack reminder
         if (ticket.category_name === "Hostel" || ticket.category_name === "College") {
           try {
-            const details = (ticket.metadata as any) || {};
-            const slackMessageTs = details.slackMessageTs;
+            const details = (ticket.metadata as Record<string, unknown>) || {};
+            const slackMessageTs = typeof details.slackMessageTs === 'string' ? details.slackMessageTs : undefined;
             if (slackMessageTs) {
               const { slackConfig } = await import("@/conf/config");
               // Note: subcategory name is not fetched, so we might miss subcategory specific CCs.
@@ -113,7 +113,7 @@ export async function GET(request: NextRequest) {
               const reminderText = `⏰ *Reminder*\n${reminderReason}\nTicket #${ticket.id} requires attention.\n${ticket.spoc_slack_id ? `<@${ticket.spoc_slack_id}>` : ""
                 }`;
 
-              const channelOverride = details.slackChannel;
+              const channelOverride = typeof details.slackChannel === 'string' ? details.slackChannel : null;
               if (channelOverride) {
                 await postThreadReplyToChannel(
                   channelOverride,

@@ -2,7 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { db } from "@/db";
-import { tickets, categories, users, roles, domains, scopes, ticket_statuses } from "@/db/schema";
+import { tickets, categories, users, domains, scopes, ticket_statuses } from "@/db/schema";
 import { eq, or, isNull, desc, sql, and, gte } from "drizzle-orm";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -87,7 +87,7 @@ export default async function AdminAnalyticsPage({
     }
   }
 
-  let whereClause: any = assignmentFilter;
+  let whereClause: ReturnType<typeof eq> | ReturnType<typeof or> | ReturnType<typeof and> = assignmentFilter;
   if (timeFilter) {
     whereClause = and(whereClause, timeFilter);
   }

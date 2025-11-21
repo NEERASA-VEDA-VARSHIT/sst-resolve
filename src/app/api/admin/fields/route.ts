@@ -198,9 +198,10 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({ ...newField, options: [] }, { status: 201 });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Error creating field:", error);
-    if (error.code === "23505") {
+    const errorMessage = error instanceof Error ? error.message : "Failed to create field";
+    if (error && typeof error === 'object' && 'code' in error && error.code === "23505") {
       return NextResponse.json({ error: "Field slug already exists for this subcategory" }, { status: 400 });
     }
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
