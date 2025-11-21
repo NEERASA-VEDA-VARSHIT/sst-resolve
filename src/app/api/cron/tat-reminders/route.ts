@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { tickets, notification_settings } from "@/db/schema";
+import { tickets, notification_settings, ticket_statuses } from "@/db/schema";
 import { and, gte, lt, ne, eq } from "drizzle-orm";
 import { sendEmail } from "@/lib/email";
 import { postToSlackChannel } from "@/lib/slack";
+import { getStatusIdByValue } from "@/lib/status-helpers";
+import { cronConfig } from "@/conf/config";
 
 /**
  * TAT Reminder Cron Job
@@ -21,7 +23,7 @@ export async function GET(request: NextRequest) {
   try {
     // Verify cron secret
     const authHeader = request.headers.get("authorization");
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    if (cronConfig.secret && authHeader !== `Bearer ${cronConfig.secret}`) {
       console.error("[TAT Cron] Unauthorized access attempt");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -53,11 +55,16 @@ export async function GET(request: NextRequest) {
     });
 
     // Find tickets due today that are not resolved
+    const resolvedStatusId = await getStatusIdByValue("RESOLVED");
+    const statusFilter = resolvedStatusId 
+      ? ne(tickets.status_id, resolvedStatusId)
+      : undefined;
+
     const dueTickets = await db.query.tickets.findMany({
       where: and(
         gte(tickets.due_at, today),
         lt(tickets.due_at, tomorrow),
-        ne(tickets.status, "RESOLVED")
+        statusFilter
       ),
       with: {
         assigned_admin: {
@@ -248,7 +255,13 @@ function formatSlackTATReminder(tickets: any[], categoryName: string): string {
   let message = `⏰ *TAT Reminder - ${categoryName}*\n\nThe following tickets are due today:\n`;
 
   // Base URL for links
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (process.env.NEXT_PUBLIC_VERCEL_URL ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}` : 'http://localhost:3000');
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 
+    (process.env.NEXT_PUBLIC_VERCEL_URL ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}` : 
+    (process.env.NODE_ENV === 'production' ? null : 'http://localhost:3000'));
+  
+  if (!baseUrl && process.env.NODE_ENV === 'production') {
+    console.error("[TAT Cron] NEXT_PUBLIC_APP_URL must be set in production");
+  }
 
   for (const [adminName, adminTickets] of Object.entries(ticketsByAdmin)) {
     message += `\n👤 *${adminName}*\n`;

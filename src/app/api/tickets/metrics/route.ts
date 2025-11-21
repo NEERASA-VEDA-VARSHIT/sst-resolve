@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import { tickets, categories } from "@/db/schema";
-import { eq, inArray, sql, gte, and } from "drizzle-orm";
+import { tickets, categories, ticket_statuses } from "@/db/schema";
+import { eq, inArray, sql, gte, and, ne } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/db-roles";
+import { getStatusIdByValue } from "@/lib/status-helpers";
 
 /**
  * ============================================
@@ -30,8 +31,14 @@ export async function GET() {
     // AUTH
     // -------------------------------
     const { userId } = await auth();
-      );
-  }
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const role = await getUserRoleFromDB(userId);
+    if (role !== "admin" && role !== "super_admin") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     // -------------------------------
     // BASIC METRICS
@@ -51,12 +58,13 @@ export async function GET() {
 
   const statusCountsQuery = await db
     .select({
-      status: tickets.status,
+      status: ticket_statuses.value,
       count: sql<number>`COUNT(*)`,
     })
     .from(tickets)
-    .where(inArray(tickets.status, statusList))
-    .groupBy(tickets.status);
+    .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
+    .where(inArray(ticket_statuses.value, statusList))
+    .groupBy(ticket_statuses.value);
 
   const statusCounts = Object.fromEntries(
     statusCountsQuery.map((row) => [row.status, row.count])
@@ -89,22 +97,34 @@ export async function GET() {
     .where(sql`resolved_at IS NOT NULL`);
 
   // Overdue tickets: updated_at > 48h OR SLA custom logic
+  // Get RESOLVED status ID to exclude resolved tickets
+  const resolvedStatusId = await getStatusIdByValue("RESOLVED");
+  const overdueWhere = resolvedStatusId
+    ? and(
+        ne(tickets.status_id, resolvedStatusId),
+        sql`now() - ${tickets.created_at} > interval '48 hours'`
+      )
+    : sql`now() - ${tickets.created_at} > interval '48 hours'`;
+
   const [{ overdue }] = await db
     .select({
-      overdue: sql<number>`
-          COUNT(*) 
-        `,
+      overdue: sql<number>`COUNT(*)`,
     })
     .from(tickets)
-    .where(sql`status != 'RESOLVED' AND now() - created_at > interval '48 hours'`);
+    .where(overdueWhere);
 
   // Reopened tickets count
+  const reopenedStatusId = await getStatusIdByValue("REOPENED");
+  const reopenedWhere = reopenedStatusId
+    ? eq(tickets.status_id, reopenedStatusId)
+    : sql`1 = 0`; // Return 0 if status doesn't exist
+
   const [{ reopened }] = await db
     .select({
       reopened: sql<number>`COUNT(*)`,
     })
     .from(tickets)
-    .where(eq(tickets.status, "REOPENED"));
+    .where(reopenedWhere);
 
   // -------------------------------
   // TODAY'S METRICS
@@ -119,25 +139,31 @@ export async function GET() {
     .from(tickets)
     .where(gte(tickets.created_at, todayStartSQL));
 
+  const resolvedStatusIdForToday = await getStatusIdByValue("RESOLVED");
+  const resolvedTodayWhere = resolvedStatusIdForToday
+    ? and(
+        eq(tickets.status_id, resolvedStatusIdForToday),
+        gte(tickets.resolved_at, todayStartSQL)
+      )
+    : sql`1 = 0`; // Return 0 if status doesn't exist
+
   const [{ resolvedToday }] = await db
     .select({ resolvedToday: sql<number>`COUNT(*)` })
     .from(tickets)
-    .where(
-      and(
-        eq(tickets.status, "RESOLVED"),
-        gte(tickets.resolved_at, todayStartSQL)
+    .where(resolvedTodayWhere);
+
+  const escalatedStatusId = await getStatusIdByValue("ESCALATED");
+  const escalatedTodayWhere = escalatedStatusId
+    ? and(
+        eq(tickets.status_id, escalatedStatusId),
+        gte(tickets.last_escalation_at, todayStartSQL)
       )
-    );
+    : sql`1 = 0`; // Return 0 if status doesn't exist
 
   const [{ escalatedToday }] = await db
     .select({ escalatedToday: sql<number>`COUNT(*)` })
     .from(tickets)
-    .where(
-      and(
-        eq(tickets.status, "ESCALATED"),
-        gte(tickets.last_escalation_at, todayStartSQL)
-      )
-    );
+    .where(escalatedTodayWhere);
 
   // -------------------------------
   // FINAL RESPONSE
