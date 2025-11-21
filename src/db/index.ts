@@ -1,6 +1,6 @@
 // Server-only database connection
 // This file should NEVER be imported in client components
-import 'server-only';
+// import 'server-only'; // Commented out due to Turbopack build issues - serverExternalPackages in next.config.ts handles this
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import * as schema from './schema';

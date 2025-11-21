@@ -6,6 +6,7 @@ import { BulkCloseTicketsSchema } from "@/schema/ticket.schema";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
 import { statusToEnum } from "@/lib/status-helpers";
+import { getStatusIdByValue } from "@/lib/status-helpers";
 
 /**
  * ============================================
@@ -43,11 +44,17 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const parsed = BulkCloseTicketsSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ error: "Validation failed", details: parsed.error.errors }, { status: 400 });
+      return NextResponse.json({ error: "Validation failed", details: parsed.error.issues }, { status: 400 });
     }
 
     const { ids, comment, status } = parsed.data;
-    const targetStatus = statusToEnum(status || "closed"); // Convert to uppercase enum
+    const targetStatusValue = statusToEnum(status || "closed"); // Convert to uppercase enum
+
+    // Get status ID for the target status
+    const targetStatusId = await getStatusIdByValue(targetStatusValue.toUpperCase());
+    if (!targetStatusId) {
+      return NextResponse.json({ error: `Status "${targetStatusValue}" not found` }, { status: 400 });
+    }
 
     // Fetch the tickets to modify
     const rows = await db.select().from(tickets).where(inArray(tickets.id, ids));
@@ -55,16 +62,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No tickets found for the provided ids" }, { status: 404 });
     }
 
-    // Update details with optional bulk-close comment and set status
+    // Update metadata with optional bulk-close comment and set status
     const now = new Date();
     for (const row of rows) {
-      let details: any = {};
+      let metadata: any = {};
       try {
-        details = row.details ? JSON.parse(row.details) : {};
+        metadata = row.metadata ? (typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata) : {};
       } catch { }
 
       if (comment) {
-        const comments = Array.isArray(details.comments) ? details.comments : [];
+        const comments = Array.isArray(metadata.comments) ? metadata.comments : [];
         comments.push({
           text: comment,
           author: "Admin",
@@ -73,15 +80,14 @@ export async function POST(request: NextRequest) {
           isInternal: true,
           source: "bulk_action",
         });
-        details.comments = comments;
+        metadata.comments = comments;
       }
 
       const updateData: any = {
-        status: targetStatus,
-        updatedAt: now,
-        details: JSON.stringify(details),
+        status_id: targetStatusId,
+        updated_at: now,
+        metadata: metadata,
       };
-
 
       await db
         .update(tickets)

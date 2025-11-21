@@ -59,7 +59,7 @@ const normalizeMetadata = (metadata: Record<string, any> | null): Record<string,
 const getDefaultSlackChannelFor = (category: SlackCategory): string => {
   switch (category) {
     case "Hostel":
-      return slackConfig.channels.hostel;
+      return (slackConfig.channels.hostel as string) || "#tickets-hostel";
     case "College":
       return slackConfig.channels.college;
     case "Committee":

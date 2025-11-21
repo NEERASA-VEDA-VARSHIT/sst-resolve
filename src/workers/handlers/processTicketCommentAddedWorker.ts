@@ -70,24 +70,29 @@ export async function processTicketCommentAddedWorker(payload: any) {
 
       if (author_role === "student") {
         // Notify assigned admin
-        if (ticketData.assigned_admin?.user?.email) {
-          recipientEmail = ticketData.assigned_admin.user.email;
-          recipientName = ticketData.assigned_admin.full_name;
+        const assignedAdmin = ticketData.assigned_admin as any;
+        if (assignedAdmin?.user?.email) {
+          recipientEmail = assignedAdmin.user.email;
+          recipientName = assignedAdmin.full_name || "Admin";
         }
       } else {
         // Notify student
-        if (ticketData.created_by_user?.email) {
-          recipientEmail = ticketData.created_by_user.email;
-          recipientName = ticketData.created_by_user.name || "Student";
+        const createdByUser = ticketData.created_by_user as any;
+        if (createdByUser?.email) {
+          recipientEmail = createdByUser.email;
+          const firstName = createdByUser.first_name || "";
+          const lastName = createdByUser.last_name || "";
+          recipientName = [firstName, lastName].filter(Boolean).join(" ") || "Student";
         }
       }
 
       if (recipientEmail) {
+        const category = ticketData.category as any;
         const emailTemplate = getCommentAddedEmail(
           ticket_id,
           comment_text,
           author_name,
-          ticketData.category?.name || "Unknown"
+          category?.name || "Unknown"
         );
 
         await sendEmail({

@@ -40,13 +40,18 @@ interface CategoryOption {
 }
 
 interface TicketSearchProps {
-  categories: CategoryOption[];
-  currentSort: string;
-  statuses: TicketStatus[];
+  categories?: CategoryOption[];
+  currentSort?: string;
+  statuses?: TicketStatus[];
   onSearch?: (query: string) => void;
 }
 
-export default function TicketSearch({ categories, currentSort, statuses, onSearch }: TicketSearchProps) {
+export default function TicketSearch({ 
+  categories = [], 
+  currentSort = "newest", 
+  statuses = [], 
+  onSearch 
+}: TicketSearchProps = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
 

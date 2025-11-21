@@ -244,7 +244,7 @@ export function SubcategoryManager({ categoryId, categoryDefaultAdmin }: Subcate
                         subcategoryId={subcategory.id}
                         initialFields={subcategory.fields || []}
                         onFieldsChange={fetchSubcategories}
-                        subcategoryDefaultAdmin={subcategory.assigned_admin_id ?? categoryDefaultAdmin}
+                        subcategoryDefaultAdmin={subcategory.assigned_admin_id ? String(subcategory.assigned_admin_id) : (categoryDefaultAdmin ? String(categoryDefaultAdmin) : null)}
                       />
                     </div>
                   </CardContent>

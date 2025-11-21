@@ -7,9 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { TicketGrouping } from "./TicketGrouping";
 import { Users, X } from "lucide-react";
-import type { tickets } from "@/db/schema-only";
-
-type Ticket = typeof tickets.$inferSelect;
+import type { Ticket } from "@/db/types-only";
 
 interface SelectableTicketListProps {
   tickets: Ticket[];

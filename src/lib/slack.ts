@@ -5,9 +5,9 @@ const slack = slackConfig.botToken ? new WebClient(slackConfig.botToken) : null;
 
 // Channel mapping driven by config
 const SLACK_CHANNELS: Record<"Hostel" | "College" | "Committee", string> = {
-	Hostel: slackConfig.channels.hostel,
-	College: slackConfig.channels.college,
-	Committee: slackConfig.channels.committee,
+	Hostel: (slackConfig.channels.hostel as string) || "#tickets-hostel",
+	College: (slackConfig.channels.college as string) || "#tickets-college",
+	Committee: (slackConfig.channels.committee as string) || "#tickets-committee",
 };
 
 export async function postToSlackChannel(

@@ -8,15 +8,14 @@ import {
   FileText,
 } from "lucide-react";
 
-import type { tickets } from "@/db/schema-only";
+import type { Ticket } from "@/db/types-only";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-type Ticket = typeof tickets.$inferSelect;
-
 interface TicketCardProps {
   ticket: Ticket & {
+    status?: string | null;
     category_name?: string | null;
     creator_name?: string | null;
     creator_email?: string | null;
@@ -89,8 +88,8 @@ function computeTatInfo(date?: Date | null) {
 export function TicketCard({ ticket, basePath = "/student/dashboard", disableLink = false }: TicketCardProps) {
   const metadata = (ticket.metadata as any) ?? {};
 
-  // TAT calculation
-  const tatDate = ticket.due_at || (metadata?.tatDate ? new Date(metadata.tatDate) : null);
+  // TAT calculation - use resolution_due_at or metadata
+  const tatDate = (ticket as any).due_at || ticket.resolution_due_at || (metadata?.tatDate ? new Date(metadata.tatDate) : null);
   const { overdue, label: tatLabel } = computeTatInfo(tatDate);
 
   // Comment count (if present in metadata)

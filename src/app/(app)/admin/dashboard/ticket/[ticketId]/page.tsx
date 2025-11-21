@@ -96,8 +96,10 @@ export default async function AdminTicketPage({ params }: { params: Promise<{ ti
   }
 
   // Normalize status for comparisons
-  const statusValue = ticket.status?.value || ticket.status || null;
-  const normalizedStatus = normalizeStatusForComparison(statusValue);
+  const statusValueStr = typeof ticket.status === 'string' 
+    ? ticket.status 
+    : (ticket.status && typeof ticket.status === 'object' && 'value' in ticket.status ? ticket.status.value : null);
+  const normalizedStatus = normalizeStatusForComparison(statusValueStr);
 
   const getStatusBadgeClass = (status: string | null | undefined) => {
     const normalized = normalizeStatusForComparison(status);
@@ -335,7 +337,7 @@ export default async function AdminTicketPage({ params }: { params: Promise<{ ti
             <CardContent>
               <AdminActions
                 ticketId={ticket.id}
-                currentStatus={statusValue || "open"}
+                currentStatus={statusValueStr || "open"}
                 hasTAT={!!ticket.due_at || !!metadata?.tat}
                 isSuperAdmin={role === "super_admin"}
                 ticketCategory={ticket.category_name || "General"}
@@ -360,7 +362,7 @@ export default async function AdminTicketPage({ params }: { params: Promise<{ ti
           {ticket.slack_thread_id && (
             <SlackThreadView
               threadId={ticket.slack_thread_id}
-              channel={slackConfig.channels.hostel}
+              channel={(slackConfig.channels.hostel as string) || "#tickets-hostel"}
             />
           )}
         </div>

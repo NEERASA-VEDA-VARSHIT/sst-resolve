@@ -27,7 +27,7 @@ export async function uploadImage(
       invalidate: true,
     };
 
-    let uploadResult;
+    let uploadResult: any;
     if (Buffer.isBuffer(file)) {
       // Upload from buffer
       uploadResult = await new Promise((resolve, reject) => {
@@ -50,8 +50,8 @@ export async function uploadImage(
     }
 
     return {
-      secure_url: uploadResult.secure_url,
-      public_id: uploadResult.public_id,
+      secure_url: uploadResult.secure_url as string,
+      public_id: uploadResult.public_id as string,
     };
   } catch (error) {
     console.error('Cloudinary upload error:', error);

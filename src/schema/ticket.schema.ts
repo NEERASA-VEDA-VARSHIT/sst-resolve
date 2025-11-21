@@ -34,7 +34,7 @@ export const CreateTicketSchema = z.object({
   subcategory: z.string().min(1, "Subcategory is required"),
   description: z.string().optional(),
   location: z.string().optional(),
-  details: z.record(z.any()).optional(),
+  details: z.record(z.string(), z.any()).optional(),
 });
 
 /**

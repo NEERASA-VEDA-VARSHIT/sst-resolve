@@ -63,7 +63,8 @@ export async function DELETE(request: NextRequest) {
     // ----------------------
 
     // Student → only allowed if they own the ticket
-    if (isStudent) {
+    const role = await getUserRoleFromDB(userId);
+    if (role === "student") {
       if (ticket.created_by !== localUser.id) {
         return NextResponse.json(
           { error: "You can only delete attachments from your own tickets" },

@@ -295,20 +295,15 @@ export async function getOpenTicketsForAdmin(
     domain?: string | null;
     scope?: string | null;
   }
-): Promise<Array<{
-  id: number;
-  status: string;
-  priority: string; // Note: priority column removed from tickets, using escalation_level or similar? Or maybe it's still there?
-  // Checking schema: priority is NOT in tickets table anymore. 
-  // We should probably remove it from return type or map it.
-  // For now, I'll return "Normal" as placeholder or remove it.
-  // The interface expects it, so I'll return "Normal".
-  category: string | null;
-  subcategory: string | null;
-  description: string | null;
-  created_at: Date | null;
-  due_at: Date | null;
-}>> {
+ ): Promise<Array<{
+   id: number;
+   status: string;
+   category: string | null;
+   subcategory: string | null;
+   description: string | null;
+   created_at: Date | null;
+   due_at: Date | null;
+ }>> {
   try {
     const [user] = await db
       .select({ id: users.id })
@@ -355,12 +350,12 @@ export async function getOpenTicketsForAdmin(
       .where(and(...conditions))
       .orderBy(tickets.created_at);
 
-    return openTickets.map(t => ({
-      ...t,
-      priority: "Normal", // Placeholder
-      category: t.category || null,
-      subcategory: null // Placeholder
-    }));
+     return openTickets.map(t => ({
+       ...t,
+       status: t.status || "OPEN",
+       category: t.category || null,
+       subcategory: null // Placeholder
+     }));
   } catch (error) {
     console.error("[DB Helpers] Error getting open tickets for admin:", error);
     return [];
@@ -373,14 +368,13 @@ export async function getOpenTicketsForAdmin(
  */
 export async function getTicketsNeedingAcknowledgement(
   clerkUserId: string
-): Promise<Array<{
-  id: number;
-  status: string;
-  priority: string;
-  category: string | null;
-  created_at: Date | null;
-  due_at: Date | null;
-}>> {
+ ): Promise<Array<{
+   id: number;
+   status: string;
+   category: string | null;
+   created_at: Date | null;
+   due_at: Date | null;
+ }>> {
   try {
     const [user] = await db
       .select({ id: users.id })
@@ -412,10 +406,10 @@ export async function getTicketsNeedingAcknowledgement(
       )
       .orderBy(tickets.created_at);
 
-    return ticketsNeedingAck.map(t => ({
-      ...t,
-      priority: "Normal"
-    }));
+     return ticketsNeedingAck.map(t => ({
+       ...t,
+       status: t.status || "OPEN"
+     }));
   } catch (error) {
     console.error("[DB Helpers] Error getting tickets needing acknowledgement:", error);
     return [];
@@ -426,16 +420,15 @@ export async function getTicketsNeedingAcknowledgement(
  * Get tickets that are overdue (past due_at date)
  * Returns tickets that have breached their SLA
  */
-export async function getTicketsOverdue(): Promise<Array<{
-  id: number;
-  status: string;
-  priority: string;
-  category: string | null;
-  created_at: Date | null;
-  due_at: Date | null;
-  sla_breached_at: Date | null;
-  assigned_to: string | null; // Changed from number to string (UUID)
-}>> {
+export async function getTicketsOverdue( ): Promise<Array<{
+   id: number;
+   status: string;
+   category: string | null;
+   created_at: Date | null;
+   due_at: Date | null;
+   sla_breached_at: Date | null;
+   assigned_to: string | null; // Changed from number to string (UUID)
+ }>> {
   try {
     const now = new Date();
 
@@ -463,10 +456,10 @@ export async function getTicketsOverdue(): Promise<Array<{
       )
       .orderBy(tickets.resolution_due_at);
 
-    return overdueTickets.map(t => ({
-      ...t,
-      priority: "Normal"
-    }));
+     return overdueTickets.map(t => ({
+       ...t,
+       status: t.status || "OPEN"
+     }));
   } catch (error) {
     console.error("[DB Helpers] Error getting overdue tickets:", error);
     return [];

@@ -92,38 +92,84 @@ export default async function AdminDetailPage({
   // Fetch all tickets assigned to this admin
   let ticketRows: Array<{
     id: number;
-    status: string | null;
+    title: string | null;
     description: string | null;
     location: string | null;
-    created_by: string | null;
+    status_id: number;
     category_id: number | null;
-    escalation_level: number | null;
-    metadata: any;
-    created_at: Date | null;
-    updated_at: Date | null;
-    resolved_at: Date | null;
-    due_at: Date | null;
+    subcategory_id: number | null;
+    sub_subcategory_id: number | null;
+    created_by: string;
+    assigned_to: string | null;
+    acknowledged_by: string | null;
+    group_id: number | null;
+    escalation_level: number;
+    tat_extended_count: number;
+    last_escalation_at: Date | null;
+    acknowledgement_tat_hours: number | null;
+    resolution_tat_hours: number | null;
+    acknowledgement_due_at: Date | null;
+    resolution_due_at: Date | null;
+    acknowledged_at: Date | null;
+    reopened_at: Date | null;
+    sla_breached_at: Date | null;
+    reopen_count: number;
     rating: number | null;
+    feedback_type: string | null;
+    rating_submitted: Date | null;
     feedback: string | null;
+    is_public: boolean;
+    admin_link: string | null;
+    student_link: string | null;
+    slack_thread_id: string | null;
+    external_ref: string | null;
+    metadata: any;
+    created_at: Date;
+    updated_at: Date;
+    resolved_at: Date | null;
+    status_value: string | null;
   }> = [];
 
   try {
     const rawTicketRows = await db
       .select({
         id: tickets.id,
-        status_value: ticket_statuses.value,
+        title: tickets.title,
         description: tickets.description,
         location: tickets.location,
-        created_by: tickets.created_by,
+        status_id: tickets.status_id,
         category_id: tickets.category_id,
+        subcategory_id: tickets.subcategory_id,
+        sub_subcategory_id: tickets.sub_subcategory_id,
+        created_by: tickets.created_by,
+        assigned_to: tickets.assigned_to,
+        acknowledged_by: tickets.acknowledged_by,
+        group_id: tickets.group_id,
         escalation_level: tickets.escalation_level,
+        tat_extended_count: tickets.tat_extended_count,
+        last_escalation_at: tickets.last_escalation_at,
+        acknowledgement_tat_hours: tickets.acknowledgement_tat_hours,
+        resolution_tat_hours: tickets.resolution_tat_hours,
+        acknowledgement_due_at: tickets.acknowledgement_due_at,
+        resolution_due_at: tickets.resolution_due_at,
+        acknowledged_at: tickets.acknowledged_at,
+        reopened_at: tickets.reopened_at,
+        sla_breached_at: tickets.sla_breached_at,
+        reopen_count: tickets.reopen_count,
+        rating: tickets.rating,
+        feedback_type: tickets.feedback_type,
+        rating_submitted: tickets.rating_submitted,
+        feedback: tickets.feedback,
+        is_public: tickets.is_public,
+        admin_link: tickets.admin_link,
+        student_link: tickets.student_link,
+        slack_thread_id: tickets.slack_thread_id,
+        external_ref: tickets.external_ref,
         metadata: tickets.metadata,
         created_at: tickets.created_at,
         updated_at: tickets.updated_at,
         resolved_at: tickets.resolved_at,
-        due_at: tickets.resolution_due_at,
-        rating: tickets.rating,
-        feedback: tickets.feedback,
+        status_value: ticket_statuses.value,
       })
       .from(tickets)
       .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
@@ -131,23 +177,8 @@ export default async function AdminDetailPage({
       .orderBy(desc(tickets.created_at))
       .limit(1000);
 
-    // Map to the expected structure
-    ticketRows = rawTicketRows.map(t => ({
-      id: t.id,
-      status: t.status_value,
-      description: t.description,
-      location: t.location,
-      created_by: t.created_by,
-      category_id: t.category_id,
-      escalation_level: t.escalation_level,
-      metadata: t.metadata,
-      created_at: t.created_at,
-      updated_at: t.updated_at,
-      resolved_at: t.resolved_at,
-      due_at: t.due_at,
-      rating: t.rating,
-      feedback: t.feedback,
-    }));
+    // Use rawTicketRows directly - they already have all the fields we need
+    ticketRows = rawTicketRows;
   } catch (error) {
     console.error("[Super Admin Analytics Admin] Error fetching tickets:", error);
     // Continue with empty array
@@ -193,13 +224,14 @@ export default async function AdminDetailPage({
     }
   }
 
-  // Combine data
+  // Combine data - add all required Ticket fields and additional fields for TicketCard
   const allTickets = ticketRows.map(t => {
     const catInfo = t.category_id ? categoryMap.get(t.category_id) : null;
     return {
       ...t,
+      // Additional fields for TicketCard
+      status: t.status_value || null,
       category_name: catInfo?.name || null,
-      parent_category_id: catInfo?.parentId || null,
       creator_name: t.created_by ? userMap.get(t.created_by)?.name || null : null,
       creator_email: t.created_by ? userMap.get(t.created_by)?.email || null : null,
     };
@@ -216,7 +248,8 @@ export default async function AdminDetailPage({
 
   // In Progress tickets (status = IN_PROGRESS or AWAITING_STUDENT)
   const inProgressTickets = allTickets.filter(t => {
-    const normalizedStatus = normalizeStatusForComparison(t.status);
+    const statusStr = typeof t.status === 'string' ? t.status : (t.status as any)?.value || null;
+    const normalizedStatus = normalizeStatusForComparison(statusStr);
     return normalizedStatus === "in_progress" || normalizedStatus === "awaiting_student_response" || normalizedStatus === "awaiting_student";
   });
 

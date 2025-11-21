@@ -29,7 +29,21 @@ export default async function CategoriesPage() {
   }
 
   // Fetch all categories - explicitly select columns to avoid Drizzle issues
-  let allCategories = [];
+  let allCategories: Array<{
+    id: number;
+    name: string;
+    slug: string;
+    description: string | null;
+    icon: string | null;
+    color: string | null;
+    sla_hours: number;
+    display_order: number;
+    active: boolean;
+    default_authority?: number | null;
+    domain_id?: number | null;
+    created_at: Date | null;
+    updated_at: Date | null;
+  }> = [];
   try {
     allCategories = await db
       .select({
@@ -53,6 +67,13 @@ export default async function CategoriesPage() {
       .from(categories)
       .where(eq(categories.active, true))
       .orderBy(asc(categories.display_order), desc(categories.created_at));
+    
+    // Transform to match Category interface (sla_hours and display_order must be numbers)
+    allCategories = allCategories.map(cat => ({
+      ...cat,
+      sla_hours: cat.sla_hours ?? 48,
+      display_order: cat.display_order ?? 0,
+    }));
   } catch (error) {
     console.error('[Super Admin Categories] Error fetching categories:', error);
     // Continue with empty array

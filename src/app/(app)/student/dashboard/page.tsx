@@ -141,7 +141,7 @@ export default async function StudentDashboardPage({
       break;
 
     case "due-date":
-      orderBy = asc(tickets.due_at);
+      orderBy = asc(tickets.resolution_due_at);
       break;
 
     case "status":

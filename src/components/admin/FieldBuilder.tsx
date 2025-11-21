@@ -36,7 +36,7 @@ interface FieldBuilderProps {
   subcategoryId: number;
   initialFields: Field[];
   onFieldsChange: () => void;
-  subcategoryDefaultAdmin?: number | null;
+  subcategoryDefaultAdmin?: string | null;
 }
 
 const FIELD_TYPE_LABELS: Record<string, string> = {
@@ -214,7 +214,7 @@ export function FieldBuilder({
         onClose={handleDialogClose}
         subcategoryId={subcategoryId}
         field={editingField}
-        subcategoryDefaultAdmin={subcategoryDefaultAdmin}
+        subcategoryDefaultAdmin={subcategoryDefaultAdmin ? String(subcategoryDefaultAdmin) : null}
       />
     </div>
   );

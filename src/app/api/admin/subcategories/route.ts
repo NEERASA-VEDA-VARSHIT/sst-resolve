@@ -185,7 +185,7 @@ export async function POST(request: NextRequest) {
           name,
           description: description || null,
           display_order: display_order || 0,
-          assigned_admin_id: assigned_admin_id === null || assigned_admin_id === "" ? null : parseInt(String(assigned_admin_id)) || null,
+          assigned_admin_id: assigned_admin_id === null || assigned_admin_id === "" ? null : String(assigned_admin_id),
           active: true,
           updated_at: new Date(),
         })
@@ -202,7 +202,7 @@ export async function POST(request: NextRequest) {
         slug,
         description: description || null,
         display_order: display_order || 0,
-        assigned_admin_id: assigned_admin_id === null || assigned_admin_id === "" ? null : parseInt(String(assigned_admin_id)) || null,
+        assigned_admin_id: assigned_admin_id === null || assigned_admin_id === "" ? null : String(assigned_admin_id),
         active: true,
       })
       .returning();

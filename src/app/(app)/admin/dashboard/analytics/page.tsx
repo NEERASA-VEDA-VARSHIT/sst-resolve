@@ -81,12 +81,12 @@ export default async function AdminAnalyticsPage({
     timeFilter = gte(tickets.created_at, date);
   }
 
-  let assignmentFilter = eq(tickets.assigned_to, currentStaff.id);
+  let assignmentFilter: ReturnType<typeof eq> | ReturnType<typeof or> = eq(tickets.assigned_to, currentStaff.id);
   if (currentStaff.domain) {
-    assignmentFilter = or(
-      assignmentFilter,
-      and(isNull(tickets.assigned_to), eq(categories.name, currentStaff.domain))
-    );
+    const domainFilter = and(isNull(tickets.assigned_to), eq(categories.name, currentStaff.domain));
+    if (domainFilter) {
+      assignmentFilter = or(assignmentFilter, domainFilter);
+    }
   }
 
   let whereClause: any = assignmentFilter;

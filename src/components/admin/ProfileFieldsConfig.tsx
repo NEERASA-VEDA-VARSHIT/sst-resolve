@@ -59,16 +59,16 @@ export function ProfileFieldsConfig({ categoryId, categoryName }: ProfileFieldsC
 				// If field doesn't exist in DB, it's disabled by default (required: false, editable: false)
 				// Email and Roll Number are always read-only (editable: false)
 				const initializedFields = AVAILABLE_FIELDS.map((field, index) => {
-					const existing = fieldMap.get(field.name);
+					const existing = fieldMap.get(field.name) as ProfileField | undefined;
 					const isReadOnly = field.name === "email" || field.name === "rollNo";
 					
 					if (existing) {
 						// Field exists in DB - use saved values, but force read-only fields to editable: false
 						return {
 							field_name: field.name,
-							required: existing.required,
-							editable: isReadOnly ? false : existing.editable,
-							display_order: existing.display_order,
+							required: existing.required ?? false,
+							editable: isReadOnly ? false : (existing.editable ?? false),
+							display_order: existing.display_order ?? index,
 						};
 					} else {
 						// Field doesn't exist in DB - disabled by default

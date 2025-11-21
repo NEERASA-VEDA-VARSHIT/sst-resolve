@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { ticket_statuses } from "@/db/schema";
-import { eq, asc } from "drizzle-orm";
+import { eq, asc, max, sql } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
 import { revalidateTag } from "next/cache";
@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
         let finalDisplayOrder = display_order;
         if (finalDisplayOrder === undefined) {
             const [maxOrder] = await db
-                .select({ max: db.fn.max(ticket_statuses.display_order) })
+                .select({ max: max(ticket_statuses.display_order) })
                 .from(ticket_statuses);
             finalDisplayOrder = (maxOrder?.max || 0) + 1;
         }

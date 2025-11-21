@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import { tickets, outbox } from "@/db/schema";
+import { tickets, outbox, ticket_statuses } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
 import { TICKET_STATUS } from "@/conf/constants";
+import { getStatusIdByValue } from "@/lib/status-helpers";
 
 /**
  * ============================================
@@ -37,7 +38,7 @@ const EscalateSchema = z.object({
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     // --------------------------------------------------
@@ -59,7 +60,8 @@ export async function POST(
     // --------------------------------------------------
     // PARAMS
     // --------------------------------------------------
-    const ticketId = Number(params.id);
+    const { id } = await params;
+    const ticketId = Number(id);
     if (isNaN(ticketId))
       return NextResponse.json({ error: "Invalid ticket ID" }, { status: 400 });
 
@@ -76,14 +78,58 @@ export async function POST(
     // --------------------------------------------------
     // LOAD TICKET
     // --------------------------------------------------
-    const [ticket] = await db
-      .select()
+    const [ticketRow] = await db
+      .select({
+        id: tickets.id,
+        title: tickets.title,
+        description: tickets.description,
+        location: tickets.location,
+        status_id: tickets.status_id,
+        category_id: tickets.category_id,
+        subcategory_id: tickets.subcategory_id,
+        sub_subcategory_id: tickets.sub_subcategory_id,
+        created_by: tickets.created_by,
+        assigned_to: tickets.assigned_to,
+        acknowledged_by: tickets.acknowledged_by,
+        group_id: tickets.group_id,
+        escalation_level: tickets.escalation_level,
+        tat_extended_count: tickets.tat_extended_count,
+        last_escalation_at: tickets.last_escalation_at,
+        acknowledgement_tat_hours: tickets.acknowledgement_tat_hours,
+        resolution_tat_hours: tickets.resolution_tat_hours,
+        acknowledgement_due_at: tickets.acknowledgement_due_at,
+        resolution_due_at: tickets.resolution_due_at,
+        acknowledged_at: tickets.acknowledged_at,
+        reopened_at: tickets.reopened_at,
+        sla_breached_at: tickets.sla_breached_at,
+        reopen_count: tickets.reopen_count,
+        rating: tickets.rating,
+        feedback_type: tickets.feedback_type,
+        rating_submitted: tickets.rating_submitted,
+        feedback: tickets.feedback,
+        is_public: tickets.is_public,
+        admin_link: tickets.admin_link,
+        student_link: tickets.student_link,
+        slack_thread_id: tickets.slack_thread_id,
+        external_ref: tickets.external_ref,
+        metadata: tickets.metadata,
+        created_at: tickets.created_at,
+        updated_at: tickets.updated_at,
+        resolved_at: tickets.resolved_at,
+        status_value: ticket_statuses.value,
+      })
       .from(tickets)
+      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
       .where(eq(tickets.id, ticketId))
       .limit(1);
 
-    if (!ticket)
+    if (!ticketRow)
       return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
+
+    const ticket = {
+      ...ticketRow,
+      status: ticketRow.status_value || null,
+    };
 
     // --------------------------------------------------
     // PERMISSION RULES (PRD v3)
@@ -98,7 +144,7 @@ export async function POST(
         );
       }
 
-      if (ticket.status === TICKET_STATUS.RESOLVED) {
+      if ((ticket.status || "").toUpperCase() === TICKET_STATUS.RESOLVED) {
         return NextResponse.json(
           { error: "Cannot escalate a resolved ticket" },
           { status: 400 }
@@ -116,7 +162,7 @@ export async function POST(
 
     // ADMINS → can escalate any ticket except already resolved
     if (isAdmin) {
-      if (ticket.status === TICKET_STATUS.RESOLVED) {
+      if ((ticket.status || "").toUpperCase() === TICKET_STATUS.RESOLVED) {
         return NextResponse.json(
           { error: "Cannot escalate a resolved ticket" },
           { status: 400 }
@@ -134,13 +180,22 @@ export async function POST(
 
     const newEscalationLevel = (ticket.escalation_level || 0) + 1;
 
+    // Get the status ID for ESCALATED
+    const escalatedStatusId = await getStatusIdByValue(TICKET_STATUS.ESCALATED);
+    if (!escalatedStatusId) {
+      return NextResponse.json(
+        { error: "ESCALATED status not found in database" },
+        { status: 500 }
+      );
+    }
+
     const updatedTicket = await db.transaction(async (tx) => {
       // Update ticket
       const [t] = await tx
         .update(tickets)
         .set({
           escalation_level: newEscalationLevel,
-          status: TICKET_STATUS.ESCALATED,
+          status_id: escalatedStatusId,
           last_escalation_at: new Date(),
           updated_at: new Date(),
         })

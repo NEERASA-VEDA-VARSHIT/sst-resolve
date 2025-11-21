@@ -37,7 +37,7 @@ export async function getAdminAssignment(clerkUserId: string): Promise<AdminAssi
     const userData = user[0];
     const validRoles = ["admin", "committee", "super_admin"];
 
-    if (!validRoles.includes(userData.roleName)) {
+    if (!userData.roleName || !validRoles.includes(userData.roleName)) {
       return { domain: null, scope: null };
     }
 

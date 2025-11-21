@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { db, tickets } from "@/db";
+import { db, tickets, ticket_statuses, students } from "@/db";
 import { eq } from "drizzle-orm";
 import { RateTicketSchema } from "@/schema/ticket.schema";
 
@@ -41,32 +41,83 @@ export async function POST(
 		const validationResult = RateTicketSchema.safeParse(body);
 		if (!validationResult.success) {
 			return NextResponse.json(
-				{ error: "Validation failed", details: validationResult.error.errors },
+				{ error: "Validation failed", details: validationResult.error.issues },
 				{ status: 400 }
 			);
 		}
 		
 		const { rating: ratingNum } = validationResult.data;
 
-		// Get current ticket
-		const [ticket] = await db
-			.select()
+		// Get current user from database
+		const { getOrCreateUser } = await import("@/lib/user-sync");
+		const dbUser = await getOrCreateUser(userId);
+		if (!dbUser) {
+			return NextResponse.json({ error: "User not found" }, { status: 404 });
+		}
+
+		// Get current ticket with status join
+		const [ticketRow] = await db
+			.select({
+				id: tickets.id,
+				title: tickets.title,
+				description: tickets.description,
+				location: tickets.location,
+				status_id: tickets.status_id,
+				category_id: tickets.category_id,
+				subcategory_id: tickets.subcategory_id,
+				sub_subcategory_id: tickets.sub_subcategory_id,
+				created_by: tickets.created_by,
+				assigned_to: tickets.assigned_to,
+				acknowledged_by: tickets.acknowledged_by,
+				group_id: tickets.group_id,
+				escalation_level: tickets.escalation_level,
+				tat_extended_count: tickets.tat_extended_count,
+				last_escalation_at: tickets.last_escalation_at,
+				acknowledgement_tat_hours: tickets.acknowledgement_tat_hours,
+				resolution_tat_hours: tickets.resolution_tat_hours,
+				acknowledgement_due_at: tickets.acknowledgement_due_at,
+				resolution_due_at: tickets.resolution_due_at,
+				acknowledged_at: tickets.acknowledged_at,
+				reopened_at: tickets.reopened_at,
+				sla_breached_at: tickets.sla_breached_at,
+				reopen_count: tickets.reopen_count,
+				rating: tickets.rating,
+				feedback_type: tickets.feedback_type,
+				rating_submitted: tickets.rating_submitted,
+				feedback: tickets.feedback,
+				is_public: tickets.is_public,
+				admin_link: tickets.admin_link,
+				student_link: tickets.student_link,
+				slack_thread_id: tickets.slack_thread_id,
+				external_ref: tickets.external_ref,
+				metadata: tickets.metadata,
+				created_at: tickets.created_at,
+				updated_at: tickets.updated_at,
+				resolved_at: tickets.resolved_at,
+				status_value: ticket_statuses.value,
+			})
 			.from(tickets)
+			.leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
 			.where(eq(tickets.id, ticketId))
 			.limit(1);
 
-		if (!ticket) {
+		if (!ticketRow) {
 			return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
 		}
 
+		const ticket = {
+			...ticketRow,
+			status: ticketRow.status_value || null,
+		};
+
 		// Check if user owns this ticket
-		const userNumber = sessionClaims?.metadata?.userNumber as string | undefined;
-		if (!userNumber || ticket.userNumber !== userNumber) {
+		if (ticket.created_by !== dbUser.id) {
 			return NextResponse.json({ error: "You can only rate your own tickets" }, { status: 403 });
 		}
 
 		// Check if ticket is closed/resolved
-		if (ticket.status !== "closed" && ticket.status !== "resolved") {
+		const statusLower = (ticket.status || "").toLowerCase();
+		if (statusLower !== "closed" && statusLower !== "resolved") {
 			return NextResponse.json({ error: "You can only rate closed or resolved tickets" }, { status: 400 });
 		}
 
@@ -75,13 +126,13 @@ export async function POST(
 			return NextResponse.json({ error: "This ticket has already been rated" }, { status: 400 });
 		}
 
-		// Update ticket with rating
+		// Update ticket with rating (rating is integer, not string)
 		await db
 			.update(tickets)
 			.set({
-				rating: ratingNum.toString(),
-				ratingSubmitted: new Date(),
-				updatedAt: new Date(),
+				rating: ratingNum,
+				rating_submitted: new Date(),
+				updated_at: new Date(),
 			})
 			.where(eq(tickets.id, ticketId));
 

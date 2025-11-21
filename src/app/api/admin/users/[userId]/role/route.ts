@@ -15,7 +15,7 @@ import { getOrCreateUser } from "@/lib/user-sync";
 
 export async function PATCH(
     request: NextRequest,
-    { params }: { params: { userId: string } }
+    { params }: { params: Promise<{ userId: string }> }
 ) {
     try {
         const { userId: currentUserId } = await auth();
@@ -38,7 +38,7 @@ export async function PATCH(
             return NextResponse.json({ error: "Valid role_id is required" }, { status: 400 });
         }
 
-        const targetUserId = params.userId;
+        const { userId: targetUserId } = await params;
 
         // Check if target user exists
         const [targetUser] = await db

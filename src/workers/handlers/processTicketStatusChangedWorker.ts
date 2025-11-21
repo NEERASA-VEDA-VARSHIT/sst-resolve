@@ -80,22 +80,26 @@ export async function processTicketStatusChangedWorker(payload: any) {
 
         // 2. Send email to student (threaded)
         try {
+            const category = ticketData.category as any;
+            const createdByUser = ticketData.created_by_user as any;
             const emailTemplate = getStatusUpdateEmail(
                 ticket_id,
                 new_status,
-                ticketData.category?.name || "Unknown"
+                category?.name || "Unknown"
             );
 
-            await sendEmail({
-                to: ticketData.created_by_user.email,
-                subject: emailTemplate.subject,
-                html: emailTemplate.html,
-                ticketId: ticket_id,
-                threadMessageId: metadata.emailMessageId,
-                originalSubject: metadata.originalEmailSubject,
-            });
+            if (createdByUser?.email) {
+                await sendEmail({
+                    to: createdByUser.email,
+                    subject: emailTemplate.subject,
+                    html: emailTemplate.html,
+                    ticketId: ticket_id,
+                    threadMessageId: metadata.emailMessageId,
+                    originalSubject: metadata.originalEmailSubject,
+                });
 
-            console.log(`[Worker] Sent status change email to ${ticketData.created_by_user.email}`);
+                console.log(`[Worker] Sent status change email to ${createdByUser.email}`);
+            }
         } catch (error) {
             console.error("[Worker] Failed to send status change email:", error);
         }

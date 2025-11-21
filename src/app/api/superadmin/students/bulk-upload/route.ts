@@ -9,7 +9,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import { users, students, hostels, batches, class_sections } from "@/db/schema";
+import { users, students, hostels, batches, class_sections, roles } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
@@ -20,6 +20,16 @@ import { getOrCreateUser } from "@/lib/user-sync";
 function capitalize(str: string): string {
 	if (!str) return str;
 	return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+}
+
+function splitFullName(name: string): { first_name: string; last_name: string } {
+	if (!name) return { first_name: "", last_name: "" };
+	const parts = name.trim().split(/\s+/);
+	if (parts.length === 0) return { first_name: "", last_name: "" };
+	if (parts.length === 1) return { first_name: parts[0], last_name: "" };
+	const first_name = parts[0];
+	const last_name = parts.slice(1).join(" ");
+	return { first_name, last_name };
 }
 
 function cleanFullName(name: string): string {
@@ -62,14 +72,12 @@ async function loadMasterDataCache(): Promise<MasterDataCache> {
 		db.select({
 			id: class_sections.id,
 			name: class_sections.name,
-			code: class_sections.code,
 			is_active: class_sections.is_active,
 		}).from(class_sections).where(eq(class_sections.is_active, true)),
 		db.select({
 			id: batches.id,
-			name: batches.name,
-			code: batches.code,
-			year: batches.year,
+			batch_year: batches.batch_year,
+			display_name: batches.display_name,
 			is_active: batches.is_active,
 		}).from(batches).where(eq(batches.is_active, true)),
 	]);
@@ -305,9 +313,11 @@ export async function POST(request: NextRequest) {
 
 			try {
 				// Clean and resolve data to IDs
+				const nameParts = splitFullName(row.full_name);
 				const cleanedData = {
 					email: cleanEmail(row.email),
-					full_name: cleanFullName(row.full_name),
+					first_name: nameParts.first_name,
+					last_name: nameParts.last_name,
 					user_number: row.user_number.trim(),
 					hostel_id: row.hostel?.trim()
 						? masterDataCache.hostels.get(row.hostel.trim().toLowerCase()) || null
@@ -336,7 +346,8 @@ export async function POST(request: NextRequest) {
 					await db
 						.update(users)
 						.set({
-							name: cleanedData.full_name,
+							first_name: cleanedData.first_name,
+							last_name: cleanedData.last_name,
 							phone: cleanedData.mobile || null,
 							updated_at: new Date(),
 						})
@@ -388,13 +399,32 @@ export async function POST(request: NextRequest) {
 					}
 				} else {
 					// User doesn't exist - create both user and student
+					// Get student role_id
+					const [studentRole] = await db
+						.select({ id: roles.id })
+						.from(roles)
+						.where(eq(roles.name, "student"))
+						.limit(1);
+					
+					if (!studentRole) {
+						processingErrors.push({
+							row: rowNum,
+							field: "role",
+							message: "Student role not found in database",
+							value: "student",
+						});
+						continue;
+					}
+
 					const [newUser] = await db
 						.insert(users)
 						.values({
 							clerk_id: `pending_${cleanedData.email}`, // Temporary, will be updated on first login
 							email: cleanedData.email,
-							name: cleanedData.full_name,
+							first_name: cleanedData.first_name,
+							last_name: cleanedData.last_name,
 							phone: cleanedData.mobile || null,
+							role_id: studentRole.id,
 						})
 						.returning();
 

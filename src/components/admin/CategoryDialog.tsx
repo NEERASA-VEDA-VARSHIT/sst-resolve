@@ -49,6 +49,13 @@ interface Scope {
   description: string | null;
 }
 
+interface Admin {
+  id: string;
+  email: string;
+  first_name: string | null;
+  last_name: string | null;
+}
+
 interface CategoryDialogProps {
   open: boolean;
   onClose: (saved: boolean) => void;

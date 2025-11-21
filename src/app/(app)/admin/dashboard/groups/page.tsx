@@ -43,18 +43,30 @@ export default async function AdminGroupsPage() {
       .where(eq(users.id, dbUser.id))
       .limit(1);
 
-    let ticketQuery = db.select().from(tickets).orderBy(desc(tickets.created_at));
-
+    let allTickets;
     if (role === "admin") {
-      ticketQuery = ticketQuery.where(
-        or(
-          eq(tickets.assigned_to, dbUser.id),
-          and(isNull(tickets.assigned_to), adminProfile?.domain ? eq(tickets.location, adminProfile.domain) : isNull(tickets.location))
-        )
+      const whereClause = or(
+        eq(tickets.assigned_to, dbUser.id),
+        and(isNull(tickets.assigned_to), adminProfile?.domain ? eq(tickets.location, adminProfile.domain) : isNull(tickets.location))
       );
+      if (whereClause) {
+        allTickets = await db
+          .select()
+          .from(tickets)
+          .where(whereClause)
+          .orderBy(desc(tickets.created_at));
+      } else {
+        allTickets = await db
+          .select()
+          .from(tickets)
+          .orderBy(desc(tickets.created_at));
+      }
+    } else {
+      allTickets = await db
+        .select()
+        .from(tickets)
+        .orderBy(desc(tickets.created_at));
     }
-
-    const allTickets = await ticketQuery;
 
       return (
         <div className="space-y-6">

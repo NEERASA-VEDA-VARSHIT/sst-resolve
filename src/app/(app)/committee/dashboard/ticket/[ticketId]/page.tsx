@@ -8,13 +8,12 @@ import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Calendar, ArrowLeft, Clock, CheckCircle2, AlertCircle, MessageSquare, User, MapPin, FileText, Image as ImageIcon } from "lucide-react";
-import { db, tickets, ticket_committee_tags, committee_members, categories } from "@/db";
+import { db, tickets, ticket_committee_tags, committee_members, categories, ticket_statuses } from "@/db";
 import { eq, inArray, and } from "drizzle-orm";
 import { getOrCreateUser } from "@/lib/user-sync";
 import { CommentForm } from "@/components/tickets/CommentForm";
 import { RatingForm } from "@/components/tickets/RatingForm";
 import { CommitteeActions } from "@/components/tickets/CommitteeActions";
-import { enumToStatus } from "@/lib/status-helpers";
 import { normalizeStatusForComparison, formatStatus } from "@/lib/utils";
 
 export default async function CommitteeTicketPage({ params }: { params: Promise<{ ticketId: string }> }) {
@@ -200,7 +199,7 @@ export default async function CommitteeTicketPage({ params }: { params: Promise<
                 <CardTitle className="text-3xl font-bold">Ticket #{ticket.id}</CardTitle>
                 {ticket.status && (
                   <Badge variant={statusVariant(ticket.status)} className={getStatusColor(ticket.status)}>
-                    {formatStatus(enumToStatus(ticket.status))}
+                    {formatStatus(ticket.status)}
                   </Badge>
                 )}
                 {ticket.category_name && (
@@ -376,7 +375,7 @@ export default async function CommitteeTicketPage({ params }: { params: Promise<
                       </span>
                     </AlertDescription>
                   </Alert>
-                  <CommentForm ticketId={ticket.id} currentStatus={enumToStatus(ticket.status) || undefined} />
+                  <CommentForm ticketId={ticket.id} currentStatus={ticket.status || undefined} />
                 </div>
               )}
             </CardContent>
@@ -397,7 +396,7 @@ export default async function CommitteeTicketPage({ params }: { params: Promise<
               <CardContent>
                 <CommitteeActions
                   ticketId={ticket.id}
-                  currentStatus={enumToStatus(ticket.status) || "open"}
+                  currentStatus={ticket.status || "open"}
                   isTaggedTicket={isTaggedTicket}
                 />
               </CardContent>
@@ -417,7 +416,7 @@ export default async function CommitteeTicketPage({ params }: { params: Promise<
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <RatingForm ticketId={ticket.id} currentRating={ticket.rating || undefined} />
+                <RatingForm ticketId={ticket.id} currentRating={ticket.rating ? String(ticket.rating) : undefined} />
               </CardContent>
             </Card>
           )}

@@ -6,59 +6,303 @@ This document tracks all build-time errors, import issues, and deployment failur
 
 ## 🔴 Critical Issues
 
-### 1. Server-Only Module Imported in Client Component
+### 1. Server-Only Module Imported in Pages (Turbopack Build Error)
 
-**Error Type:** Invalid Import  
-**Severity:** Critical  
+**Error Type:** Invalid Import / Module Resolution  
+**Severity:** 🔴 Critical - Blocks Production Build  
 **Status:** 🔴 Unresolved
 
 #### Error Message
 ```
-Invalid import
-'server-only' cannot be imported from a Client Component module. It should only be used from a Server Component.
-The error was caused by importing 'src/db'
+Error: Turbopack build failed with 10 errors:
+./Desktop/sst/sst-resolve/src/db/index.ts:3:1
+Ecmascript file had an error
+
+You're importing a component that needs "server-only". That only works in a Server Component 
+which is not supported in the pages/ directory.
+
+Invalid import: 'server-only' cannot be imported from a Client Component module.
 ```
 
-#### Stack Trace
+#### Additional Module Errors
 ```
-at <unknown> (./src/db/index.ts:3:1)
-at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+Module not found: Can't resolve 'fs'
+Module not found: Can't resolve 'net'
+Module not found: Can't resolve 'tls'
+Module not found: Can't resolve 'perf_hooks'
 ```
 
-#### Details
-- **File:** `./src/db/index.ts:3:1`
-- **Issue:** The database module (`src/db`) is being imported in a Client Component, but it contains `server-only` imports
-- **Impact:** Build fails with exit code 1
-- **Command:** `pnpm build`
-- **Timestamp:** 22:07:48.557
+These errors occur in `node_modules/.pnpm/postgres@3.4.7/node_modules/postgres/src/` because Node.js built-in modules (`fs`, `net`, `tls`, `perf_hooks`) cannot be bundled for client-side code.
 
-#### Root Cause
-The `src/db` module is marked as server-only (likely imports `server-only` package or uses server-side only APIs), but is being imported in a component that runs on the client side.
+#### Root Cause Analysis
 
-#### Potential Solutions
-1. **Move database calls to Server Components or API routes**
-   - Refactor client components to use Server Actions or API routes for database access
-   - Ensure `'use client'` directive is not present in files that import `src/db`
+**The core issue:** Page files in the App Router are importing `@/db` directly, which contains:
+1. `import 'server-only'` directive
+2. Node.js-only dependencies (`postgres` package using `fs`, `net`, `tls`, etc.)
 
-2. **Create API endpoints**
-   - Replace direct database imports in client components with fetch calls to API routes
-   - Move all database logic to `/api` routes or Server Components
+While App Router pages are Server Components by default, Turbopack's build process is detecting these imports and attempting to bundle them for potential client-side use, causing the build to fail.
 
-3. **Use Server Actions (Next.js 13+)**
-   - Create server actions for database operations
-   - Call these actions from client components
+#### Affected Files (22 Page Components)
 
-#### Files Likely Affected
-- Any component with `'use client'` directive that imports from `src/db`
-- Components that import other modules which transitively import `src/db`
+All files in `src/app/(app)` that import from `@/db`:
+
+**Super Admin Pages:**
+1. `src/app/(app)/superadmin/tickets/page.tsx`
+2. `src/app/(app)/superadmin/dashboard/page.tsx`
+3. `src/app/(app)/superadmin/dashboard/today/page.tsx`
+4. `src/app/(app)/superadmin/dashboard/ticket/[ticketId]/page.tsx`
+5. `src/app/(app)/superadmin/dashboard/groups/page.tsx`
+6. `src/app/(app)/superadmin/dashboard/escalated/page.tsx`
+7. `src/app/(app)/superadmin/dashboard/committee/page.tsx`
+8. `src/app/(app)/superadmin/dashboard/categories/page.tsx`
+9. `src/app/(app)/superadmin/dashboard/analytics/page.tsx`
+10. `src/app/(app)/superadmin/analytics/page.tsx`
+11. `src/app/(app)/superadmin/dashboard/analytics/category/[categoryId]/page.tsx`
+12. `src/app/(app)/superadmin/dashboard/analytics/admin/[adminId]/page.tsx`
+
+**Admin Pages:**
+13. `src/app/(app)/admin/dashboard/page.tsx`
+14. `src/app/(app)/admin/dashboard/today/page.tsx`
+15. `src/app/(app)/admin/dashboard/ticket/[ticketId]/page.tsx`
+16. `src/app/(app)/admin/dashboard/groups/page.tsx`
+17. `src/app/(app)/admin/dashboard/escalated/page.tsx`
+18. `src/app/(app)/admin/dashboard/analytics/page.tsx`
+
+**Committee Pages:**
+19. `src/app/(app)/committee/dashboard/page.tsx`
+20. `src/app/(app)/committee/dashboard/ticket/[ticketId]/page.tsx`
+
+**Student Pages:**
+21. `src/app/(app)/student/dashboard/page.tsx`
+22. `src/app/(app)/student/dashboard/ticket/new/page.tsx`
 
 #### Related Documentation
 - [Next.js Server and Client Components](https://nextjs.org/docs/app/building-your-application/rendering/composition-patterns)
 - [Server-Only Package](https://www.npmjs.com/package/server-only)
+- [Next.js Data Fetching Patterns](https://nextjs.org/docs/app/building-your-application/data-fetching/patterns)
+---
+
+## 🔧 Implementation Status
+
+### ✅ Changes Applied
+
+**1. Updated `next.config.ts`**
+- Added `'drizzle-orm'` to `serverExternalPackages` array
+- Configuration now includes: `['postgres', 'pg', 'better-sqlite3', 'drizzle-orm']`
+
+**2. Modified `src/db/index.ts`**
+- Commented out `import 'server-only'` statement
+- Added explanatory comment about Turbopack build issues
+
+### ⚠️ Build Status
+
+**Current Status:** Build still failing
+
+**Issue Discovered:** TypeScript compilation errors are preventing the build from completing. The `pnpm tsc --noEmit` check revealed **152 TypeScript errors across 42 files**.
+
+### 🔴 TypeScript Errors Blocking Build
+
+The build failure may not be solely due to the server-only import issue. TypeScript errors must be resolved first:
+
+**Error Summary:**
+- **152 total errors** across 42 files
+- Common issues:
+  - Missing properties on database schema types
+  - `Property 'due_at' does not exist on type 'PgTableWithColumns'`
+  - `Property 'email' does not exist on type` errors
+  - `Property 'name' does not exist on type` errors
+  - Missing Zod schema parameters
+
+**Most Affected Files:**
+- `src/app/(app)/committee/dashboard/page.tsx` (37 errors)
+- `src/app/(app)/admin/dashboard/today/page.tsx` (13 errors)
+- `src/app/api/cron/tat-reminders/route.ts` (10 errors)
+- `src/workers/handlers/processTicketCommentAddedWorker.ts` (7 errors)
+- Multiple other files with 1-6 errors each
+
+### 📋 Next Steps
+
+1. **Resolve TypeScript Errors First**
+   - Fix schema type mismatches
+   - Update database queries to match current schema
+   - Ensure all property accesses are valid
+
+2. **Re-test Build**
+   - Run `pnpm build` after TypeScript errors are fixed
+   - Verify server-only import fix is effective
+
+3. **If Build Still Fails**
+   - Consider Option 3 (refactor to data access layer)
+   - Or investigate other Turbopack-specific configuration options
+
+
+
+### Option 1: Remove `server-only` Import (Quick Fix) ⚡
+
+**Complexity:** Low  
+**Risk:** Low  
+**Time:** 5 minutes
+
+#### What to Do
+Remove the `import 'server-only'` statement from `src/db/index.ts`.
+
+#### Steps
+1. Open `src/db/index.ts`
+2. Remove or comment out line 3: `import 'server-only';`
+3. Run `pnpm build` to verify
+
+#### Pros
+- ✅ Fastest solution
+- ✅ No code refactoring needed
+- ✅ Pages are already Server Components by default
+
+#### Cons
+- ⚠️ Removes explicit protection against accidental client-side imports
+- ⚠️ Doesn't address the underlying Turbopack bundling issue
+
+#### When to Use
+- When you need to deploy immediately
+- When all pages are confirmed to be Server Components
+- As a temporary fix while implementing a more robust solution
 
 ---
 
-## 📋 Build Error Summary
+### Option 2: Configure Turbopack Server-Only Externals (Recommended) ⭐
+
+**Complexity:** Medium  
+**Risk:** Low  
+**Time:** 15 minutes
+
+#### What to Do
+Configure Next.js to treat database and Node.js modules as server-only externals in the Turbopack configuration.
+
+#### Steps
+1. Open `next.config.ts` or `next.config.js`
+2. Add server-only externals configuration:
+
+```typescript
+const nextConfig = {
+  experimental: {
+    serverComponentsExternalPackages: ['postgres', 'drizzle-orm'],
+  },
+  // For Turbopack specifically
+  turbopack: {
+    resolveAlias: {
+      // Prevent client-side bundling of server-only modules
+      'server-only': false,
+    },
+  },
+};
+```
+
+3. Run `pnpm build` to verify
+
+#### Pros
+- ✅ Explicitly tells Next.js these are server-only packages
+- ✅ Prevents accidental client-side bundling
+- ✅ Keeps the `server-only` protection in place
+- ✅ Recommended by Next.js documentation
+
+#### Cons
+- ⚠️ Requires Next.js configuration changes
+- ⚠️ May need adjustment for other server-only packages
+
+#### When to Use
+- **Recommended for production**
+- When you want explicit server-only package configuration
+- When you want to maintain the `server-only` import protection
+
+---
+
+### Option 3: Refactor to Data Access Layer (Long-term Solution) 🏗️
+
+**Complexity:** High  
+**Risk:** Medium  
+**Time:** 2-4 hours
+
+#### What to Do
+Create a dedicated data access layer with Server Actions or API routes to completely separate database logic from page components.
+
+#### Architecture
+```
+src/
+├── app/
+│   ├── (app)/
+│   │   └── */page.tsx          # Pages (no direct DB imports)
+│   └── api/
+│       └── */route.ts          # API routes (can import DB)
+├── db/
+│   └── index.ts                # Database connection
+├── actions/                     # NEW: Server Actions
+│   ├── tickets.ts
+│   ├── users.ts
+│   └── categories.ts
+└── lib/
+    └── data/                    # NEW: Data access functions
+        ├── tickets.ts
+        ├── users.ts
+        └── categories.ts
+```
+
+#### Steps
+1. Create `src/actions/` directory for Server Actions
+2. Move database queries from pages to Server Actions
+3. Add `'use server'` directive to action files
+4. Update pages to call Server Actions instead of direct DB queries
+5. Test each refactored page
+
+#### Example Refactor
+
+**Before** (`page.tsx`):
+```typescript
+import { db, tickets } from "@/db";
+
+export default async function Page() {
+  const allTickets = await db.select().from(tickets);
+  return <div>{/* render */}</div>;
+}
+```
+
+**After** (`page.tsx`):
+```typescript
+import { getTickets } from "@/actions/tickets";
+
+export default async function Page() {
+  const allTickets = await getTickets();
+  return <div>{/* render */}</div>;
+}
+```
+
+**New file** (`src/actions/tickets.ts`):
+```typescript
+'use server';
+
+import { db, tickets } from "@/db";
+
+export async function getTickets() {
+  return await db.select().from(tickets);
+}
+```
+
+#### Pros
+- ✅ Clean separation of concerns
+- ✅ Better code organization
+- ✅ Easier to test and maintain
+- ✅ Reusable data access functions
+- ✅ Future-proof architecture
+
+#### Cons
+- ⚠️ Requires significant refactoring
+- ⚠️ Time-consuming for 22 page files
+- ⚠️ Risk of introducing bugs during refactor
+- ⚠️ Needs comprehensive testing
+
+#### When to Use
+- For long-term maintainability
+- When you have time for proper refactoring
+- When building new features (apply pattern going forward)
+
+
 
 | Error ID | Type | Severity | File | Status |
 |----------|------|----------|------|--------|

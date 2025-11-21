@@ -182,7 +182,8 @@ export async function POST(
     }
 
     // Build author name (prefer local user name if available)
-    let author = localUser.name || localUser.email || "User";
+    const authorName = [localUser.first_name, localUser.last_name].filter(Boolean).join(' ').trim();
+    let author = authorName || localUser.email || "User";
     // For admin super_admin note type, we may label differently in the worker / UI
 
     // Create comment object
