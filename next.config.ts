@@ -11,14 +11,14 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  // Mark server-only packages as external (prevents client bundling)
+  // This works with both Turbopack and Webpack
+  serverExternalPackages: ['postgres', 'pg', 'better-sqlite3'],
   // Explicitly configure Turbopack to eliminate webpack warning
   // Using --turbopack flag in build scripts
-  experimental: {
-    // Mark server-only packages as external (prevents client bundling)
-    // This works with both Turbopack and Webpack
-    serverComponentsExternalPackages: ['postgres', 'pg', 'better-sqlite3'],
+  turbopack: {
     // Turbopack configuration - empty object tells Next.js we're using Turbopack
-    turbo: {},
+    // The 'server-only' package in src/db/index.ts handles server-only modules
   },
 };
 
