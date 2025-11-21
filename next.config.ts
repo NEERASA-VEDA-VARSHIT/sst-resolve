@@ -19,26 +19,9 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  webpack: (config, { isServer }) => {
-    if (!isServer) {
-      // Exclude Node.js built-in modules from client bundle
-      config.resolve.fallback = {
-        ...config.resolve.fallback,
-        fs: false,
-        net: false,
-        tls: false,
-        perf_hooks: false,
-        crypto: false,
-        stream: false,
-        os: false,
-      };
-      
-      // Exclude postgres package from client bundle
-      config.externals = config.externals || [];
-      config.externals.push('postgres');
-    }
-    return config;
-  },
+  // Note: Using Turbopack (--turbopack flag in build scripts)
+  // The 'server-only' package in src/db/index.ts handles server-only modules
+  // No webpack config needed - Turbopack respects 'server-only' automatically
 };
 
 export default nextConfig;
