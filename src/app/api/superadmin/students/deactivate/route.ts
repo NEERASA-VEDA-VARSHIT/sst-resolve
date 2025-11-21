@@ -104,10 +104,11 @@ export async function PATCH(request: NextRequest) {
 		};
 
 		return NextResponse.json(response, { status: 200 });
-	} catch (error: any) {
+	} catch (error: unknown) {
 		console.error("Deactivate students error:", error);
+		const errorMessage = error instanceof Error ? error.message : "Failed to deactivate students";
 		return NextResponse.json(
-			{ error: error.message || "Failed to deactivate students" },
+			{ error: errorMessage },
 			{ status: 500 },
 		);
 	}

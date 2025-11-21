@@ -105,7 +105,7 @@ interface ValidationError {
 	row: number;
 	field: string;
 	message: string;
-	value?: any;
+	value?: unknown;
 }
 
 interface UploadResult {
@@ -238,13 +238,13 @@ function parseCSV(csvText: string): CSVRow[] {
 
 	for (let i = 1; i < lines.length; i++) {
 		const values = lines[i].split(",").map((v) => v.trim());
-		const row: any = {};
+		const row: Record<string, string> = {};
 
 		headers.forEach((header, index) => {
 			row[header] = values[index] || "";
 		});
 
-		rows.push(row as CSVRow);
+		rows.push(row as unknown as CSVRow);
 	}
 
 	return rows;
@@ -444,12 +444,13 @@ export async function POST(request: NextRequest) {
 
 					created++;
 				}
-			} catch (error: any) {
+			} catch (error: unknown) {
 				console.error(`Error processing row ${rowNum}:`, error);
+				const errorMessage = error instanceof Error ? error.message : "Failed to process row";
 				processingErrors.push({
 					row: rowNum,
 					field: "processing",
-					message: error.message || "Failed to process row",
+					message: errorMessage,
 				});
 				skipped++;
 			}
@@ -465,10 +466,11 @@ export async function POST(request: NextRequest) {
 		};
 
 		return NextResponse.json(result, { status: 200 });
-	} catch (error: any) {
+	} catch (error: unknown) {
 		console.error("Bulk upload error:", error);
+		const errorMessage = error instanceof Error ? error.message : "Failed to process upload";
 		return NextResponse.json(
-			{ error: error.message || "Failed to process upload" },
+			{ error: errorMessage },
 			{ status: 500 },
 		);
 	}

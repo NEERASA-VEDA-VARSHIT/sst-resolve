@@ -212,9 +212,10 @@ export async function GET(
     const dynamicFields = extractDynamicFields(metadata, categorySchema);
 
     // 9. Extract comments
+    type Comment = { isInternal?: boolean; type?: string };
     const comments = Array.isArray(metadata?.comments) ? metadata.comments : [];
     const visibleComments = comments.filter(
-      (c: any) => !c?.isInternal && c?.type !== "super_admin_note"
+      (c: Comment) => !c?.isInternal && c?.type !== "super_admin_note"
     );
 
     // 10. Build timeline

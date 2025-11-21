@@ -65,7 +65,7 @@ export async function GET(
             user: {
               firstName: clerkUser.firstName,
               lastName: clerkUser.lastName,
-              emailAddresses: clerkUser.emailAddresses.map((email: any) => ({
+              emailAddresses: clerkUser.emailAddresses.map((email: { emailAddress: string }) => ({
                 emailAddress: email.emailAddress,
               })),
             },

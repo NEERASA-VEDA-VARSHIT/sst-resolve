@@ -75,7 +75,7 @@ export async function PATCH(request: NextRequest) {
         }
 
         // Perform bulk update
-        const updateData: any = {
+        const updateData: Record<string, unknown> = {
             ...updates,
             updated_at: new Date(),
         };

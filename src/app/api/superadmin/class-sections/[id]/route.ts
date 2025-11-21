@@ -51,10 +51,11 @@ export async function GET(
 		}
 
 		return NextResponse.json({ class_section: section }, { status: 200 });
-	} catch (error: any) {
+	} catch (error: unknown) {
 		console.error("Fetch section error:", error);
+		const errorMessage = error instanceof Error ? error.message : "Failed to fetch section";
 		return NextResponse.json(
-			{ error: error.message || "Failed to fetch section" },
+			{ error: errorMessage },
 			{ status: 500 },
 		);
 	}
@@ -100,7 +101,7 @@ export async function PATCH(
 		const { name, is_active } = body;
 
 		// Build update object
-		const updates: any = {
+		const updates: Record<string, unknown> = {
 			updated_at: new Date(),
 		};
 
@@ -143,10 +144,11 @@ export async function PATCH(
 			{ message: "Section updated successfully", class_section: updatedSection },
 			{ status: 200 },
 		);
-	} catch (error: any) {
+	} catch (error: unknown) {
 		console.error("Update section error:", error);
+		const errorMessage = error instanceof Error ? error.message : "Failed to update section";
 		return NextResponse.json(
-			{ error: error.message || "Failed to update section" },
+			{ error: errorMessage },
 			{ status: 500 },
 		);
 	}
@@ -219,10 +221,11 @@ export async function DELETE(
 			{ message: "Section deactivated successfully", class_section: deletedSection },
 			{ status: 200 },
 		);
-	} catch (error: any) {
+	} catch (error: unknown) {
 		console.error("Delete section error:", error);
+		const errorMessage = error instanceof Error ? error.message : "Failed to delete section";
 		return NextResponse.json(
-			{ error: error.message || "Failed to delete section" },
+			{ error: errorMessage },
 			{ status: 500 },
 		);
 	}

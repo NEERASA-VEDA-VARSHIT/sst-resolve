@@ -32,26 +32,25 @@ export async function GET(request: NextRequest) {
 		const { searchParams } = new URL(request.url);
 		const activeOnly = searchParams.get("active") === "true";
 
-		let query = db.select({
-			id: batches.id,
-			batch_year: batches.batch_year,
-			display_name: batches.display_name,
-			is_active: batches.is_active,
-			created_at: batches.created_at,
-			updated_at: batches.updated_at,
-		}).from(batches);
+	const query = db.select({
+		id: batches.id,
+		batch_year: batches.batch_year,
+		display_name: batches.display_name,
+		is_active: batches.is_active,
+		created_at: batches.created_at,
+		updated_at: batches.updated_at,
+	}).from(batches);
 
-		if (activeOnly) {
-			query = query.where(eq(batches.is_active, true)) as any;
-		}
-
-		const batchList = await query.orderBy(batches.batch_year);
+	const batchList = activeOnly
+		? await query.where(eq(batches.is_active, true)).orderBy(batches.batch_year)
+		: await query.orderBy(batches.batch_year);
 
 		return NextResponse.json({ batches: batchList }, { status: 200 });
-	} catch (error: any) {
+	} catch (error: unknown) {
 		console.error("Fetch batches error:", error);
+		const errorMessage = error instanceof Error ? error.message : "Failed to fetch batches";
 		return NextResponse.json(
-			{ error: error.message || "Failed to fetch batches" },
+			{ error: errorMessage },
 			{ status: 500 },
 		);
 	}
@@ -120,10 +119,11 @@ export async function POST(request: NextRequest) {
 			{ message: "Batch created successfully", batch: newBatch },
 			{ status: 201 },
 		);
-	} catch (error: any) {
+	} catch (error: unknown) {
 		console.error("Create batch error:", error);
+		const errorMessage = error instanceof Error ? error.message : "Failed to create batch";
 		return NextResponse.json(
-			{ error: error.message || "Failed to create batch" },
+			{ error: errorMessage },
 			{ status: 500 },
 		);
 	}

@@ -56,7 +56,7 @@ export async function GET() {
 
     const client = await clerkClient();
     const clerkUser = await client.users.getUser(userId);
-    const userNumber = (clerkUser.publicMetadata as any)?.userNumber;
+    const userNumber = (clerkUser.publicMetadata as { userNumber?: string })?.userNumber;
 
     const profile = await getStudentProfile(dbUser.id);
 
@@ -153,7 +153,7 @@ export async function PATCH(request: NextRequest) {
     /* ---------------------------
        Update STUDENT FIELDS
     ----------------------------*/
-    const studentUpdates: any = {};
+    const studentUpdates: Record<string, unknown> = {};
 
     if (hostel_id !== undefined) {
       studentUpdates.hostel_id =

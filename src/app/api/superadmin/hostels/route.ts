@@ -32,27 +32,26 @@ export async function GET(request: NextRequest) {
 		const { searchParams } = new URL(request.url);
 		const activeOnly = searchParams.get("active") === "true";
 
-		let query = db.select({
-			id: hostels.id,
-			name: hostels.name,
-			code: hostels.code,
-			capacity: hostels.capacity,
-			is_active: hostels.is_active,
-			created_at: hostels.created_at,
-			updated_at: hostels.updated_at,
-		}).from(hostels);
+	const query = db.select({
+		id: hostels.id,
+		name: hostels.name,
+		code: hostels.code,
+		capacity: hostels.capacity,
+		is_active: hostels.is_active,
+		created_at: hostels.created_at,
+		updated_at: hostels.updated_at,
+	}).from(hostels);
 
-		if (activeOnly) {
-			query = query.where(eq(hostels.is_active, true)) as any;
-		}
+	const hostelList = activeOnly
+		? await query.where(eq(hostels.is_active, true)).orderBy(hostels.name)
+		: await query.orderBy(hostels.name);
 
-		const hostelList = await query.orderBy(hostels.name);
-
-		return NextResponse.json({ hostels: hostelList }, { status: 200 });
-	} catch (error: any) {
+	return NextResponse.json({ hostels: hostelList }, { status: 200 });
+	} catch (error: unknown) {
 		console.error("Fetch hostels error:", error);
+		const errorMessage = error instanceof Error ? error.message : "Failed to fetch hostels";
 		return NextResponse.json(
-			{ error: error.message || "Failed to fetch hostels" },
+			{ error: errorMessage },
 			{ status: 500 },
 		);
 	}
@@ -113,10 +112,11 @@ export async function POST(request: NextRequest) {
 			{ message: "Hostel created successfully", hostel: newHostel },
 			{ status: 201 },
 		);
-	} catch (error: any) {
+	} catch (error: unknown) {
 		console.error("Create hostel error:", error);
+		const errorMessage = error instanceof Error ? error.message : "Failed to create hostel";
 		return NextResponse.json(
-			{ error: error.message || "Failed to create hostel" },
+			{ error: errorMessage },
 			{ status: 500 },
 		);
 	}

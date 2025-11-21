@@ -54,10 +54,11 @@ export async function POST() {
             domains: allDomains,
             scopes: allScopes,
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error seeding domains:", error);
+        const errorMessage = error instanceof Error ? error.message : "Unknown error";
         return NextResponse.json(
-            { error: "Failed to seed domains", details: error.message },
+            { error: "Failed to seed domains", details: errorMessage },
             { status: 500 }
         );
     }

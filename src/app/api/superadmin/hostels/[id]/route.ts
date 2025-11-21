@@ -51,10 +51,11 @@ export async function GET(
 		}
 
 		return NextResponse.json({ hostel }, { status: 200 });
-	} catch (error: any) {
+	} catch (error: unknown) {
 		console.error("Fetch hostel error:", error);
+		const errorMessage = error instanceof Error ? error.message : "Failed to fetch hostel";
 		return NextResponse.json(
-			{ error: error.message || "Failed to fetch hostel" },
+			{ error: errorMessage },
 			{ status: 500 },
 		);
 	}
@@ -100,7 +101,7 @@ export async function PATCH(
 		const { name, code, capacity, is_active } = body;
 
 		// Build update object
-		const updates: any = {
+		const updates: Record<string, unknown> = {
 			updated_at: new Date(),
 		};
 
@@ -149,10 +150,11 @@ export async function PATCH(
 			{ message: "Hostel updated successfully", hostel: updatedHostel },
 			{ status: 200 },
 		);
-	} catch (error: any) {
+	} catch (error: unknown) {
 		console.error("Update hostel error:", error);
+		const errorMessage = error instanceof Error ? error.message : "Failed to update hostel";
 		return NextResponse.json(
-			{ error: error.message || "Failed to update hostel" },
+			{ error: errorMessage },
 			{ status: 500 },
 		);
 	}
@@ -225,10 +227,11 @@ export async function DELETE(
 			{ message: "Hostel deactivated successfully", hostel: deletedHostel },
 			{ status: 200 },
 		);
-	} catch (error: any) {
+	} catch (error: unknown) {
 		console.error("Delete hostel error:", error);
+		const errorMessage = error instanceof Error ? error.message : "Failed to delete hostel";
 		return NextResponse.json(
-			{ error: error.message || "Failed to delete hostel" },
+			{ error: errorMessage },
 			{ status: 500 },
 		);
 	}

@@ -51,10 +51,11 @@ export async function GET(
 		}
 
 		return NextResponse.json({ batch }, { status: 200 });
-	} catch (error: any) {
+	} catch (error: unknown) {
 		console.error("Fetch batch error:", error);
+		const errorMessage = error instanceof Error ? error.message : "Failed to fetch batch";
 		return NextResponse.json(
-			{ error: error.message || "Failed to fetch batch" },
+			{ error: errorMessage },
 			{ status: 500 },
 		);
 	}
@@ -100,7 +101,7 @@ export async function PATCH(
 		const { batch_year, display_name, is_active } = body;
 
 		// Build update object
-		const updates: any = {
+		const updates: Record<string, unknown> = {
 			updated_at: new Date(),
 		};
 
@@ -149,10 +150,11 @@ export async function PATCH(
 			{ message: "Batch updated successfully", batch: updatedBatch },
 			{ status: 200 },
 		);
-	} catch (error: any) {
+	} catch (error: unknown) {
 		console.error("Update batch error:", error);
+		const errorMessage = error instanceof Error ? error.message : "Failed to update batch";
 		return NextResponse.json(
-			{ error: error.message || "Failed to update batch" },
+			{ error: errorMessage },
 			{ status: 500 },
 		);
 	}
@@ -225,10 +227,11 @@ export async function DELETE(
 			{ message: "Batch deactivated successfully", batch: deletedBatch },
 			{ status: 200 },
 		);
-	} catch (error: any) {
+	} catch (error: unknown) {
 		console.error("Delete batch error:", error);
+		const errorMessage = error instanceof Error ? error.message : "Failed to delete batch";
 		return NextResponse.json(
-			{ error: error.message || "Failed to delete batch" },
+			{ error: errorMessage },
 			{ status: 500 },
 		);
 	}

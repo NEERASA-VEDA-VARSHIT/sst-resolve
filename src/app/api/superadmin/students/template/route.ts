@@ -58,10 +58,11 @@ export async function GET(request: NextRequest) {
 				"Content-Disposition": 'attachment; filename="student_upload_template.csv"',
 			},
 		});
-	} catch (error: any) {
+	} catch (error: unknown) {
 		console.error("Template download error:", error);
+		const errorMessage = error instanceof Error ? error.message : "Failed to generate template";
 		return NextResponse.json(
-			{ error: error.message || "Failed to generate template" },
+			{ error: errorMessage },
 			{ status: 500 },
 		);
 	}

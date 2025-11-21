@@ -55,15 +55,14 @@ export async function POST(request: NextRequest) {
 		// Create a new Svix instance with the secret
 		const wh = new Webhook(webhookSecret);
 
-		let evt: any;
-
 		// Verify the payload with the headers
+		let evt: { type: string; data: Record<string, unknown> };
 		try {
 			evt = wh.verify(body, {
 				"svix-id": svix_id,
 				"svix-timestamp": svix_timestamp,
 				"svix-signature": svix_signature,
-			}) as any;
+			}) as { type: string; data: Record<string, unknown> };
 		} catch (err) {
 			console.error("Error verifying webhook:", err);
 			return NextResponse.json(
@@ -76,22 +75,24 @@ export async function POST(request: NextRequest) {
 		const eventType = evt.type;
 		const eventData = evt.data;
 
+		const typedEventData = eventData as ClerkUserEventData;
+		
 		console.log(`[Clerk Webhook] Received event: ${eventType}`, {
-			userId: eventData.id,
-			email: eventData.email_addresses?.[0]?.email_address,
+			userId: typedEventData.id,
+			email: Array.isArray(typedEventData.email_addresses) ? typedEventData.email_addresses[0]?.email_address : undefined,
 		});
 
 		switch (eventType) {
 			case "user.created":
-				await handleUserCreated(eventData);
+				await handleUserCreated(typedEventData);
 				break;
 
 			case "user.updated":
-				await handleUserUpdated(eventData);
+				await handleUserUpdated(typedEventData);
 				break;
 
 			case "user.deleted":
-				await handleUserDeleted(eventData);
+				await handleUserDeleted(typedEventData);
 				break;
 
 			default:
@@ -112,7 +113,15 @@ export async function POST(request: NextRequest) {
  * Handle user.created event
  * Creates user record in database when user signs up
  */
-async function handleUserCreated(eventData: any) {
+type ClerkUserEventData = {
+	id: string;
+	email_addresses?: Array<{ email_address: string }>;
+	first_name?: string;
+	last_name?: string;
+	phone_numbers?: Array<{ phone_number: string }>;
+};
+
+async function handleUserCreated(eventData: ClerkUserEventData) {
 	try {
 		const clerkUserId = eventData.id;
 		const email = eventData.email_addresses?.[0]?.email_address || "";
@@ -148,7 +157,7 @@ async function handleUserCreated(eventData: any) {
  * Handle user.updated event
  * Updates user record in database when user updates their profile
  */
-async function handleUserUpdated(eventData: any) {
+async function handleUserUpdated(eventData: ClerkUserEventData) {
 	try {
 		const clerkUserId = eventData.id;
 
@@ -173,7 +182,7 @@ async function handleUserUpdated(eventData: any) {
  * 
  * If you need hard delete, uncomment the hard delete option below.
  */
-async function handleUserDeleted(eventData: any) {
+async function handleUserDeleted(eventData: ClerkUserEventData) {
 	try {
 		const clerkUserId = eventData.id;
 

@@ -230,7 +230,7 @@ export function StudentBulkUpload() {
 						<p className="font-medium">Required Fields:</p>
 						<ul className="list-disc list-inside text-muted-foreground ml-2">
 							<li>email - Must be unique and valid format</li>
-							<li>full_name - Student's complete name</li>
+							<li>full_name - Student&apos;s complete name</li>
 							<li>user_number - Roll number (e.g., 24bcs10005)</li>
 						</ul>
 					</div>

@@ -25,9 +25,11 @@ export async function GET(request: Request) {
         `);
 
         // Extract hostels from result (format may vary by Drizzle version)
+        type ResultRow = { hostel: string };
+        type ResultWithRows = { rows?: ResultRow[] };
         const hostels = Array.isArray(result) 
-          ? result.map((row: any) => row.hostel)
-          : (result as any).rows?.map((row: any) => row.hostel) || [];
+          ? (result as unknown as ResultRow[]).map((row: ResultRow) => row.hostel)
+          : (result as ResultWithRows).rows?.map((row: ResultRow) => row.hostel) || [];
         
         locations = hostels;
       } catch (error) {

@@ -139,7 +139,7 @@ export async function PATCH(
 		}
 
 		const updatedStudent = await db.transaction(async (tx) => {
-			const studentUpdate: any = {
+			const studentUpdate: Record<string, unknown> = {
 				...updateData,
 				updated_at: new Date(),
 			};
@@ -155,7 +155,7 @@ export async function PATCH(
 				.returning();
 
 			// Update users table if name or phone changed
-			const userUpdate: any = {};
+			const userUpdate: Record<string, unknown> = {};
 			if (updateData.full_name) {
 				const nameParts = updateData.full_name.trim().split(' ');
 				userUpdate.first_name = nameParts[0] || null;
@@ -263,18 +263,24 @@ export async function DELETE(
 			warning: neverLoggedIn ? "User record also deleted (never logged in)" : "User record preserved"
 		}, { status: 200 });
 
-	} catch (error: any) {
+	} catch (error: unknown) {
 		console.error("Delete student error:", error);
 
-		if (error.message?.includes("foreign key") || error.code === "23503") {
-			return NextResponse.json({
-				error: "Cannot delete student with related records (tickets, assignments, etc.). Use deactivate instead.",
-				code: "FOREIGN_KEY_VIOLATION"
-			}, { status: 409 });
+		if (error && typeof error === 'object' && ('message' in error || 'code' in error)) {
+			const errorMessage = 'message' in error && typeof error.message === 'string' ? error.message : '';
+			const errorCode = 'code' in error ? error.code : null;
+			
+			if (errorMessage.includes("foreign key") || errorCode === "23503") {
+				return NextResponse.json({
+					error: "Cannot delete student with related records (tickets, assignments, etc.). Use deactivate instead.",
+					code: "FOREIGN_KEY_VIOLATION"
+				}, { status: 409 });
+			}
 		}
 
+		const errorMessage = error instanceof Error ? error.message : "Failed to delete student";
 		return NextResponse.json(
-			{ error: error.message || "Failed to delete student" },
+			{ error: errorMessage },
 			{ status: 500 },
 		);
 	}
