@@ -8,7 +8,7 @@ import {
   FileText,
 } from "lucide-react";
 
-import type { tickets } from "@/db";
+import type { tickets } from "@/db/schema-only";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";

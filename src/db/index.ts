@@ -10,6 +10,7 @@ const client = postgres(connectionString, { ssl: 'require' });
 
 export const db = drizzle(client, { schema });
 
-// Re-export schema and types (these are safe for client components)
+// Re-export schema and types for server components
+// WARNING: Client components must use '@/db/schema-only' instead
 export * from './schema';
 export * from './types';
