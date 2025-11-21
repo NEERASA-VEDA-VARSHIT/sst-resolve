@@ -8,7 +8,7 @@ import { format } from "date-fns";
 
 type DynamicField = {
   key: string;
-  value: any;
+  value: unknown;
   label: string;
   fieldType: string;
 };
@@ -28,7 +28,7 @@ function sanitize(str: string): string {
 /**
  * Format dynamic field value based on field type
  */
-function formatDynamicFieldValue(fieldType: string, value: any): React.ReactNode {
+function formatDynamicFieldValue(fieldType: string, value: unknown): React.ReactNode {
   // Skip objects and nested structures that can't be rendered directly
   if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
     return null;
@@ -51,7 +51,14 @@ function formatDynamicFieldValue(fieldType: string, value: any): React.ReactNode
   // Date fields
   if (fieldType === 'date' && value) {
     try {
-      return format(new Date(value), 'MMMM d, yyyy');
+      const dateValue = value instanceof Date ? value :
+                       typeof value === 'string' ? new Date(value) :
+                       typeof value === 'number' ? new Date(value) :
+                       null;
+      if (dateValue && !isNaN(dateValue.getTime())) {
+        return format(dateValue, 'MMMM d, yyyy');
+      }
+      return String(value);
     } catch {
       return String(value);
     }

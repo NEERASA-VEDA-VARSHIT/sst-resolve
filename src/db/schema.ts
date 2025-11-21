@@ -393,6 +393,7 @@ export const committee_members = pgTable(
   6. domain/scope admins (primary + admin_assignments)
 */
 
+// @ts-expect-error - Self-reference in parent_category_id causes circular type inference
 export const categories = pgTable(
 	"categories",
 	{
@@ -414,7 +415,8 @@ export const categories = pgTable(
 		committee_id: integer("committee_id").references(() => committees.id),
 
 		parent_category_id: integer("parent_category_id").references(
-			(): any => categories.id,
+			// @ts-expect-error - Self-reference causes circular type inference
+			() => categories.id,
 		),
 
 		sla_hours: integer("sla_hours").default(48).notNull(),
@@ -1099,7 +1101,7 @@ export const audit_log = pgTable(
 export const outbox = pgTable("outbox", {
 	id: serial("id").primaryKey(),
 	event_type: text("event_type").notNull(),
-	payload: jsonb("payload").$type<any>().notNull(),
+	payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
 	attempts: integer("attempts").default(0).notNull(),
 	next_retry_at: timestamp("next_retry_at"),
 	processed_at: timestamp("processed_at"),

@@ -147,19 +147,27 @@ export async function postToSlackChannel(
 			messageTs,
 		});
 		return messageTs;
-	} catch (error: any) {
+	} catch (error: unknown) {
+		type SlackError = {
+			message?: string;
+			code?: string;
+			data?: { error?: string };
+			response?: unknown;
+		};
+		const slackError = error as SlackError;
 		console.error(`[Slack] Error posting to ${channel}`, {
-			message: error.message,
-			code: error.code,
-			data: error.data,
-			response: error.response,
+			message: slackError.message,
+			code: slackError.code,
+			data: slackError.data,
+			response: slackError.response,
 		});
 		
 		// If channel_not_found, try to get channel list for debugging
-		if (error.code === 'channel_not_found' || error.data?.error === 'channel_not_found') {
+		if (slackError.code === 'channel_not_found' || slackError.data?.error === 'channel_not_found') {
 			try {
 				const channels = await slack?.conversations.list({ types: 'public_channel,private_channel' });
-				console.error(`Available channels:`, channels?.channels?.map((c: any) => ({ id: c.id, name: c.name })));
+				type Channel = { id?: string; name?: string };
+				console.error(`Available channels:`, channels?.channels?.map((c: Channel) => ({ id: c.id, name: c.name })));
 			} catch (listError) {
 				console.error(`Could not list channels:`, listError);
 			}
@@ -200,19 +208,27 @@ export async function postThreadReply(
 		});
 		console.log(`✅ Posted thread reply to ${normalizedChannel} (ts: ${result.ts})`);
 		return result;
-	} catch (error: any) {
+	} catch (error: unknown) {
+		type SlackError = {
+			message?: string;
+			code?: string;
+			data?: { error?: string };
+			response?: unknown;
+		};
+		const slackError = error as SlackError;
 		console.error(`❌ Error posting thread reply to ${channel}:`, {
-			message: error.message,
-			code: error.code,
-			data: error.data,
-			response: error.response,
+			message: slackError.message,
+			code: slackError.code,
+			data: slackError.data,
+			response: slackError.response,
 		});
 		
 		// If channel_not_found, try to get channel list for debugging
-		if (error.code === 'channel_not_found' || error.data?.error === 'channel_not_found') {
+		if (slackError.code === 'channel_not_found' || slackError.data?.error === 'channel_not_found') {
 			try {
 				const channels = await slack?.conversations.list({ types: 'public_channel,private_channel' });
-				console.error(`Available channels:`, channels?.channels?.map((c: any) => ({ id: c.id, name: c.name })));
+				type Channel = { id?: string; name?: string };
+				console.error(`Available channels:`, channels?.channels?.map((c: Channel) => ({ id: c.id, name: c.name })));
 			} catch (listError) {
 				console.error(`Could not list channels:`, listError);
 			}
@@ -247,19 +263,27 @@ export async function postThreadReplyToChannel(
         });
         console.log(`✅ Posted thread reply to ${normalizedChannel} (ts: ${result.ts})`);
         return result;
-    } catch (error: any) {
+    } catch (error: unknown) {
+        type SlackError = {
+			message?: string;
+			code?: string;
+			data?: { error?: string };
+			response?: unknown;
+		};
+		const slackError = error as SlackError;
         console.error(`❌ Error posting thread reply to ${channel}:`, {
-            message: error.message,
-            code: error.code,
-            data: error.data,
-            response: error.response,
+            message: slackError.message,
+            code: slackError.code,
+            data: slackError.data,
+            response: slackError.response,
         });
 		
 		// If channel_not_found, try to get channel list for debugging
-		if (error.code === 'channel_not_found' || error.data?.error === 'channel_not_found') {
+		if (slackError.code === 'channel_not_found' || slackError.data?.error === 'channel_not_found') {
 			try {
 				const channels = await slack?.conversations.list({ types: 'public_channel,private_channel' });
-				console.error(`Available channels:`, channels?.channels?.map((c: any) => ({ id: c.id, name: c.name })));
+				type Channel = { id?: string; name?: string };
+				console.error(`Available channels:`, channels?.channels?.map((c: Channel) => ({ id: c.id, name: c.name })));
 			} catch (listError) {
 				console.error(`Could not list channels:`, listError);
 			}

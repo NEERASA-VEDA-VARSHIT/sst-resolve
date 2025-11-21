@@ -55,9 +55,9 @@ export function validateDynamicField(
     name: string;
     field_type: string;
     required: boolean;
-    validation_rules?: any;
+    validation_rules?: Record<string, unknown> | null;
   },
-  value: any
+  value: unknown
 ): { valid: boolean; error?: string } {
   // Special handling for boolean fields
   if (field.field_type === "boolean" && field.required) {
@@ -86,40 +86,57 @@ export function validateDynamicField(
   
   // Apply additional validation rules
   if (value !== undefined && value !== null && field.validation_rules) {
-    const rules = field.validation_rules;
+    type ValidationRules = {
+      minLength?: number | null;
+      maxLength?: number | null;
+      pattern?: string | null;
+      errorMessage?: string | null;
+      min?: number | null;
+      max?: number | null;
+      [key: string]: unknown;
+    };
+    const rules = field.validation_rules as ValidationRules;
     
     if (typeof value === "string") {
-      if (rules.minLength && value.length < rules.minLength) {
+      const minLength = typeof rules.minLength === 'number' ? rules.minLength : null;
+      const maxLength = typeof rules.maxLength === 'number' ? rules.maxLength : null;
+      const pattern = typeof rules.pattern === 'string' ? rules.pattern : null;
+      const errorMessage = typeof rules.errorMessage === 'string' ? rules.errorMessage : null;
+      
+      if (minLength !== null && value.length < minLength) {
         return {
           valid: false,
-          error: `${field.name} must be at least ${rules.minLength} characters`,
+          error: `${field.name} must be at least ${minLength} characters`,
         };
       }
-      if (rules.maxLength && value.length > rules.maxLength) {
+      if (maxLength !== null && value.length > maxLength) {
         return {
           valid: false,
-          error: `${field.name} must not exceed ${rules.maxLength} characters`,
+          error: `${field.name} must not exceed ${maxLength} characters`,
         };
       }
-      if (rules.pattern && !new RegExp(rules.pattern).test(value)) {
+      if (pattern !== null && !new RegExp(pattern).test(value)) {
         return {
           valid: false,
-          error: rules.errorMessage || `${field.name} format is invalid`,
+          error: errorMessage || `${field.name} format is invalid`,
         };
       }
     }
     
     if (typeof value === "number") {
-      if (rules.min !== undefined && value < rules.min) {
+      const min = typeof rules.min === 'number' ? rules.min : null;
+      const max = typeof rules.max === 'number' ? rules.max : null;
+      
+      if (min !== null && value < min) {
         return {
           valid: false,
-          error: `${field.name} must be at least ${rules.min}`,
+          error: `${field.name} must be at least ${min}`,
         };
       }
-      if (rules.max !== undefined && value > rules.max) {
+      if (max !== null && value > max) {
         return {
           valid: false,
-          error: `${field.name} must not exceed ${rules.max}`,
+          error: `${field.name} must not exceed ${max}`,
         };
       }
     }
@@ -137,7 +154,7 @@ export function validateProfileField(
     storage_key: string;
     required: boolean;
   },
-  value: any
+  value: unknown
 ): { valid: boolean; error?: string } {
   const fieldLabels: Record<string, string> = {
     rollNo: "Roll Number",

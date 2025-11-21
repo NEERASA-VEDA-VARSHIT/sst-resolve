@@ -36,8 +36,8 @@ interface ProfileFieldConfig {
 interface ProfileFieldsRendererProps {
   profileFields: ProfileFieldConfig[];
   studentProfile: StudentProfile | null;
-  formData: Record<string, any>;
-  onChange: (fieldName: string, value: any) => void;
+  formData: Record<string, unknown>;
+  onChange: (fieldName: string, value: unknown) => void;
   errors: Record<string, string>;
   hostels?: Array<{ id: number; name: string }>;
 }

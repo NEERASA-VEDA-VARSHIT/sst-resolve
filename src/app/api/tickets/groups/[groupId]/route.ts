@@ -117,7 +117,7 @@ export async function PATCH(
 
     // Update group info if provided
     if (name || description !== undefined) {
-      const updateData: any = {};
+      const updateData: Record<string, unknown> = {};
       if (name) updateData.name = name;
       if (description !== undefined) updateData.description = description || null;
       updateData.updated_at = new Date();

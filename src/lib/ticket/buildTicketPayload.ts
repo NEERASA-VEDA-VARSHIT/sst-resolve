@@ -38,9 +38,9 @@ interface TicketPayload {
   description: string;
   location: string | null;
   details: {
-    profile: Record<string, any>;
+    profile: Record<string, unknown>;
     images?: string[];
-    [key: string]: any;
+    [key: string]: unknown;
   };
 }
 
@@ -60,7 +60,7 @@ function generateEmail(rollNo: string, name: string): string {
  * Get final value with fallback chain
  */
 function getFinalValue(
-  profileValue: any,
+  profileValue: unknown,
   legacyValue: string,
   profileFallback: any
 ): string {

@@ -33,7 +33,7 @@ interface Field {
   placeholder: string | null | undefined;
   help_text: string | null | undefined;
 
-  validation_rules: any;
+  validation_rules: Record<string, unknown> | null;
   display_order: number;
 
   // FIX: allow undefined
@@ -42,8 +42,8 @@ interface Field {
 
 interface DynamicFieldRendererProps {
   field: Field;
-  value: any;
-  onChange: (value: any) => void;
+  value: unknown;
+  onChange: (value: unknown) => void;
   error?: string;
 }
 
@@ -68,7 +68,7 @@ export function DynamicFieldRenderer({
         return (
           <Input
             id={field.slug}
-            value={value ?? ""}
+            value={typeof value === 'string' || typeof value === 'number' ? String(value) : ""}
             onChange={(e) => onChange(e.target.value)}
             placeholder={placeholder}
             required={field.required}
@@ -80,7 +80,7 @@ export function DynamicFieldRenderer({
         return (
           <Textarea
             id={field.slug}
-            value={value ?? ""}
+            value={typeof value === 'string' || typeof value === 'number' ? String(value) : ""}
             onChange={(e) => onChange(e.target.value)}
             placeholder={placeholder}
             required={field.required}
@@ -91,7 +91,7 @@ export function DynamicFieldRenderer({
 
       case "select":
         return (
-          <Select value={value ?? ""} onValueChange={onChange}>
+          <Select value={typeof value === 'string' ? value : ""} onValueChange={onChange}>
             <SelectTrigger className={cn(error && "border-destructive")}>
               <SelectValue placeholder={placeholder || "Select"} />
             </SelectTrigger>
@@ -114,7 +114,14 @@ export function DynamicFieldRenderer({
           if (!value) return "";
           if (typeof value === "string") return value.split("T")[0];
           try {
-            return new Date(value).toISOString().split("T")[0];
+            const dateValue = value instanceof Date ? value :
+                             typeof value === 'string' ? new Date(value) :
+                             typeof value === 'number' ? new Date(value) :
+                             null;
+            if (dateValue && !isNaN(dateValue.getTime())) {
+              return dateValue.toISOString().split("T")[0];
+            }
+            return "";
           } catch {
             return "";
           }
@@ -136,14 +143,17 @@ export function DynamicFieldRenderer({
           <Input
             id={field.slug}
             type="number"
-            value={value === 0 ? "0" : value ?? ""}
+            value={typeof value === 'number' ? (value === 0 ? "0" : String(value)) : 
+                   typeof value === 'string' ? value : ""}
             onChange={(e) =>
               onChange(e.target.value === "" ? "" : Number(e.target.value))
             }
             placeholder={placeholder}
             className={cn(error && "border-destructive")}
-            min={field.validation_rules?.min}
-            max={field.validation_rules?.max}
+            min={typeof field.validation_rules?.min === 'number' ? field.validation_rules.min : 
+                 typeof field.validation_rules?.min === 'string' ? Number(field.validation_rules.min) : undefined}
+            max={typeof field.validation_rules?.max === 'number' ? field.validation_rules.max : 
+                 typeof field.validation_rules?.max === 'string' ? Number(field.validation_rules.max) : undefined}
           />
         );
 
@@ -179,7 +189,7 @@ export function DynamicFieldRenderer({
         return (
           <Input
             id={field.slug}
-            value={value ?? ""}
+            value={typeof value === 'string' || typeof value === 'number' ? String(value) : ""}
             onChange={(e) => onChange(e.target.value)}
             placeholder={placeholder}
             className={cn(error && "border-destructive")}

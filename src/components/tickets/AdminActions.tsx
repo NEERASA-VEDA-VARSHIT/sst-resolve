@@ -136,7 +136,7 @@ export function AdminActions({
 				apiCommentType = "super_admin_note";
 			}
 
-			const body: any = {
+			const body: Record<string, unknown> = {
 				comment,
 				isAdmin: true,
 				commentType: apiCommentType,
@@ -257,7 +257,7 @@ export function AdminActions({
 		e.preventDefault();
 		setLoading("forward");
 		try {
-			const body: Record<string, any> = { reason: forwardReason || undefined };
+			const body: Record<string, unknown> = { reason: forwardReason || undefined };
 			if (selectedForwardAdmin && selectedForwardAdmin !== "auto") {
 				body.targetAdminId = selectedForwardAdmin;
 			}

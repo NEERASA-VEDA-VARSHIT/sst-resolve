@@ -11,7 +11,7 @@ interface ValidationError {
 	row: number;
 	field: string;
 	message: string;
-	value?: any;
+	value?: unknown;
 }
 
 interface UploadResult {
@@ -206,7 +206,7 @@ export function StudentBulkUpload() {
 								{errors.slice(0, 20).map((error, index) => (
 									<p key={index}>
 										Row {error.row}, Field &quot;{error.field}&quot;: {error.message}
-										{error.value && ` (Value: &quot;${error.value}&quot;)`}
+										{error.value !== undefined && error.value !== null && ` (Value: &quot;${String(error.value)}&quot;)`}
 									</p>
 								))}
 								{errors.length > 20 && (

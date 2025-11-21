@@ -75,22 +75,36 @@ export async function POST(request: NextRequest) {
       
       if (outboxEvent && outboxEvent.payload) {
         // Ensure payload is a valid object
-        let payload: any = {};
+        type TicketCreatedPayload = {
+          ticket_id: number;
+          created_by_clerk?: string;
+          category?: string;
+          [key: string]: unknown;
+        };
+        let payload: TicketCreatedPayload = { ticket_id: 0 };
         try {
           if (typeof outboxEvent.payload === 'object' && outboxEvent.payload !== null && !Array.isArray(outboxEvent.payload)) {
             // Deep clone to avoid any reference issues
-            payload = JSON.parse(JSON.stringify(outboxEvent.payload));
+            const parsed = JSON.parse(JSON.stringify(outboxEvent.payload)) as Record<string, unknown>;
+            // Map ticketId to ticket_id if needed
+            payload = {
+              ticket_id: typeof parsed.ticket_id === 'number' ? parsed.ticket_id :
+                        typeof parsed.ticketId === 'number' ? parsed.ticketId : 0,
+              created_by_clerk: typeof parsed.created_by_clerk === 'string' ? parsed.created_by_clerk : undefined,
+              category: typeof parsed.category === 'string' ? parsed.category : undefined,
+              ...parsed
+            };
           } else {
             console.warn("[Ticket API] Invalid outbox payload type, using empty object:", typeof outboxEvent.payload);
-            payload = {};
+            payload = { ticket_id: 0 };
           }
         } catch (error) {
           console.error("[Ticket API] Error processing outbox payload:", error);
-          payload = {};
+          payload = { ticket_id: 0 };
         }
         
         // Process immediately (non-blocking to avoid delaying the response)
-        processTicketCreated(outboxEvent.id, payload as any)
+        processTicketCreated(outboxEvent.id, payload)
           .then(() => markOutboxSuccess(outboxEvent.id))
           .catch((error) => {
             console.error("[Ticket API] Failed to process outbox immediately:", error);

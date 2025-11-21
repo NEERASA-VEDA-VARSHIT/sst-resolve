@@ -32,7 +32,7 @@ interface Field {
   required: boolean;
   placeholder: string | null;
   help_text: string | null;
-  validation_rules: any;
+  validation_rules: Record<string, unknown> | null;
   display_order: number;
   assigned_admin_id?: string | null;
   options?: FieldOption[];

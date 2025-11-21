@@ -80,7 +80,10 @@ export async function POST(
       for (const ticket of groupTickets) {
         try {
           // Parse existing metadata (not details)
-          let ticketMetadata: any = {};
+          type TicketMetadata = {
+            [key: string]: unknown;
+          };
+          let ticketMetadata: TicketMetadata = {};
           if (ticket.metadata) {
             try {
               ticketMetadata = typeof ticket.metadata === 'string' ? JSON.parse(ticket.metadata) : ticket.metadata;
@@ -90,10 +93,10 @@ export async function POST(
           }
 
           // Add comment to metadata
-          if (!ticketMetadata.comments) {
+          if (!Array.isArray(ticketMetadata.comments)) {
             ticketMetadata.comments = [];
           }
-          ticketMetadata.comments.push({
+          (ticketMetadata.comments as Array<Record<string, unknown>>).push({
             text: comment,
             author: "Admin",
             createdAt: new Date().toISOString(),

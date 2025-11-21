@@ -103,7 +103,7 @@ export function BulkEditDialog({
         e.preventDefault();
 
         // Build updates object with only changed fields
-        const updates: any = {};
+        const updates: Record<string, unknown> = {};
 
         if (formData.hostel_id) {
             updates.hostel_id = formData.hostel_id === "null" ? null : parseInt(formData.hostel_id);
@@ -148,9 +148,10 @@ export function BulkEditDialog({
             toast.success(`Successfully updated ${data.updated_count} students`);
             onSuccess();
             onOpenChange(false);
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error("Error bulk editing students:", error);
-            toast.error(error.message || "Failed to update students");
+            const errorMessage = error instanceof Error ? error.message : "Failed to update students";
+            toast.error(errorMessage);
         } finally {
             setLoading(false);
         }

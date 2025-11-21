@@ -76,7 +76,12 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
       if (response.ok) {
         const data = await response.json();
         // Map API response (snake_case) to component format (camelCase)
-        const mappedStaff = (data.staff || []).map((s: any) => ({
+        type StaffMember = {
+          id: string;
+          clerk_user_id?: string | null;
+          [key: string]: unknown;
+        };
+        const mappedStaff = (data.staff || []).map((s: StaffMember) => ({
           id: s.id,
           clerkUserId: s.clerk_user_id || null, // Map snake_case to camelCase
           fullName: s.full_name || "",

@@ -41,8 +41,8 @@ export async function createTicket(args: {
 
   // Prepare profile updates (will be applied inside transaction)
   let profileUpdateNeeded = false;
-  const userUpdates: any = {};
-  const studentUpdates: any = {};
+  const userUpdates: Record<string, unknown> = {};
+  const studentUpdates: Record<string, unknown> = {};
 
   if (payload.profile && typeof payload.profile === 'object' && !Array.isArray(payload.profile) && Object.keys(payload.profile).length > 0) {
     // For students, update both users and students tables
@@ -162,7 +162,10 @@ export async function createTicket(args: {
   }
 
   // Merge details (payload.details may be stringified JSON from client)
-  let detailsObj: any = {};
+  type DetailsObject = {
+    [key: string]: unknown;
+  };
+  let detailsObj: DetailsObject = {};
   if (payload.details) {
     if (typeof payload.details === "string") {
       try {
@@ -177,7 +180,7 @@ export async function createTicket(args: {
 
   // NEW: Store field IDs for future lookup (snapshot-on-delete approach)
   const usedFieldIds: number[] = [];
-  const dynamicFields: Record<string, { field_id: number; value: any }> = {};
+  const dynamicFields: Record<string, { field_id: number; value: unknown }> = {};
 
   if (subcategoryRecord?.id && detailsObj) {
     // Fetch current active fields to map slugs to IDs
@@ -303,7 +306,7 @@ export async function createTicket(args: {
       }
     }
 
-    const insertValues: any = {
+    const insertValues = {
       created_by: dbUser.id,
       category_id: categoryRecord.id,
       status_id: openStatusId, // Set the status_id to OPEN
@@ -311,8 +314,8 @@ export async function createTicket(args: {
       location: payload.location || null,
       metadata: metadata && typeof metadata === 'object' && !Array.isArray(metadata) && Object.keys(metadata).length > 0 ? metadata : null,
       attachments: attachments,
+      ...(assignedUserId ? { assigned_to: assignedUserId } : {}),
     };
-    if (assignedUserId) insertValues.assigned_to = assignedUserId;
 
     // Insert ticket
     const [newTicket] = await tx.insert(tickets).values(insertValues).returning();

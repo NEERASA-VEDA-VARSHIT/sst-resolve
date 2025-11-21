@@ -76,9 +76,20 @@ export async function GET(
 
     // ------------------- BUILD TIMELINE -------------------
 
-    const timeline: any[] = [];
+    type TimelineItem = {
+      type: string;
+      timestamp: Date;
+      user?: string;
+      content?: string;
+      [key: string]: unknown;
+    };
+    const timeline: TimelineItem[] = [];
 
-    const metadata = (ticket.metadata as any) || {};
+    type TicketMetadata = {
+      comments?: Array<{ [key: string]: unknown }>;
+      [key: string]: unknown;
+    };
+    const metadata = (ticket.metadata as TicketMetadata) || {};
 
     // 1. COMMENTS
     if (Array.isArray(metadata.comments)) {
@@ -86,12 +97,23 @@ export async function GET(
         // Students cannot see internal notes
         if (isStudent && c.isInternal) continue;
 
+        type Comment = {
+          author?: unknown;
+          text?: unknown;
+          createdAt?: unknown;
+          isInternal?: unknown;
+        };
+        const comment = c as Comment;
+        const createdAt = comment.createdAt instanceof Date ? comment.createdAt : 
+                         typeof comment.createdAt === 'string' ? new Date(comment.createdAt) :
+                         new Date();
         timeline.push({
           type: "comment",
-          author: c.author || "Unknown",
-          text: c.text || "",
-          createdAt: c.createdAt,
-          isInternal: c.isInternal || false,
+          timestamp: createdAt,
+          author: String(comment.author || "Unknown"),
+          text: String(comment.text || ""),
+          createdAt: createdAt,
+          isInternal: Boolean(comment.isInternal || false),
         });
       }
     }
@@ -104,6 +126,7 @@ export async function GET(
     if (ticket.created_at) {
       timeline.push({
         type: "status_change",
+        timestamp: ticket.created_at,
         oldStatus: null,
         newStatus: "OPEN", // Initial status
         at: ticket.created_at,
@@ -113,6 +136,7 @@ export async function GET(
     if (ticket.resolved_at) {
       timeline.push({
         type: "status_change",
+        timestamp: ticket.resolved_at,
         oldStatus: "IN_PROGRESS",
         newStatus: "RESOLVED",
         at: ticket.resolved_at,
@@ -122,6 +146,7 @@ export async function GET(
     if (ticket.reopened_at) {
       timeline.push({
         type: "status_change",
+        timestamp: ticket.reopened_at,
         oldStatus: "RESOLVED",
         newStatus: "REOPENED",
         at: ticket.reopened_at,
@@ -132,6 +157,7 @@ export async function GET(
     if (ticket.last_escalation_at) {
       timeline.push({
         type: "escalation",
+        timestamp: ticket.last_escalation_at,
         level: ticket.escalation_level || 1,
         at: ticket.last_escalation_at,
       });
@@ -140,19 +166,29 @@ export async function GET(
     // 4. ASSIGNMENT CHANGES (stored by worker in metadata.audit)
     if (Array.isArray(metadata.assignment_history)) {
       for (const a of metadata.assignment_history) {
+        type Assignment = {
+          oldAssignee?: unknown;
+          newAssignee?: unknown;
+          timestamp?: unknown;
+        };
+        const assignment = a as Assignment;
+        const assignmentTimestamp = assignment.timestamp instanceof Date ? assignment.timestamp :
+                                   typeof assignment.timestamp === 'string' ? new Date(assignment.timestamp) :
+                                   new Date();
         timeline.push({
           type: "assignment",
-          oldAssignee: a.oldAssignee ?? null,
-          newAssignee: a.newAssignee ?? null,
-          at: a.timestamp,
+          timestamp: assignmentTimestamp,
+          oldAssignee: assignment.oldAssignee ?? null,
+          newAssignee: assignment.newAssignee ?? null,
+          at: assignmentTimestamp,
         });
       }
     }
 
     // ------------------- SORT BY DATE DESC -------------------
     timeline.sort((a, b) => {
-      const dateA = new Date(a.at || a.createdAt || 0).getTime();
-      const dateB = new Date(b.at || b.createdAt || 0).getTime();
+      const dateA = a.timestamp.getTime();
+      const dateB = b.timestamp.getTime();
       return dateB - dateA;
     });
 

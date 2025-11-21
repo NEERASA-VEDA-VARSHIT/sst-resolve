@@ -146,8 +146,12 @@ export async function getOrCreateRole(roleName: UserRole): Promise<number> {
 
     setRoleInCache(name, newRole.id);
     return newRole.id;
-  } catch (err: any) {
-    if (err?.code === "23505") {
+  } catch (err: unknown) {
+    type DbError = {
+      code?: string;
+    };
+    const dbError = err as DbError;
+    if (dbError?.code === "23505") {
       const [existingRole2] = await db
         .select({ id: roles.id })
         .from(roles)

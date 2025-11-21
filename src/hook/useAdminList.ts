@@ -35,12 +35,12 @@ export function useAdminList(): UseAdminListReturn {
       if (response.ok) {
         const data = await response.json();
         const normalized = Array.isArray(data.admins)
-          ? data.admins.map((admin: any) => ({
+          ? data.admins.map((admin: { id?: unknown; name?: unknown; email?: unknown; domain?: unknown; scope?: unknown }) => ({
               id: String(admin.id ?? ""),
               name: String(admin.name ?? ""),
               email: String(admin.email ?? ""),
-              domain: admin.domain ?? null,
-              scope: admin.scope ?? null,
+              domain: typeof admin.domain === 'string' ? admin.domain : null,
+              scope: typeof admin.scope === 'string' ? admin.scope : null,
             })).filter((admin: Admin) => admin.id.length > 0)
           : [];
         setAdmins(normalized);

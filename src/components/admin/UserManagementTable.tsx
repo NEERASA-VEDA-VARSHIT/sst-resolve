@@ -274,7 +274,7 @@ export function UserManagementTable({ users, roles }: UserManagementTableProps) 
                                             <div className="text-sm">{user.email || "No email"}</div>
                                         </TableCell>
                                         <TableCell>
-                                            <Badge variant={getRoleBadgeVariant(roleName) as any} className={getRoleBadgeClass(roleName)}>
+                                            <Badge variant={getRoleBadgeVariant(roleName) as "default" | "secondary" | "destructive" | "outline"} className={getRoleBadgeClass(roleName)}>
                                                 {roleName.replace("_", " ").toUpperCase()}
                                             </Badge>
                                         </TableCell>

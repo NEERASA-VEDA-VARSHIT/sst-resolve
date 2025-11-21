@@ -55,9 +55,14 @@ const transporter = nodemailer.createTransport({
 if (process.env.SMTP_USER && process.env.SMTP_PASS) {
 	transporter.verify().then(() => {
 		console.log("✅ SMTP server is ready to send emails");
-	}).catch((error: any) => {
-		console.error("❌ SMTP server verification failed:", error.message);
-		if (error.code === "EAUTH") {
+	}).catch((error: unknown) => {
+		type SMTPError = {
+			message?: string;
+			code?: string;
+		};
+		const smtpError = error as SMTPError;
+		console.error("❌ SMTP server verification failed:", smtpError.message);
+		if (smtpError.code === "EAUTH") {
 			console.error("⚠️  Authentication failed. For Gmail:");
 			console.error("   1. Enable 2-Step Verification on your Google Account");
 			console.error("   2. Generate an App Password at: https://myaccount.google.com/apppasswords");
@@ -166,22 +171,29 @@ export async function sendEmail({ to, subject, html, ticketId, threadMessageId, 
 		}
 
 		return info;
-	} catch (error: any) {
+	} catch (error: unknown) {
+		type EmailError = {
+			message?: string;
+			code?: string;
+			command?: string;
+			[key: string]: unknown;
+		};
+		const emailError = error as EmailError;
 		// Log detailed error information
 		console.error(`❌ Error sending email to ${to}:`, {
-			message: error.message,
-			code: error.code,
-			command: error.command,
-			response: error.response,
+			message: emailError.message,
+			code: emailError.code,
+			command: emailError.command,
+			response: emailError.response,
 		});
 		
 		// Log specific error details
-		if (error.code === "EAUTH") {
+		if (emailError.code === "EAUTH") {
 			console.error("   Authentication failed. Check SMTP credentials.");
-		} else if (error.code === "ECONNECTION") {
+		} else if (emailError.code === "ECONNECTION") {
 			console.error("   Connection failed. Check SMTP host and port.");
-		} else if (error.response) {
-			console.error(`   SMTP Server Response: ${error.response}`);
+		} else if (emailError.response) {
+			console.error(`   SMTP Server Response: ${emailError.response}`);
 		}
 		
 		// Don't throw - return null so calling code can handle gracefully

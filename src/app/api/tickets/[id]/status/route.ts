@@ -147,7 +147,7 @@ export async function PATCH(
       return NextResponse.json({ error: "Invalid status value in database" }, { status: 500 });
     }
 
-    const updateData: any = {
+    const updateData: Record<string, unknown> = {
       status_id: newStatusRow.id,
       updated_at: new Date(),
     };

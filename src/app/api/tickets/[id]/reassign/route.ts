@@ -85,14 +85,17 @@ export async function POST(
 		}
 
 		// Parse existing metadata
-		let metadata: any = {};
+		type TicketMetadata = {
+			[key: string]: unknown;
+		};
+		let metadata: TicketMetadata = {};
 		let originalMessageId: string | undefined;
 		let originalSubject: string | undefined;
 		if (ticket.metadata) {
 			try {
 				metadata = typeof ticket.metadata === 'object' ? ticket.metadata : JSON.parse(String(ticket.metadata));
-				originalMessageId = metadata.originalEmailMessageId;
-				originalSubject = metadata.originalEmailSubject;
+				originalMessageId = typeof metadata.originalEmailMessageId === 'string' ? metadata.originalEmailMessageId : undefined;
+				originalSubject = typeof metadata.originalEmailSubject === 'string' ? metadata.originalEmailSubject : undefined;
 			} catch (e) {
 				console.error("Error parsing metadata:", e);
 			}
@@ -186,7 +189,7 @@ export async function POST(
 		// Also handled by worker for reliability
 		try {
 			// Send Slack notification (if category supports it and thread exists)
-			const slackMessageTs = metadata.slackMessageTs;
+			const slackMessageTs = typeof metadata.slackMessageTs === 'string' ? metadata.slackMessageTs : undefined;
 			if (slackMessageTs && (ticket.category_name === "Hostel" || ticket.category_name === "College")) {
 				try {
 					const reassignText = normalizedAssignedTo

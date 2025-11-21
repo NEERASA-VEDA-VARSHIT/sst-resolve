@@ -12,11 +12,19 @@ import { postThreadReplyToChannel } from "@/lib/slack";
 import { sendEmail, getStatusUpdateEmail } from "@/lib/email";
 import { STATUS_DISPLAY } from "@/conf/constants";
 
-export async function processTicketStatusChangedWorker(payload: any) {
+type StatusChangedPayload = {
+  ticketId: number;
+  [key: string]: unknown;
+};
+export async function processTicketStatusChangedWorker(payload: StatusChangedPayload) {
     console.log("[Worker] Processing ticket status changed", { payload });
 
     try {
-        const { ticket_id, old_status, new_status, changed_by } = payload;
+        const ticket_id = typeof payload.ticket_id === 'number' ? payload.ticket_id : 
+                         typeof payload.ticket_id === 'string' ? parseInt(payload.ticket_id, 10) : 0;
+        const old_status = typeof payload.old_status === 'string' ? payload.old_status : '';
+        const new_status = typeof payload.new_status === 'string' ? payload.new_status : '';
+        const changed_by = typeof payload.changed_by === 'string' ? payload.changed_by : '';
 
         // Fetch ticket with all necessary data
         const ticket = await db.query.tickets.findMany({
@@ -34,7 +42,11 @@ export async function processTicketStatusChangedWorker(payload: any) {
         }
 
         const ticketData = ticket[0];
-        const metadata = ticketData.metadata as any || {};
+        type TicketMetadata = {
+          slackMessageTs?: unknown;
+          [key: string]: unknown;
+        };
+        const metadata = (ticketData.metadata as TicketMetadata) || {};
 
         // Status emoji mapping
         const statusEmoji: Record<string, string> = {
@@ -47,13 +59,13 @@ export async function processTicketStatusChangedWorker(payload: any) {
             REOPENED: "🔓",
         };
 
-        const emoji = statusEmoji[new_status] || "📝";
-        const oldStatusDisplay = STATUS_DISPLAY[old_status] || old_status;
-        const newStatusDisplay = STATUS_DISPLAY[new_status] || new_status;
+        const emoji = (typeof new_status === 'string' && new_status in statusEmoji) ? statusEmoji[new_status] : "📝";
+        const oldStatusDisplay = (typeof old_status === 'string' && old_status in STATUS_DISPLAY) ? STATUS_DISPLAY[old_status] : old_status;
+        const newStatusDisplay = (typeof new_status === 'string' && new_status in STATUS_DISPLAY) ? STATUS_DISPLAY[new_status] : new_status;
 
         // 1. Post to Slack thread (if exists)
-        const slackMessageTs = metadata.slackMessageTs;
-        const slackChannel = metadata.slackChannel;
+        const slackMessageTs = typeof metadata.slackMessageTs === 'string' ? metadata.slackMessageTs : undefined;
+        const slackChannel = typeof metadata.slackChannel === 'string' ? metadata.slackChannel : undefined;
 
         if (slackMessageTs && slackChannel) {
             try {
@@ -80,22 +92,25 @@ export async function processTicketStatusChangedWorker(payload: any) {
 
         // 2. Send email to student (threaded)
         try {
-            const category = ticketData.category as any;
-            const createdByUser = ticketData.created_by_user as any;
+            type Category = { name?: string; [key: string]: unknown };
+            type User = { email?: string; [key: string]: unknown };
+            const category = ticketData.category as unknown as Category;
+            const createdByUser = ticketData.created_by_user as unknown as User;
             const emailTemplate = getStatusUpdateEmail(
                 ticket_id,
                 new_status,
-                category?.name || "Unknown"
+                typeof category?.name === 'string' ? category.name : "Unknown"
             );
 
-            if (createdByUser?.email) {
+            const userEmail = typeof createdByUser?.email === 'string' ? createdByUser.email : undefined;
+            if (userEmail) {
                 await sendEmail({
-                    to: createdByUser.email,
+                    to: userEmail,
                     subject: emailTemplate.subject,
                     html: emailTemplate.html,
                     ticketId: ticket_id,
-                    threadMessageId: metadata.emailMessageId,
-                    originalSubject: metadata.originalEmailSubject,
+                    threadMessageId: typeof metadata.emailMessageId === 'string' ? metadata.emailMessageId : undefined,
+                    originalSubject: typeof metadata.originalEmailSubject === 'string' ? metadata.originalEmailSubject : undefined,
                 });
 
                 console.log(`[Worker] Sent status change email to ${createdByUser.email}`);

@@ -12,7 +12,7 @@ type FieldDefinition = {
 
 type DynamicField = {
   key: string;
-  value: any;
+  value: unknown;
   label: string;
   fieldType: string;
 };
@@ -119,13 +119,22 @@ function resolveSelectValue(
     if (!fieldDef.options || fieldDef.options.length === 0) {
       // Try to find options from full schema
       if (categorySchema?.subcategories && Array.isArray(categorySchema.subcategories)) {
+        type Subcategory = {
+          fields?: Array<{ slug?: string; name?: string; options?: Array<{ value?: string; label?: string }> }>;
+        };
+        type Field = {
+          slug?: string;
+          name?: string;
+          options?: Array<{ value?: string; label?: string }>;
+        };
         const fieldWithOptions = categorySchema.subcategories
-          .flatMap((sc: any) => Array.isArray(sc?.fields) ? sc.fields : [])
-          .find((f: any) => f && (f.slug === fieldDef.slug || f.name === fieldDef.name));
+          .flatMap((sc: Subcategory) => Array.isArray(sc?.fields) ? sc.fields : [])
+          .find((f: Field) => f && (f.slug === fieldDef.slug || f.name === fieldDef.name));
         
         if (fieldWithOptions?.options && Array.isArray(fieldWithOptions.options)) {
+          type Option = { value?: string; label?: string };
           const option = fieldWithOptions.options.find(
-            (opt: any) => 
+            (opt: Option) => 
               opt && (opt.value === String(rawValue) || opt.label === String(rawValue))
           );
           
@@ -150,7 +159,20 @@ function resolveSelectValue(
 /**
  * Extract all field definitions from category schema
  */
-function extractFieldDefinitions(categorySchema: any): FieldDefinition[] {
+type CategorySchema = {
+  subcategories?: Array<{
+    fields?: Array<{
+      slug?: string;
+      name?: string;
+      field_type?: string;
+      [key: string]: unknown;
+    }>;
+    [key: string]: unknown;
+  }>;
+  [key: string]: unknown;
+};
+
+function extractFieldDefinitions(categorySchema: CategorySchema): FieldDefinition[] {
   const fieldDefs: FieldDefinition[] = [];
   
   if (!categorySchema || !categorySchema.subcategories) {
@@ -158,12 +180,12 @@ function extractFieldDefinitions(categorySchema: any): FieldDefinition[] {
   }
   
   try {
-    categorySchema.subcategories.forEach((subcat: any) => {
+    categorySchema.subcategories.forEach((subcat) => {
       if (!subcat || !subcat.fields || !Array.isArray(subcat.fields)) {
         return;
       }
       
-      subcat.fields.forEach((field: any) => {
+      subcat.fields.forEach((field) => {
         if (!field || typeof field !== 'object') {
           return;
         }

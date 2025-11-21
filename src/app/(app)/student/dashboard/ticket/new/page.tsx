@@ -108,14 +108,31 @@ export default async function NewTicketPage() {
     .from(field_options)
     .orderBy(asc(field_options.display_order));
 
+  // Map categoryFields to match DynamicField type
+  const mappedCategoryFields = categoryFields.map(field => ({
+    id: field.id,
+    name: field.name,
+    slug: field.slug,
+    field_type: field.field_type,
+    required: field.required,
+    placeholder: field.placeholder,
+    help_text: field.help_text,
+    validation_rules: field.validation_rules as Record<string, unknown> | null,
+    display_order: field.display_order,
+    subcategory_id: field.subcategory_id,
+    options: optionsList
+      .filter(opt => opt.field_id === field.id)
+      .map(opt => ({ label: opt.option_label, value: opt.option_value })),
+  }));
+
   return (
     <TicketForm
       dbUserId={dbUser.id}
       student={normalizedStudent}
-      categories={categoryList}
+      categories={categoryList as Array<{ id: number; name: string; [key: string]: unknown }>}
       subcategories={subcategoriesWithSubs}
       profileFields={categoryProfileFields}
-      dynamicFields={categoryFields}
+      dynamicFields={mappedCategoryFields}
       fieldOptions={optionsList}
       hostels={hostelsList}
     />

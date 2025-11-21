@@ -85,7 +85,7 @@ type DynamicField = {
   required: boolean;
   placeholder: string | null;
   help_text: string | null;
-  validation_rules?: any;
+  validation_rules?: Record<string, unknown> | null;
   display_order: number;
   subcategory_id?: number; // join key
   options?: Array<{ label: string; value: string }>;
@@ -186,7 +186,12 @@ export default function TicketForm(props: TicketFormProps) {
     // group subcategories by category_id
     const subsByCat = new Map<number, Subcategory[]>();
     for (const s of subcategoriesProp || []) {
-      const catId = (s as any).category_id ?? (s as any).categoryId ?? null;
+      type SubcategoryWithId = {
+        category_id?: number;
+        categoryId?: number;
+        [key: string]: unknown;
+      };
+      const catId = (s as SubcategoryWithId).category_id ?? (s as SubcategoryWithId).categoryId ?? null;
       if (catId == null) continue;
       const arr = subsByCat.get(catId) || [];
       arr.push(s);
@@ -196,7 +201,13 @@ export default function TicketForm(props: TicketFormProps) {
     // map fields by subcategory_id
     const fieldsBySub = new Map<number, DynamicField[]>();
     for (const f of dynamicFieldsProp || []) {
-      const subId = (f as any).subcategory_id ?? (f as any).subCategoryId ?? (f as any).category_field_subcategory_id ?? null;
+      type FieldWithId = {
+        subcategory_id?: number;
+        subCategoryId?: number;
+        category_field_subcategory_id?: number;
+        [key: string]: unknown;
+      };
+      const subId = (f as FieldWithId).subcategory_id ?? (f as FieldWithId).subCategoryId ?? (f as FieldWithId).category_field_subcategory_id ?? null;
       if (subId == null) continue;
       const arr = fieldsBySub.get(subId) || [];
       arr.push(f);
@@ -239,8 +250,16 @@ export default function TicketForm(props: TicketFormProps) {
         } as Subcategory;
       }).sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
 
-      const catProfileFields = (profileFieldsProp || []).filter((pf: any) => {
-        if ((pf as any).category_id) return (pf as any).category_id === (c as any).id;
+      type ProfileField = {
+        category_id?: number;
+        [key: string]: unknown;
+      };
+      type Category = {
+        id?: number;
+        [key: string]: unknown;
+      };
+      const catProfileFields = (profileFieldsProp || []).filter((pf: ProfileField) => {
+        if (pf.category_id) return pf.category_id === (c as Category).id;
         return true; // global fallback
       }).sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
 
@@ -289,11 +308,11 @@ export default function TicketForm(props: TicketFormProps) {
     setForm((prev) => ({ ...prev, ...patch }));
   }, []);
 
-  const setDetail = useCallback((key: string, value: any) => {
+  const setDetail = useCallback((key: string, value: unknown) => {
     setForm((prev) => ({ ...prev, details: { ...(prev.details || {}), [key]: value } }));
   }, []);
 
-  const setProfileField = useCallback((key: string, value: any) => {
+  const setProfileField = useCallback((key: string, value: unknown) => {
     touchedProfileFields.current.add(key);
     setForm((prev) => ({ ...prev, profile: { ...(prev.profile || {}), [key]: value } }));
     setErrors((prev) => {
@@ -516,9 +535,10 @@ export default function TicketForm(props: TicketFormProps) {
         },
       }));
       toast.success("Image uploaded");
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Upload failed:", err);
-      toast.error(err.message || "Image upload failed");
+      const errorMessage = err instanceof Error ? err.message : "Image upload failed";
+      toast.error(errorMessage);
     } finally {
       setImagesUploading(false);
     }
@@ -595,9 +615,10 @@ export default function TicketForm(props: TicketFormProps) {
       const ticket = await res.json();
       toast.success("Ticket created successfully");
       router.push(`/student/dashboard/ticket/${ticket.id}`);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Ticket create error:", err);
-      toast.error(err.message || "Failed to create ticket");
+      const errorMessage = err instanceof Error ? err.message : "Failed to create ticket";
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -1101,7 +1122,7 @@ export default function TicketForm(props: TicketFormProps) {
 //       const ticket = await res.json();
 //       toast.success("Ticket created successfully");
 //       router.push(`/student/dashboard/tickets/${ticket.id}`);
-//     } catch (err: any) {
+//     } catch (err: unknown) {
 //       toast.error(err.message || "Error creating ticket");
 //     }
 //   }

@@ -111,7 +111,11 @@ export async function GET(
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const metadata = (ticketData.ticket_metadata as any) || {};
+    type TicketMetadata = {
+      comments?: Array<{ [key: string]: unknown }>;
+      [key: string]: unknown;
+    };
+    const metadata = (ticketData.ticket_metadata as TicketMetadata) || {};
 
     // 2. Fetch category with SLA info
     const category = ticketData.ticket_category_id
@@ -127,17 +131,20 @@ export async function GET(
     let subcategory = null;
     let subSubcategory = null;
 
-    if (metadata?.subcategoryId && ticketData.ticket_category_id) {
+    const subcategoryId = typeof metadata?.subcategoryId === 'number' ? metadata.subcategoryId : null;
+    const subSubcategoryId = typeof metadata?.subSubcategoryId === 'number' ? metadata.subSubcategoryId : null;
+    
+    if (subcategoryId && ticketData.ticket_category_id) {
       subcategory = await getSubcategoryById(
-        metadata.subcategoryId,
+        subcategoryId,
         ticketData.ticket_category_id
       );
     }
 
-    if (metadata?.subSubcategoryId && metadata?.subcategoryId) {
+    if (subSubcategoryId && subcategoryId) {
       subSubcategory = await getSubSubcategoryById(
-        metadata.subSubcategoryId,
-        metadata.subcategoryId
+        subSubcategoryId,
+        subcategoryId
       );
     }
 

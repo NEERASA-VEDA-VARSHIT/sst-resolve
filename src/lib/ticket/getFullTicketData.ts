@@ -183,13 +183,21 @@ export async function getFullTicketData(ticketId: number, userId: string) {
 
     // 9. Extract comments and normalize dates
     const comments = Array.isArray(metadata?.comments) ? metadata.comments : [];
+    type Comment = {
+      isInternal?: boolean;
+      type?: string;
+      [key: string]: unknown;
+    };
     const visibleComments = comments
-      .filter((c: any) => !c?.isInternal && c?.type !== "super_admin_note")
-      .map((c: any) => ({
+      .filter((c: Comment) => !c?.isInternal && c?.type !== "super_admin_note")
+      .map((c: Comment) => ({
         ...c,
         // Normalize created_at to Date object for consistent formatting
         created_at: c.created_at
-          ? (c.created_at instanceof Date ? c.created_at : new Date(c.created_at))
+          ? (c.created_at instanceof Date ? c.created_at : 
+             typeof c.created_at === 'string' ? new Date(c.created_at) :
+             typeof c.created_at === 'number' ? new Date(c.created_at) :
+             new Date())
           : null,
       }));
 

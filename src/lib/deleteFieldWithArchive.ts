@@ -22,7 +22,13 @@ export async function archiveAndDeleteField(args: {
   }
 
   // 2. Fetch options if select field
-  let options: any[] = [];
+  type FieldOption = {
+    id: number;
+    label: string;
+    value: string;
+    [key: string]: unknown;
+  };
+  let options: FieldOption[] = [];
   if (field.field_type === 'select') {
     options = await db
       .select()

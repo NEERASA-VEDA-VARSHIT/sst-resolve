@@ -112,7 +112,7 @@ export interface ActivityLog {
 /**
  * Parse ticket metadata JSON string to TicketMetadata object
  */
-export function parseTicketMetadata(metadata: any): TicketMetadata {
+export function parseTicketMetadata(metadata: unknown): TicketMetadata {
 	if (!metadata) return {};
 	if (typeof metadata === "string") {
 		try {
@@ -135,7 +135,7 @@ export function stringifyTicketMetadata(metadata: TicketMetadata): string {
 /**
  * Parse attachments JSON array
  */
-export function parseAttachments(attachments: any): TicketAttachment[] {
+export function parseAttachments(attachments: unknown): TicketAttachment[] {
 	if (!attachments) return [];
 	if (typeof attachments === "string") {
 		try {

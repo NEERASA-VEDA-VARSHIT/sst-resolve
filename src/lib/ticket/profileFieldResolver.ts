@@ -43,14 +43,17 @@ export const PROFILE_FIELD_LABELS: Record<string, string> = {
  */
 export function resolveProfileFieldValue(
   fieldName: string,
-  metadata: any,
+  metadata: Record<string, unknown>,
   studentRecord?: StudentRecord,
   userRecord?: UserRecord
 ): string | null {
-  const profileData = metadata?.profile || {};
+  type ProfileData = Record<string, unknown>;
+  const profileData: ProfileData = (metadata?.profile && typeof metadata.profile === 'object' && !Array.isArray(metadata.profile)) 
+    ? metadata.profile as ProfileData 
+    : {};
   
   // 1. Try metadata.profile first (highest priority - submitted by user)
-  if (profileData[fieldName]) {
+  if (fieldName in profileData && profileData[fieldName]) {
     return String(profileData[fieldName]);
   }
   

@@ -11,11 +11,19 @@ import { eq } from "drizzle-orm";
 import { postThreadReplyToChannel } from "@/lib/slack";
 import { sendEmail, getCommentAddedEmail } from "@/lib/email";
 
-export async function processTicketCommentAddedWorker(payload: any) {
+type CommentAddedPayload = {
+  ticketId: number;
+  [key: string]: unknown;
+};
+export async function processTicketCommentAddedWorker(payload: CommentAddedPayload) {
   console.log("[Worker] Processing ticket comment added", { payload });
 
   try {
-    const { ticket_id, comment_text, author_name, author_role } = payload;
+    const ticket_id = typeof payload.ticket_id === 'number' ? payload.ticket_id : 
+                     typeof payload.ticket_id === 'string' ? parseInt(payload.ticket_id, 10) : 0;
+    const comment_text = typeof payload.comment_text === 'string' ? payload.comment_text : '';
+    const author_name = typeof payload.author_name === 'string' ? payload.author_name : '';
+    const author_role = typeof payload.author_role === 'string' ? payload.author_role : '';
 
     // Fetch ticket with all necessary data
     const ticket = await db.query.tickets.findMany({
@@ -87,12 +95,13 @@ export async function processTicketCommentAddedWorker(payload: any) {
       }
 
       if (recipientEmail) {
-        const category = ticketData.category as any;
+        type Category = { name?: string; [key: string]: unknown };
+        const category = ticketData.category as unknown as Category;
         const emailTemplate = getCommentAddedEmail(
           ticket_id,
           comment_text,
           author_name,
-          category?.name || "Unknown"
+          typeof category?.name === 'string' ? category.name : "Unknown"
         );
 
         await sendEmail({

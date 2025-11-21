@@ -48,19 +48,31 @@ export async function GET(request: NextRequest) {
 		for (const ticket of allTickets) {
 			if (!ticket.metadata) continue;
 
-			const metadata = ticket.metadata as any;
+			type TicketMetadata = {
+				[key: string]: unknown;
+			};
+			const metadata = ticket.metadata as TicketMetadata;
 
 			try {
-				if (!metadata.tatDate) continue;
-
-				const tatDate = new Date(metadata.tatDate);
+				const tatDateValue = metadata.tatDate;
+				if (!tatDateValue) continue;
+				const tatDate = tatDateValue instanceof Date ? tatDateValue : 
+				               typeof tatDateValue === 'string' ? new Date(tatDateValue) :
+				               typeof tatDateValue === 'number' ? new Date(tatDateValue) :
+				               null;
+				if (!tatDate || isNaN(tatDate.getTime())) continue;
 				tatDate.setHours(0, 0, 0, 0);
 
 				// Check if TAT date is today
 				if (tatDate.getTime() === today.getTime()) {
 					// Skip if already reminded today
-					if (metadata.lastReminderDate) {
-						const lastReminder = new Date(metadata.lastReminderDate);
+					const lastReminderValue = metadata.lastReminderDate;
+					if (lastReminderValue) {
+						const lastReminder = lastReminderValue instanceof Date ? lastReminderValue :
+						                 typeof lastReminderValue === 'string' ? new Date(lastReminderValue) :
+						                 typeof lastReminderValue === 'number' ? new Date(lastReminderValue) :
+						                 null;
+						if (!lastReminder || isNaN(lastReminder.getTime())) continue;
 						lastReminder.setHours(0, 0, 0, 0);
 						if (lastReminder.getTime() === today.getTime()) {
 							continue; // Already reminded today
@@ -92,38 +104,40 @@ export async function GET(request: NextRequest) {
 							categoryName === "Hostel" ||
 							categoryName === "College"
 						) {
-							const reminderText = `⏰ *TAT Reminder*\n\nTicket #${ticket.id} has reached its TAT date (${metadata.tat}).\n\nPlease review and update the ticket status.`;
+						const tatValue = typeof metadata.tat === 'string' ? metadata.tat : String(metadata.tat || '');
+						const reminderText = `⏰ *TAT Reminder*\n\nTicket #${ticket.id} has reached its TAT date (${tatValue}).\n\nPlease review and update the ticket status.`;
 
-							if (metadata.slackMessageTs) {
-								await postThreadReply(
-									categoryName as "Hostel" | "College",
-									metadata.slackMessageTs,
-									reminderText
+						const slackMessageTsValue = typeof metadata.slackMessageTs === 'string' ? metadata.slackMessageTs : undefined;
+						if (slackMessageTsValue) {
+							await postThreadReply(
+								categoryName as "Hostel" | "College",
+								slackMessageTsValue,
+								reminderText
+							);
+						}
+
+						// Send email reminder to student
+						try {
+							// We need userNumber to get student email?
+							// getStudentEmail takes userNumber.
+							// We have created_by (UUID). We should get email directly from users table.
+							const { users } = await import("@/db/schema");
+							const [creator] = await db.select({ email: users.email })
+								.from(users)
+								.where(eq(users.id, ticket.created_by))
+								.limit(1);
+
+							const studentEmail = creator?.email;
+							if (studentEmail) {
+								const emailTemplate = getTATReminderEmail(
+									ticket.id,
+									tatValue,
+									categoryName
 								);
-							}
 
-							// Send email reminder to student
-							try {
-								// We need userNumber to get student email?
-								// getStudentEmail takes userNumber.
-								// We have created_by (UUID). We should get email directly from users table.
-								const { users } = await import("@/db/schema");
-								const [creator] = await db.select({ email: users.email })
-									.from(users)
-									.where(eq(users.id, ticket.created_by))
-									.limit(1);
-
-								const studentEmail = creator?.email;
-								if (studentEmail) {
-									const emailTemplate = getTATReminderEmail(
-										ticket.id,
-										metadata.tat,
-										categoryName
-									);
-
-									// Get original email Message-ID and subject for threading
-									const originalMessageId = metadata.originalEmailMessageId;
-									const originalSubject = metadata.originalEmailSubject;
+								// Get original email Message-ID and subject for threading
+								const originalMessageId = typeof metadata.originalEmailMessageId === 'string' ? metadata.originalEmailMessageId : undefined;
+								const originalSubject = typeof metadata.originalEmailSubject === 'string' ? metadata.originalEmailSubject : undefined;
 									if (!originalMessageId) {
 										console.warn(`⚠️ No originalEmailMessageId found for ticket #${ticket.id} - reminder email will not thread properly`);
 									}

@@ -283,7 +283,7 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
       metadataToPersist = {};
     }
 
-    const setMetadataValue = (key: string, value: any) => {
+    const setMetadataValue = (key: string, value: unknown) => {
       try {
         if (metadataToPersist[key] !== value) {
           metadataToPersist[key] = value;

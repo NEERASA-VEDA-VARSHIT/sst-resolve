@@ -163,9 +163,10 @@ export function EditStudentDialog({
             toast.success("Student updated successfully");
             onSuccess();
             onOpenChange(false);
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error("Error updating student:", error);
-            toast.error(error.message || "Failed to update student");
+            const errorMessage = error instanceof Error ? error.message : "Failed to update student";
+            toast.error(errorMessage);
         } finally {
             setLoading(false);
         }

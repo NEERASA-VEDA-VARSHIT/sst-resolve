@@ -124,7 +124,11 @@ export function CategoryDialog({ open, onClose, category }: CategoryDialogProps)
       
       // API already returns only admin and super_admin roles
       // Parse fullName back to first_name and last_name for display
-      const adminList = (data.staff || []).map((staff: any) => {
+      type StaffMember = {
+        fullName?: string;
+        [key: string]: unknown;
+      };
+      const adminList = (data.staff || []).map((staff: StaffMember) => {
         // Parse fullName if available, otherwise use email
         const fullName = staff.fullName || "";
         const nameParts = fullName.split(" ");
@@ -450,7 +454,14 @@ export function CategoryDialog({ open, onClose, category }: CategoryDialogProps)
                     </SelectItem>
                   ) : (
                     admins.map((admin) => {
-                      const fullName = (admin as any).fullName || [admin.first_name, admin.last_name].filter(Boolean).join(' ').trim();
+                      type AdminWithFullName = {
+                        fullName?: string;
+                        first_name?: string | null;
+                        last_name?: string | null;
+                        [key: string]: unknown;
+                      };
+                      const adminWithFullName = admin as unknown as AdminWithFullName;
+                      const fullName = adminWithFullName.fullName || [admin.first_name, admin.last_name].filter(Boolean).join(' ').trim();
                       const displayName = fullName || admin.email || "Unknown";
                       return (
                         <SelectItem key={admin.id} value={admin.id}>

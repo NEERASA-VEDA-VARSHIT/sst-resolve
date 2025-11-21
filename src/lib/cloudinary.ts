@@ -20,14 +20,19 @@ export async function uploadImage(
   folder: string = 'tickets'
 ): Promise<{ secure_url: string; public_id: string }> {
   try {
-    const uploadOptions: any = {
+    const uploadOptions: Record<string, unknown> = {
       folder: `sst-resolve/${folder}`,
       resource_type: 'image',
       overwrite: false,
       invalidate: true,
     };
 
-    let uploadResult: any;
+    type UploadResult = {
+      secure_url: string;
+      public_id: string;
+      [key: string]: unknown;
+    };
+    let uploadResult: UploadResult;
     if (Buffer.isBuffer(file)) {
       // Upload from buffer
       uploadResult = await new Promise((resolve, reject) => {
@@ -35,7 +40,15 @@ export async function uploadImage(
           uploadOptions,
           (error, result) => {
             if (error) reject(error);
-            else resolve(result);
+            else if (result) {
+              const uploadResult: UploadResult = {
+                secure_url: result.secure_url || '',
+                public_id: result.public_id || '',
+              };
+              resolve(uploadResult);
+            } else {
+              reject(new Error('Upload failed: no result'));
+            }
           }
         );
         uploadStream.end(file);
