@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Calendar, ArrowLeft, User, MapPin, FileText, Clock, AlertTriangle, Image as ImageIcon, MessageSquare } from "lucide-react";
-import { db, tickets, categories, users, ticket_statuses } from "@/db";
+import { db, tickets, categories, users, ticket_statuses, roles } from "@/db";
 import { eq, aliasedTable } from "drizzle-orm";
 import { AdminActions } from "@/components/tickets/AdminActions";
 import { CommitteeTagging } from "@/components/admin/CommitteeTagging";
@@ -124,6 +124,25 @@ export default async function AdminTicketPage({ params }: { params: Promise<{ ti
   const tatDate = ticket.due_at || (metadata?.tatDate ? new Date(metadata.tatDate) : null);
   const hasTATDue = tatDate && tatDate.getTime() < new Date().getTime();
   const isTATToday = tatDate && tatDate.toDateString() === new Date().toDateString();
+
+  const forwardTargetsRaw = await db
+    .select({
+      id: users.id,
+      first_name: users.first_name,
+      last_name: users.last_name,
+      email: users.email,
+    })
+    .from(users)
+    .leftJoin(roles, eq(users.role_id, roles.id))
+    .where(eq(roles.name, "super_admin"));
+
+  const forwardTargets = forwardTargetsRaw
+    .filter((admin) => !!admin.id)
+    .map((admin) => ({
+      id: admin.id!,
+      name: [admin.first_name, admin.last_name].filter(Boolean).join(" ").trim() || admin.email || "Super Admin",
+      email: admin.email,
+    }));
 
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-6">
@@ -318,10 +337,11 @@ export default async function AdminTicketPage({ params }: { params: Promise<{ ti
                 ticketId={ticket.id}
                 currentStatus={statusValue || "open"}
                 hasTAT={!!ticket.due_at || !!metadata?.tat}
-                isSuperAdmin={false}
-                ticketCategory={ticket.category_name || null}
+                isSuperAdmin={role === "super_admin"}
+                ticketCategory={ticket.category_name || "General"}
                 ticketLocation={ticket.location}
                 currentAssignedTo={ticket.assigned_staff_id?.toString() || null}
+                forwardTargets={forwardTargets}
               />
             </CardContent>
           </Card>

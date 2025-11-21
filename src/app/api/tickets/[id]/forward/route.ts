@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import { tickets, outbox, users, ticket_statuses } from "@/db/schema";
+import { tickets, outbox, users, ticket_statuses, roles } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getUserRoleFromDB } from "@/lib/db-roles";
@@ -24,8 +24,10 @@ import { TICKET_STATUS, isAdminLevel } from "@/conf/constants";
  */
 
 // Body schema for POST
+// targetAdminId is OPTIONAL – if not provided, the API will auto-select
+// the next-level admin (typically a super_admin).
 const ForwardSchema = z.object({
-    targetAdminId: z.string(), // Required: admin to forward to (UUID)
+    targetAdminId: z.string().optional(),
     reason: z.string().max(2000).optional(),
 });
 
@@ -71,7 +73,7 @@ export async function POST(
                 { status: 400 }
             );
 
-        const { targetAdminId, reason } = parsed.data;
+        let { targetAdminId, reason } = parsed.data;
 
         // --------------------------------------------------
         // LOAD TICKET
@@ -100,7 +102,32 @@ export async function POST(
         }
 
         // --------------------------------------------------
-        // GET TARGET ADMIN
+        // RESOLVE TARGET ADMIN
+        // --------------------------------------------------
+        // If targetAdminId is not provided, auto-select a super admin as the
+        // forwarding target (next-level admin).
+        if (!targetAdminId) {
+            const [superAdmin] = await db
+                .select({
+                    id: users.id,
+                })
+                .from(users)
+                .innerJoin(roles, eq(users.role_id, roles.id))
+                .where(eq(roles.name, "super_admin"))
+                .limit(1);
+
+            if (!superAdmin) {
+                return NextResponse.json(
+                    { error: "No super admin found to forward ticket to" },
+                    { status: 400 }
+                );
+            }
+
+            targetAdminId = superAdmin.id;
+        }
+
+        // --------------------------------------------------
+        // GET TARGET ADMIN DETAILS
         // --------------------------------------------------
         const [targetAdmin] = await db
             .select({

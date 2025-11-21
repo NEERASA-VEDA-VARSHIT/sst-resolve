@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Calendar, ArrowLeft, User, MapPin, FileText, Clock, AlertTriangle, Image as ImageIcon, MessageSquare } from "lucide-react";
-import { db, tickets, categories, users, ticket_statuses } from "@/db";
+import { db, tickets, categories, users, ticket_statuses, roles } from "@/db";
 import { eq, aliasedTable } from "drizzle-orm";
 import { AdminActions } from "@/components/tickets/AdminActions";
 import { CommitteeTagging } from "@/components/admin/CommitteeTagging";
@@ -77,6 +77,25 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
       badge_color: ticketRows[0].status_badge_color,
     } : null,
   };
+
+  const forwardTargetsRaw = await db
+    .select({
+      id: users.id,
+      first_name: users.first_name,
+      last_name: users.last_name,
+      email: users.email,
+    })
+    .from(users)
+    .leftJoin(roles, eq(users.role_id, roles.id))
+    .where(eq(roles.name, "super_admin"));
+
+  const forwardTargets = forwardTargetsRaw
+    .filter((admin) => !!admin.id)
+    .map((admin) => ({
+      id: admin.id!,
+      name: [admin.first_name, admin.last_name].filter(Boolean).join(" ").trim() || admin.email || "Super Admin",
+      email: admin.email,
+    }));
 
   // Parse metadata (JSONB) with error handling
   let metadata: any = {};
@@ -314,9 +333,10 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
                 currentStatus={statusValue || "open"}
                 hasTAT={!!ticket.due_at || !!metadata?.tat}
                 isSuperAdmin={true}
-                ticketCategory={ticket.category_name || null}
+                ticketCategory={ticket.category_name || "General"}
                 ticketLocation={ticket.location}
                 currentAssignedTo={ticket.assigned_staff_id?.toString() || null}
+                forwardTargets={forwardTargets}
               />
             </CardContent>
           </Card>

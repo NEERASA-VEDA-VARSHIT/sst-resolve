@@ -17,8 +17,6 @@ type TicketRecord = {
   location: string | null;
   metadata: Record<string, any> | null;
   categoryId: number | null;
-  legacyCategory: string | null;
-  legacySubcategory: string | null;
   createdBy: string | null;
   statusId: number | null;
 };
@@ -104,8 +102,6 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
         location: tickets.location,
         metadata: tickets.metadata,
         categoryId: tickets.category_id,
-        legacyCategory: tickets.category,
-        legacySubcategory: tickets.subcategory,
         createdBy: tickets.created_by,
         statusId: tickets.status_id,
         statusValue: ticket_statuses.value,
@@ -125,15 +121,13 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
       location: ticketRow.location,
       metadata: ticketRow.metadata as Record<string, any> | null,
       categoryId: ticketRow.categoryId,
-      legacyCategory: ticketRow.legacyCategory,
-      legacySubcategory: ticketRow.legacySubcategory,
       createdBy: ticketRow.createdBy,
       statusId: ticketRow.statusId,
     };
     
     const ticketStatusValue = ticketRow.statusValue || "open";
 
-    let categoryName = payload.category || ticket.legacyCategory || "General";
+    let categoryName = payload.category || "General";
     if (ticket.categoryId) {
       const [categoryRecord] = await db
         .select({ name: categories.name })
@@ -199,8 +193,7 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
       return undefined;
     };
 
-    let subcategoryName =
-      firstString(safeGet(metadata, 'subcategory'), ticket.legacySubcategory) || "";
+    let subcategoryName = firstString(safeGet(metadata, 'subcategory')) || "";
     if (!subcategoryName && safeGet(metadata, 'subcategoryId') && ticket.categoryId) {
       try {
         const { getSubcategoryById } = await import("@/lib/categories");

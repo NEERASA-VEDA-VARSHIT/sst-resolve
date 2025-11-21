@@ -98,7 +98,7 @@ export function SelectableTicketList({ tickets, basePath = "/admin/dashboard" }:
                 className={selectedTicketIds.includes(ticket.id) ? "ring-2 ring-primary rounded-lg" : ""}
                 onClick={() => toggleTicket(ticket.id)}
               >
-                <TicketCard ticket={ticket} basePath={basePath} />
+                <TicketCard ticket={ticket} basePath={basePath} disableLink />
               </div>
             </div>
           ))}

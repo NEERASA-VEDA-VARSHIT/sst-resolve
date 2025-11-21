@@ -7,12 +7,37 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RefreshCw, Clock, MessageSquare, CheckCircle, RotateCcw, Trash2, FileText, UserCog, AlertTriangle, ArrowUpRight } from "lucide-react";
 import { toast } from "sonner";
 import { ReassignDialog } from "./ReassignDialog";
 import { normalizeStatusForComparison } from "@/lib/utils";
 
-export function AdminActions({ ticketId, currentStatus, hasTAT, isSuperAdmin = false, ticketCategory, ticketLocation, currentAssignedTo }: { ticketId: number; currentStatus: string; hasTAT?: boolean; isSuperAdmin?: boolean; ticketCategory: string; ticketLocation?: string | null; currentAssignedTo?: string | null }) {
+type ForwardTarget = {
+	id: string;
+	name: string;
+	email: string | null;
+};
+
+export function AdminActions({
+	ticketId,
+	currentStatus,
+	hasTAT,
+	isSuperAdmin = false,
+	ticketCategory,
+	ticketLocation,
+	currentAssignedTo,
+	forwardTargets = [],
+}: {
+	ticketId: number;
+	currentStatus: string;
+	hasTAT?: boolean;
+	isSuperAdmin?: boolean;
+	ticketCategory: string;
+	ticketLocation?: string | null;
+	currentAssignedTo?: string | null;
+	forwardTargets?: ForwardTarget[];
+}) {
 	const router = useRouter();
 	const [loading, setLoading] = useState<string | null>(null);
 	const [showTATForm, setShowTATForm] = useState(false);
@@ -25,10 +50,18 @@ export function AdminActions({ ticketId, currentStatus, hasTAT, isSuperAdmin = f
 	const [comment, setComment] = useState("");
 	const [escalationReason, setEscalationReason] = useState("");
 	const [forwardReason, setForwardReason] = useState("");
+	const [selectedForwardAdmin, setSelectedForwardAdmin] = useState<string>("auto");
 	const [commentType, setCommentType] = useState<"comment" | "question" | "internal" | "super_admin">("comment");
 
 	// Normalize status for comparison (handles both uppercase enum and lowercase constants)
 	const normalizedStatus = normalizeStatusForComparison(currentStatus);
+	const hasForwardTargets = Array.isArray(forwardTargets) && forwardTargets.length > 0;
+
+	useEffect(() => {
+		if (!showForwardDialog) {
+			setSelectedForwardAdmin("auto");
+		}
+	}, [showForwardDialog]);
 
 	const handleStatusUpdate = async (status: string) => {
 		setLoading(status);
@@ -224,15 +257,21 @@ export function AdminActions({ ticketId, currentStatus, hasTAT, isSuperAdmin = f
 		e.preventDefault();
 		setLoading("forward");
 		try {
+			const body: Record<string, any> = { reason: forwardReason || undefined };
+			if (selectedForwardAdmin && selectedForwardAdmin !== "auto") {
+				body.targetAdminId = selectedForwardAdmin;
+			}
+
 			const response = await fetch(`/api/tickets/${ticketId}/forward`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ reason: forwardReason || undefined }),
+				body: JSON.stringify(body),
 			});
 
 			if (response.ok) {
 				const data = await response.json();
 				setForwardReason("");
+				setSelectedForwardAdmin("auto");
 				setShowForwardDialog(false);
 				toast.success(data.message || "Ticket forwarded successfully");
 				router.refresh();
@@ -468,6 +507,40 @@ export function AdminActions({ ticketId, currentStatus, hasTAT, isSuperAdmin = f
 										rows={3}
 									/>
 								</div>
+								<div className="space-y-2">
+									<Label htmlFor="forwardTarget">Forward To</Label>
+									{hasForwardTargets ? (
+										<>
+											<Select
+												value={selectedForwardAdmin}
+												onValueChange={setSelectedForwardAdmin}
+												disabled={loading === "forward"}
+											>
+												<SelectTrigger id="forwardTarget">
+													<SelectValue placeholder="Select admin or use auto-selection" />
+												</SelectTrigger>
+												<SelectContent>
+													<SelectItem value="auto">Automatic (choose best super admin)</SelectItem>
+													{forwardTargets.map((admin) => (
+														<SelectItem key={admin.id} value={admin.id}>
+															<span className="flex flex-col">
+																<span className="font-medium">{admin.name}</span>
+																<span className="text-xs text-muted-foreground">{admin.email || "No email"}</span>
+															</span>
+														</SelectItem>
+													))}
+												</SelectContent>
+											</Select>
+											<p className="text-xs text-muted-foreground">
+												Leave on <span className="font-medium">Automatic</span> to let the system pick the next-level (super admin) automatically.
+											</p>
+										</>
+									) : (
+										<p className="text-sm text-muted-foreground">
+											This will forward to the default super admin assigned for escalations.
+										</p>
+									)}
+								</div>
 								<DialogFooter>
 									<Button
 										type="button"
@@ -475,6 +548,7 @@ export function AdminActions({ ticketId, currentStatus, hasTAT, isSuperAdmin = f
 										onClick={() => {
 											setShowForwardDialog(false);
 											setForwardReason("");
+											setSelectedForwardAdmin("auto");
 										}}
 									>
 										Cancel

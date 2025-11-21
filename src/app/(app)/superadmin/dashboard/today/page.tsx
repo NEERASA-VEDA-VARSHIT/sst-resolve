@@ -61,6 +61,12 @@ export default async function SuperAdminTodayPendingPage() {
     const status = (t.status || "").toLowerCase();
     if (!pendingStatuses.has(status)) return false;
     
+    // Exclude tickets awaiting student response from overdue
+    const statusUpper = (t.status || "").toUpperCase();
+    if (statusUpper === "AWAITING_STUDENT" || statusUpper === "AWAITING_STUDENT_RESPONSE") {
+      return false;
+    }
+    
     // Use authoritative due_at field first, fallback to metadata
     const metadata = (t.metadata as any) || {};
     const tatDate = t.due_at || (metadata?.tatDate ? new Date(metadata.tatDate) : null);

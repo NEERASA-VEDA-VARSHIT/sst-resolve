@@ -53,7 +53,7 @@ export default async function SuperAdminAnalyticsPage() {
                 admin_first_name: users.first_name,
                 admin_last_name: users.last_name,
                 admin_domain: domains.name,
-                admin_scope: scopes.name,
+                admin_scope: scopes.name
             })
             .from(tickets)
             .leftJoin(categories, eq(tickets.category_id, categories.id))
@@ -70,7 +70,7 @@ export default async function SuperAdminAnalyticsPage() {
                 last_name: users.last_name,
                 domain: domains.name,
                 scope: scopes.name,
-                role: roles.name,
+                role: roles.name
             })
             .from(users)
             .leftJoin(roles, eq(users.role_id, roles.id))
@@ -82,7 +82,7 @@ export default async function SuperAdminAnalyticsPage() {
         const userCounts = await db
             .select({
                 role: roles.name,
-                count: sql<number>`count(*)`,
+                count: sql<number>`count(*)`
             })
             .from(users)
             .leftJoin(roles, eq(users.role_id, roles.id))

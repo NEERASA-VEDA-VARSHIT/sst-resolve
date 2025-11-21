@@ -145,10 +145,17 @@ export default async function AdminTodayPendingPage() {
   });
 
   // Calculate additional metrics - create a Set of overdue ticket IDs for efficient lookup
+  // Exclude tickets in AWAITING_STUDENT status from overdue calculation
   const overdueTodayIds = new Set(
     todayPending
       .filter(t => {
         try {
+          // Exclude tickets awaiting student response from overdue
+          const status = (t.status || "").toUpperCase();
+          if (status === "AWAITING_STUDENT" || status === "AWAITING_STUDENT_RESPONSE") {
+            return false;
+          }
+
           // Check due_at first
           if (t.due_at) {
             const dueDate = new Date(t.due_at);

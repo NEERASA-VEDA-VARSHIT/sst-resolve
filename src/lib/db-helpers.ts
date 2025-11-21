@@ -457,7 +457,8 @@ export async function getTicketsOverdue(): Promise<Array<{
           isNotNull(tickets.resolution_due_at),
           lt(tickets.resolution_due_at, now),
           sql`${ticket_statuses.value} != 'RESOLVED'`,
-          sql`${ticket_statuses.value} != 'CLOSED'`
+          sql`${ticket_statuses.value} != 'CLOSED'`,
+          sql`${ticket_statuses.value} != 'AWAITING_STUDENT'` // Exclude tickets awaiting student response from overdue
         )
       )
       .orderBy(tickets.resolution_due_at);

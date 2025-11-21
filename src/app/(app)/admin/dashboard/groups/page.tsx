@@ -1,8 +1,8 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
-import { tickets, staff } from "@/db/schema";
-import { desc, eq, or, isNull } from "drizzle-orm";
+import { tickets, users, roles, domains, scopes } from "@/db/schema";
+import { desc, eq, or, and, isNull } from "drizzle-orm";
 import { TicketGrouping } from "@/components/admin/TicketGrouping";
 import { SelectableTicketList } from "@/components/admin/SelectableTicketList";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,41 +24,37 @@ export default async function AdminGroupsPage() {
     const dbUser = await getOrCreateUser(userId);
     if (!dbUser) {
       console.error("[AdminGroupsPage] Failed to create/fetch user");
-      .select()
-        .from(tickets)
-        .orderBy(desc(tickets.created_at))
-        .limit(limit);
+      redirect("/");
+    }
 
-      // Filter tickets based on admin role
-      if (role === "admin") {
-        // Get admin's staff record
-        const [adminStaff] = await db
-          .select({ id: staff.id })
-          .from(staff)
-          .where(eq(staff.user_id, dbUser.id))
-          .limit(1);
+    const role = await getUserRoleFromDB(userId);
+    if (role !== "admin" && role !== "super_admin") {
+      redirect("/");
+    }
 
-        if (adminStaff) {
-          allTickets = await db
-            .select()
-            .from(tickets)
-            .where(
-              or(
-                eq(tickets.assigned_to, adminStaff.id),
-                isNull(tickets.assigned_to)
-              )
-            )
-            .orderBy(desc(tickets.created_at));
-        } else {
-          // No staff record, show unassigned tickets only
-          allTickets = await db
-            .select()
-            .from(tickets)
-            .where(isNull(tickets.assigned_to))
-            .orderBy(desc(tickets.created_at));
-        }
-      }
-      // Super admin can see all tickets
+    const [adminProfile] = await db
+      .select({
+        domain: domains.name,
+        scope: scopes.name,
+      })
+      .from(users)
+      .leftJoin(domains, eq(users.primary_domain_id, domains.id))
+      .leftJoin(scopes, eq(users.primary_scope_id, scopes.id))
+      .where(eq(users.id, dbUser.id))
+      .limit(1);
+
+    let ticketQuery = db.select().from(tickets).orderBy(desc(tickets.created_at));
+
+    if (role === "admin") {
+      ticketQuery = ticketQuery.where(
+        or(
+          eq(tickets.assigned_to, dbUser.id),
+          and(isNull(tickets.assigned_to), adminProfile?.domain ? eq(tickets.location, adminProfile.domain) : isNull(tickets.location))
+        )
+      );
+    }
+
+    const allTickets = await ticketQuery;
 
       return (
         <div className="space-y-6">

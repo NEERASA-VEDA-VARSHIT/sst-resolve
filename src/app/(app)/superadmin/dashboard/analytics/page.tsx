@@ -2,7 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { tickets, categories, users, roles, ticket_statuses } from "@/db/schema";
-import { eq, sql, isNotNull, and, or, inArray } from "drizzle-orm";
+import { eq, sql, inArray } from "drizzle-orm";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { FileText, Clock, CheckCircle2, AlertCircle, TrendingUp, Users, ArrowLeft, BarChart3, Calendar, Zap, Target, Activity } from "lucide-react";
 import Link from "next/link";
@@ -150,18 +150,17 @@ export default async function SuperAdminAnalyticsPage() {
   try {
     categoryStats = await db
       .select({
-        category_id: categories.id,
+        category_id: tickets.category_id,
         category_name: categories.name,
         total: sql<number>`COUNT(${tickets.id})`.as('total'),
         open: sql<number>`COUNT(CASE WHEN ${ticket_statuses.value} = 'OPEN' THEN 1 END)`.as('open'),
-        in_progress: sql<number>`COUNT(CASE WHEN ${ticket_statuses.value} IN ('IN_PROGRESS', 'AWAITING_STUDENT') THEN 1 END)`.as('in_progress'),
+        in_progress: sql<number>`COUNT(CASE WHEN ${ticket_statuses.value} IN ('IN_PROGRESS', 'AWAITING_STUDENT', 'AWAITING_STUDENT_RESPONSE') THEN 1 END)`.as('in_progress'),
         resolved: sql<number>`COUNT(CASE WHEN ${ticket_statuses.value} = 'RESOLVED' THEN 1 END)`.as('resolved'),
       })
-      .from(categories)
-      .leftJoin(tickets, eq(tickets.category_id, categories.id))
+      .from(tickets)
+      .leftJoin(categories, eq(tickets.category_id, categories.id))
       .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
-      .where(isNotNull(categories.parent_category_id))
-      .groupBy(categories.id, categories.name)
+      .groupBy(tickets.category_id, categories.name)
       .orderBy(sql`COUNT(${tickets.id}) DESC`);
   } catch (error) {
     console.error('[Super Admin Analytics] Error fetching category stats:', error);
@@ -521,6 +520,8 @@ export default async function SuperAdminAnalyticsPage() {
                   <p className="text-muted-foreground text-center py-8">No category statistics available</p>
                 ) : (
                   categoryStats.map((stat) => {
+                    const categoryKey = stat.category_id ?? "uncategorized";
+                    const categoryHref = `/superadmin/dashboard/analytics/category/${categoryKey}`;
                     const total = Number(stat.total) || 0;
                     const open = Number(stat.open) || 0;
                     const inProgress = Number(stat.in_progress) || 0;
@@ -528,46 +529,52 @@ export default async function SuperAdminAnalyticsPage() {
                     const resolutionRate = total > 0 ? Math.round((resolved / total) * 100) : 0;
 
                     return (
-                      <div key={stat.category_id} className="p-5 border-2 rounded-lg hover:shadow-md transition-shadow">
-                        <div className="flex items-center justify-between mb-4">
-                          <div>
-                            <p className="font-semibold text-lg">{stat.category_name || "Uncategorized"}</p>
+                      <Link
+                        key={categoryKey}
+                        href={categoryHref}
+                        className="block"
+                      >
+                        <div className="p-5 border-2 rounded-lg hover:shadow-md transition-shadow hover:border-primary cursor-pointer">
+                          <div className="flex items-center justify-between mb-4">
+                            <div>
+                              <p className="font-semibold text-lg">{stat.category_name || "Uncategorized"}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-3xl font-bold">{total}</p>
+                              <p className="text-xs text-muted-foreground">Total Tickets</p>
+                            </div>
                           </div>
-                          <div className="text-right">
-                            <p className="text-3xl font-bold">{total}</p>
-                            <p className="text-xs text-muted-foreground">Total Tickets</p>
+                          <div className="grid grid-cols-3 gap-4 mb-4">
+                            <div className="p-3 bg-amber-50 dark:bg-amber-950/20 rounded-lg border border-amber-200 dark:border-amber-800">
+                              <p className="text-xs text-muted-foreground mb-1">Open</p>
+                              <p className="text-xl font-semibold">{open}</p>
+                              {total > 0 && (
+                                <Progress value={(open / total) * 100} className="h-1.5 mt-2" />
+                              )}
+                            </div>
+                            <div className="p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                              <p className="text-xs text-muted-foreground mb-1">In Progress</p>
+                              <p className="text-xl font-semibold">{inProgress}</p>
+                              {total > 0 && (
+                                <Progress value={(inProgress / total) * 100} className="h-1.5 mt-2" />
+                              )}
+                            </div>
+                            <div className="p-3 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200 dark:border-green-800">
+                              <p className="text-xs text-muted-foreground mb-1">Resolved</p>
+                              <p className="text-xl font-semibold">{resolved}</p>
+                              {total > 0 && (
+                                <Progress value={(resolved / total) * 100} className="h-1.5 mt-2" />
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between pt-3 border-t">
+                            <span className="text-sm text-muted-foreground">Resolution Rate</span>
+                            <Badge variant={resolutionRate >= 70 ? "default" : resolutionRate >= 50 ? "secondary" : "destructive"}>
+                              {resolutionRate}%
+                            </Badge>
                           </div>
                         </div>
-                        <div className="grid grid-cols-3 gap-4 mb-4">
-                          <div className="p-3 bg-amber-50 dark:bg-amber-950/20 rounded-lg border border-amber-200 dark:border-amber-800">
-                            <p className="text-xs text-muted-foreground mb-1">Open</p>
-                            <p className="text-xl font-semibold">{open}</p>
-                            {total > 0 && (
-                              <Progress value={(open / total) * 100} className="h-1.5 mt-2" />
-                            )}
-                          </div>
-                          <div className="p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                            <p className="text-xs text-muted-foreground mb-1">In Progress</p>
-                            <p className="text-xl font-semibold">{inProgress}</p>
-                            {total > 0 && (
-                              <Progress value={(inProgress / total) * 100} className="h-1.5 mt-2" />
-                            )}
-                          </div>
-                          <div className="p-3 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200 dark:border-green-800">
-                            <p className="text-xs text-muted-foreground mb-1">Resolved</p>
-                            <p className="text-xl font-semibold">{resolved}</p>
-                            {total > 0 && (
-                              <Progress value={(resolved / total) * 100} className="h-1.5 mt-2" />
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-between pt-3 border-t">
-                          <span className="text-sm text-muted-foreground">Resolution Rate</span>
-                          <Badge variant={resolutionRate >= 70 ? "default" : resolutionRate >= 50 ? "secondary" : "destructive"}>
-                            {resolutionRate}%
-                          </Badge>
-                        </div>
-                      </div>
+                      </Link>
                     );
                   })
                 )}

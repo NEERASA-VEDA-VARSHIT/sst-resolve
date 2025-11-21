@@ -52,7 +52,18 @@ export async function PATCH(
       return NextResponse.json({ error: "Invalid ticket ID" }, { status: 400 });
 
     const body = await request.json();
-    const parsed = StatusSchema.safeParse(body);
+    
+    // Normalize status value: convert frontend format to database format
+    let normalizedStatus = body.status;
+    if (typeof normalizedStatus === 'string') {
+      normalizedStatus = normalizedStatus.toUpperCase();
+      // Convert frontend format to database format
+      if (normalizedStatus === "AWAITING_STUDENT_RESPONSE") {
+        normalizedStatus = "AWAITING_STUDENT";
+      }
+    }
+    
+    const parsed = StatusSchema.safeParse({ status: normalizedStatus });
     if (!parsed.success) {
       return NextResponse.json(
         { error: "Invalid status", details: parsed.error.format() },

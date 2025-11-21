@@ -15,7 +15,7 @@ export async function GET() {
         value: ticket_statuses.value,
         label: ticket_statuses.label,
         is_active: ticket_statuses.is_active,
-        sort_order: ticket_statuses.sort_order,
+        display_order: ticket_statuses.display_order,
       })
       .from(ticket_statuses)
       .where(eq(ticket_statuses.is_active, true));
@@ -27,7 +27,7 @@ export async function GET() {
     }
 
     // Sort manually to avoid issues with orderBy
-    const sortedStatuses = statuses.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+    const sortedStatuses = statuses.sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
 
     // Map to the expected format with null checks
     const statusOptions = sortedStatuses

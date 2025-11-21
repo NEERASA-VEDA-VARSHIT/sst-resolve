@@ -22,6 +22,7 @@ interface TicketCardProps {
     creator_email?: string | null;
   };
   basePath?: string;
+  disableLink?: boolean;
 }
 
 /* ---------------------------------------------------
@@ -85,7 +86,7 @@ function computeTatInfo(date?: Date | null) {
    Component
 ---------------------------------------------------- */
 
-export function TicketCard({ ticket, basePath = "/student/dashboard" }: TicketCardProps) {
+export function TicketCard({ ticket, basePath = "/student/dashboard", disableLink = false }: TicketCardProps) {
   const metadata = (ticket.metadata as any) ?? {};
 
   // TAT calculation
@@ -97,9 +98,8 @@ export function TicketCard({ ticket, basePath = "/student/dashboard" }: TicketCa
 
   const isEscalated = (ticket.escalation_level ?? 0) > 0;
 
-  return (
-    <Link href={`${basePath}/ticket/${ticket.id}`}>
-      <Card
+  const card = (
+    <Card
         className={cn(
           "relative overflow-hidden h-full border transition-all duration-300 cursor-pointer group",
           "hover:shadow-xl hover:shadow-primary/10 hover:border-primary/50 hover:-translate-y-1 hover:scale-[1.02] hover:z-10",
@@ -265,9 +265,14 @@ export function TicketCard({ ticket, basePath = "/student/dashboard" }: TicketCa
             )}
           </div>
         </CardContent>
-      </Card>
-    </Link>
+    </Card>
   );
+
+  if (disableLink) {
+    return card;
+  }
+
+  return <Link href={`${basePath}/ticket/${ticket.id}`}>{card}</Link>;
 }
 
 export default TicketCard;

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { db, tickets, ticket_groups, outbox } from "@/db";
+import { db, tickets, ticket_groups, outbox, ticket_statuses } from "@/db";
 import { eq } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
@@ -54,8 +54,15 @@ export async function POST(
 
     // Get all tickets in the group
     const groupTickets = await db
-      .select()
+      .select({
+        id: tickets.id,
+        assigned_to: tickets.assigned_to,
+        metadata: tickets.metadata,
+        status_id: tickets.status_id,
+        status_value: ticket_statuses.value,
+      })
       .from(tickets)
+      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
       .where(eq(tickets.group_id, groupIdNum));
 
     if (groupTickets.length === 0) {
@@ -124,17 +131,22 @@ export async function POST(
       }
     } else if (action === "close") {
       // Close all tickets
-      const { statusToEnum } = await import("@/lib/status-helpers");
-      const newStatus = statusToEnum(status || "resolved") as any; // Convert to uppercase enum
+      const { getStatusIdByValue } = await import("@/lib/status-helpers");
+      const newStatusValue = (status || "RESOLVED").toUpperCase();
+      const newStatusId = await getStatusIdByValue(newStatusValue);
+
+      if (!newStatusId) {
+        return NextResponse.json({ error: `Status ${newStatusValue} not found` }, { status: 400 });
+      }
 
       for (const ticket of groupTickets) {
         try {
-          const oldStatus = ticket.status;
+          const oldStatusValue = ticket.status_value;
 
           await db
             .update(tickets)
             .set({
-              status: newStatus,
+              status_id: newStatusId,
               resolved_at: new Date(),
               updated_at: new Date(),
             })
@@ -145,8 +157,8 @@ export async function POST(
             event_type: "ticket.status_changed",
             payload: {
               ticketId: ticket.id,
-              oldStatus: oldStatus,
-              newStatus: newStatus,
+                oldStatus: oldStatusValue,
+                newStatus: newStatusValue,
               updatedBy: "Admin",
             },
             created_at: new Date(),
