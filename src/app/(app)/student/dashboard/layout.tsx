@@ -2,6 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { isProfileComplete } from "@/lib/profile-check";
 import { getOrCreateUser } from "@/lib/user-sync";
+import { ProgressBar } from "@/components/dashboard/ProgressBar";
 
 export default async function StudentDashboardLayout({
   children,
@@ -31,6 +32,7 @@ export default async function StudentDashboardLayout({
 
   return (
     <div className="pb-16 lg:pb-0 pt-16 lg:pt-0">
+      <ProgressBar />
       <main className="min-h-screen p-4 md:p-6 lg:p-8">{children}</main>
     </div>
   );

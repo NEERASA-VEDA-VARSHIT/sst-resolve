@@ -704,6 +704,7 @@ export const ticket_groups = pgTable(
 		created_by: uuid("created_by")
 			.references(() => users.id, { onDelete: "set null" })
 			.notNull(),
+		is_archived: boolean("is_archived").default(false).notNull(),
 		created_at: timestamp("created_at").defaultNow(),
 		updated_at: timestamp("updated_at").defaultNow(),
 	},
@@ -712,6 +713,7 @@ export const ticket_groups = pgTable(
 		createdAtIdx: index("idx_ticket_groups_created_at").on(
 			table.created_at,
 		),
+		isArchivedIdx: index("idx_ticket_groups_is_archived").on(table.is_archived),
 	}),
 );
 

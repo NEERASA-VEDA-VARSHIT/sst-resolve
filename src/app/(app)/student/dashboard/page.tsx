@@ -154,60 +154,83 @@ export default async function StudentDashboardPage({
   }
 
   // -----------------------------
-  // 5. Fetch Filtered Tickets (with LIMIT to prevent timeouts)
+  // 5. Parallelize all data fetching for better performance
   // -----------------------------
   const TICKET_LIMIT = 100; // Limit to prevent timeouts on large datasets
-  const allTicketsRaw = await db
-    .select({
-      id: tickets.id,
-      title: tickets.title,
-      description: tickets.description,
-      location: tickets.location,
-      status_id: tickets.status_id,
-      category_id: tickets.category_id,
-      subcategory_id: tickets.subcategory_id,
-      sub_subcategory_id: tickets.sub_subcategory_id,
-      created_by: tickets.created_by,
-      assigned_to: tickets.assigned_to,
-      acknowledged_by: tickets.acknowledged_by,
-      group_id: tickets.group_id,
-      escalation_level: tickets.escalation_level,
-      tat_extended_count: tickets.tat_extended_count,
-      last_escalation_at: tickets.last_escalation_at,
-      acknowledgement_tat_hours: tickets.acknowledgement_tat_hours,
-      resolution_tat_hours: tickets.resolution_tat_hours,
-      acknowledgement_due_at: tickets.acknowledgement_due_at,
-      resolution_due_at: tickets.resolution_due_at,
-      acknowledged_at: tickets.acknowledged_at,
-      reopened_at: tickets.reopened_at,
-      sla_breached_at: tickets.sla_breached_at,
-      reopen_count: tickets.reopen_count,
-      rating: tickets.rating,
-      feedback_type: tickets.feedback_type,
-      rating_submitted: tickets.rating_submitted,
-      feedback: tickets.feedback,
-      is_public: tickets.is_public,
-      admin_link: tickets.admin_link,
-      student_link: tickets.student_link,
-      slack_thread_id: tickets.slack_thread_id,
-      external_ref: tickets.external_ref,
-      metadata: tickets.metadata,
-      created_at: tickets.created_at,
-      updated_at: tickets.updated_at,
-      resolved_at: tickets.resolved_at,
-      status: ticket_statuses.value,
-      category_name: categories.name,
-      creator_first_name: users.first_name,
-      creator_last_name: users.last_name,
-      creator_email: users.email,
-    })
-    .from(tickets)
-    .leftJoin(categories, eq(tickets.category_id, categories.id))
-    .leftJoin(users, eq(tickets.created_by, users.id))
-    .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
-    .where(and(...conditions))
-    .orderBy(orderBy)
-    .limit(TICKET_LIMIT);
+  
+  // Run all queries in parallel for maximum performance
+  const [allTicketsRaw, statsResult, categoryList, ticketStatuses] = await Promise.all([
+    // Fetch Filtered Tickets
+    db
+      .select({
+        id: tickets.id,
+        title: tickets.title,
+        description: tickets.description,
+        location: tickets.location,
+        status_id: tickets.status_id,
+        category_id: tickets.category_id,
+        subcategory_id: tickets.subcategory_id,
+        sub_subcategory_id: tickets.sub_subcategory_id,
+        created_by: tickets.created_by,
+        assigned_to: tickets.assigned_to,
+        acknowledged_by: tickets.acknowledged_by,
+        group_id: tickets.group_id,
+        escalation_level: tickets.escalation_level,
+        tat_extended_count: tickets.tat_extended_count,
+        last_escalation_at: tickets.last_escalation_at,
+        acknowledgement_tat_hours: tickets.acknowledgement_tat_hours,
+        resolution_tat_hours: tickets.resolution_tat_hours,
+        acknowledgement_due_at: tickets.acknowledgement_due_at,
+        resolution_due_at: tickets.resolution_due_at,
+        acknowledged_at: tickets.acknowledged_at,
+        reopened_at: tickets.reopened_at,
+        sla_breached_at: tickets.sla_breached_at,
+        reopen_count: tickets.reopen_count,
+        rating: tickets.rating,
+        feedback_type: tickets.feedback_type,
+        rating_submitted: tickets.rating_submitted,
+        feedback: tickets.feedback,
+        is_public: tickets.is_public,
+        admin_link: tickets.admin_link,
+        student_link: tickets.student_link,
+        slack_thread_id: tickets.slack_thread_id,
+        external_ref: tickets.external_ref,
+        metadata: tickets.metadata,
+        created_at: tickets.created_at,
+        updated_at: tickets.updated_at,
+        resolved_at: tickets.resolved_at,
+        status: ticket_statuses.value,
+        category_name: categories.name,
+        creator_first_name: users.first_name,
+        creator_last_name: users.last_name,
+        creator_email: users.email,
+      })
+      .from(tickets)
+      .leftJoin(categories, eq(tickets.category_id, categories.id))
+      .leftJoin(users, eq(tickets.created_by, users.id))
+      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
+      .where(and(...conditions))
+      .orderBy(orderBy)
+      .limit(TICKET_LIMIT),
+    
+    // Stats Query (Optimized) - using status_id joins
+    db
+      .select({
+        total: sql<number>`COUNT(*)`,
+        open: sql<number>`SUM(CASE WHEN ${ticket_statuses.value}='OPEN' THEN 1 ELSE 0 END)`,
+        inProgress: sql<number>`SUM(CASE WHEN ${ticket_statuses.value} IN ('IN_PROGRESS','ESCALATED') THEN 1 ELSE 0 END)`,
+        awaitingStudent: sql<number>`SUM(CASE WHEN ${ticket_statuses.value}='AWAITING_STUDENT_RESPONSE' THEN 1 ELSE 0 END)`,
+        resolved: sql<number>`SUM(CASE WHEN ${ticket_statuses.value}='RESOLVED' THEN 1 ELSE 0 END)`,
+        escalated: sql<number>`SUM(CASE WHEN ${tickets.escalation_level} > 0 THEN 1 ELSE 0 END)`,
+      })
+      .from(tickets)
+      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
+      .where(eq(tickets.created_by, dbUser.id)),
+    
+    // Fetch categories hierarchy and statuses for search UI
+    getCategoriesHierarchy(),
+    getTicketStatuses(),
+  ]);
   
   // Map to TicketCard format
   const allTickets = allTicketsRaw.map(ticket => ({
@@ -215,31 +238,7 @@ export default async function StudentDashboardPage({
     creator_name: [ticket.creator_first_name, ticket.creator_last_name].filter(Boolean).join(' ').trim() || null,
   }));
 
-  // -----------------------------
-  // 6. Stats Query (Optimized) - using status_id joins
-  // -----------------------------
-  const statsResult = await db
-    .select({
-      total: sql<number>`COUNT(*)`,
-      open: sql<number>`SUM(CASE WHEN ${ticket_statuses.value}='OPEN' THEN 1 ELSE 0 END)`,
-      inProgress: sql<number>`SUM(CASE WHEN ${ticket_statuses.value} IN ('IN_PROGRESS','ESCALATED') THEN 1 ELSE 0 END)`,
-      awaitingStudent: sql<number>`SUM(CASE WHEN ${ticket_statuses.value}='AWAITING_STUDENT_RESPONSE' THEN 1 ELSE 0 END)`,
-      resolved: sql<number>`SUM(CASE WHEN ${ticket_statuses.value}='RESOLVED' THEN 1 ELSE 0 END)`,
-      escalated: sql<number>`SUM(CASE WHEN ${tickets.escalation_level} > 0 THEN 1 ELSE 0 END)`,
-    })
-    .from(tickets)
-    .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
-    .where(eq(tickets.created_by, dbUser.id));
-
   const stats = statsResult[0];
-
-  // -----------------------------
-  // Fetch categories hierarchy and statuses for search UI
-  // -----------------------------
-  const [categoryList, ticketStatuses] = await Promise.all([
-    getCategoriesHierarchy(),
-    getTicketStatuses(),
-  ]);
 
   // -----------------------------
   // 7. UI Render

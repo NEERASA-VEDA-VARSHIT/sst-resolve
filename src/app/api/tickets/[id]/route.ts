@@ -223,6 +223,7 @@ export async function PATCH(
         location: tickets.location,
         description: tickets.description,
         category_name: categories.name,
+        group_id: tickets.group_id,
       })
       .from(tickets)
       .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
@@ -570,6 +571,13 @@ export async function PATCH(
           console.error("Error sending status update email:", emailError);
           // Don't fail the request if email fails
         }
+      }
+
+      // Check if ticket belongs to a group and if all tickets in that group are now closed
+      // If so, archive the group
+      if (ticket.group_id) {
+        const { checkAndArchiveGroupIfAllTicketsClosed } = await import("@/lib/group-archive");
+        await checkAndArchiveGroupIfAllTicketsClosed(ticket.group_id);
       }
 
       // Fetch full ticket for response

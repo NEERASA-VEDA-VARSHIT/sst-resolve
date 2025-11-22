@@ -94,7 +94,10 @@ export default function TicketSearch({
   ) => {
     const params = new URLSearchParams();
     if (search) params.set("search", search);
-    if (status && status !== "all") params.set("status", status);
+    if (status && status !== "all") {
+      params.set("status", status);
+      params.delete("escalated"); // Remove escalated when selecting status
+    }
     if (category && category !== "all") params.set("category", category);
     if (subcategory && subcategory !== "all") params.set("subcategory", subcategory);
     if (subSubcategory && subSubcategory !== "all") params.set("sub_subcategory", subSubcategory);
@@ -175,6 +178,7 @@ export default function TicketSearch({
         <Select value={statusFilter || "all"} onValueChange={(value) => {
           const newValue = value === "all" ? "" : value;
           setStatusFilter(newValue);
+          // Apply filters which will update URL and sync with stats cards
           applyFilters(searchQuery, newValue, categoryFilter, subcategoryFilter, subSubcategoryFilter, sortBy, dynamicFilters);
         }}>
           <SelectTrigger className="w-full sm:w-[180px] h-10">

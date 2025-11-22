@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db, tickets, ticket_groups, outbox, ticket_statuses } from "@/db";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
 
@@ -70,6 +70,7 @@ export async function POST(
     }
 
     const results = [];
+    let groupArchived = false;
 
     if (action === "comment") {
       // Add comment to all tickets
@@ -173,6 +174,10 @@ export async function POST(
           results.push({ ticketId: ticket.id, success: false, error: String(error) });
         }
       }
+
+      // Check if all tickets in the group are now closed/resolved and archive if so
+      const { checkAndArchiveGroupIfAllTicketsClosed } = await import("@/lib/group-archive");
+      groupArchived = await checkAndArchiveGroupIfAllTicketsClosed(groupIdNum);
     } else {
       return NextResponse.json({ error: "Invalid action. Supported actions: 'comment', 'close'" }, { status: 400 });
     }
@@ -188,6 +193,7 @@ export async function POST(
         successful: successCount,
         failed: failureCount,
       },
+      groupArchived: groupArchived || false,
     });
   } catch (error) {
     console.error("Error performing bulk action:", error);

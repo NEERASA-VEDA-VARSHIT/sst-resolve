@@ -94,6 +94,7 @@ export async function PATCH(
         created_by: tickets.created_by,
         status: ticket_statuses.value,
         status_id: tickets.status_id,
+        group_id: tickets.group_id,
       })
       .from(tickets)
       .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
@@ -192,6 +193,13 @@ export async function PATCH(
 
       return ticketUpdated;
     });
+
+    // Check if ticket belongs to a group and if all tickets in that group are now closed
+    // If so, archive the group
+    if (ticket.group_id) {
+      const { checkAndArchiveGroupIfAllTicketsClosed } = await import("@/lib/group-archive");
+      await checkAndArchiveGroupIfAllTicketsClosed(ticket.group_id);
+    }
 
     return NextResponse.json(
       { success: true, ticket: updatedTicket },
