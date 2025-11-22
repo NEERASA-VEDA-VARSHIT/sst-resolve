@@ -139,12 +139,36 @@ async function handleUserCreated(eventData: ClerkUserEventData) {
 
 		// Create user record (role will be assigned via user_roles table in getOrCreateUser)
 		// Use getOrCreateUser which handles role assignment automatically
+		// getOrCreateUser now handles pending users and duplicate emails gracefully
 		const newUser = await getOrCreateUser(clerkUserId);
 
-		console.log(`[Clerk Webhook] Created user record: ${newUser.id} for Clerk user: ${clerkUserId} with default role: student`);
+		console.log(`[Clerk Webhook] Created/updated user record: ${newUser.id} for Clerk user: ${clerkUserId} with default role: student`);
 	} catch (error) {
+		// Handle duplicate key errors gracefully
+		if (
+			error instanceof Error &&
+			'code' in error &&
+			error.code === '23505'
+		) {
+			console.warn(`[Clerk Webhook] User with email already exists (duplicate key), this is expected in race conditions: ${clerkUserId}`);
+			// Try to fetch the existing user
+			try {
+				const [existingUser] = await db
+					.select()
+					.from(users)
+					.where(eq(users.clerk_id, clerkUserId))
+					.limit(1);
+				if (existingUser) {
+					console.log(`[Clerk Webhook] Found existing user after duplicate key error: ${existingUser.id}`);
+					return;
+				}
+			} catch (fetchError) {
+				console.error("[Clerk Webhook] Error fetching user after duplicate key error:", fetchError);
+			}
+		}
 		console.error("[Clerk Webhook] Error creating user:", error);
-		throw error;
+		// Don't throw - webhook should return success to prevent retries
+		// The user might already exist, which is fine
 	}
 }
 
@@ -157,12 +181,23 @@ async function handleUserUpdated(eventData: ClerkUserEventData) {
 		const clerkUserId = eventData.id;
 
 		// Use sync utility to update user
+		// getOrCreateUser now handles pending users and duplicate emails gracefully
 		await getOrCreateUser(clerkUserId);
 
 		console.log(`[Clerk Webhook] Updated user record for Clerk user: ${clerkUserId}`);
 	} catch (error) {
+		// Handle duplicate key errors gracefully
+		if (
+			error instanceof Error &&
+			'code' in error &&
+			error.code === '23505'
+		) {
+			console.warn(`[Clerk Webhook] User with email already exists (duplicate key) during update: ${clerkUserId}`);
+			// User already exists, which is fine for updates
+			return;
+		}
 		console.error("[Clerk Webhook] Error updating user:", error);
-		throw error;
+		// Don't throw - webhook should return success to prevent retries
 	}
 }
 
