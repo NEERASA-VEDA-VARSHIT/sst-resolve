@@ -924,7 +924,17 @@ export default function TicketForm(props: TicketFormProps) {
           disabled={loading || !isFormValid}
           className="min-w-[140px] flex items-center justify-center gap-2"
         >
-          {loading ? (<><Loader2 className="w-4 h-4 animate-spin" /> Creating...</>) : (<><CheckCircle2 className="w-4 h-4" /> Create Ticket</>)}
+          {loading ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Creating...
+            </>
+          ) : (
+            <>
+              <CheckCircle2 className="w-4 h-4" />
+              Create Ticket
+            </>
+          )}
         </Button>
       </div>
     );

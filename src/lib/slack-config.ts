@@ -53,18 +53,18 @@ export async function getSlackChannelConfig(): Promise<SlackChannelConfig> {
 
             // Merge database config with env config (DB takes precedence)
             config = {
-                hostel: dbConfig.hostel_channel || envSlackConfig.channels.hostel,
-                college: dbConfig.college_channel || envSlackConfig.channels.college,
-                committee: dbConfig.committee_channel || envSlackConfig.channels.committee,
-                hostel_channels: dbConfig.hostel_channels || envSlackConfig.channels.hostels as Record<string, string> || {},
+                hostel: dbConfig.hostel_channel || (envSlackConfig.channels.hostel as string | undefined),
+                college: dbConfig.college_channel || (envSlackConfig.channels.college as string | undefined),
+                committee: dbConfig.committee_channel || (envSlackConfig.channels.committee as string | undefined),
+                hostel_channels: dbConfig.hostel_channels || (envSlackConfig.channels.hostels as Record<string, string> | undefined) || {},
             };
         } else {
             // Fallback to environment config
             config = {
-                hostel: envSlackConfig.channels.hostel,
-                college: envSlackConfig.channels.college,
-                committee: envSlackConfig.channels.committee,
-                hostel_channels: envSlackConfig.channels.hostels as Record<string, string> || {},
+                hostel: envSlackConfig.channels.hostel as string | undefined,
+                college: envSlackConfig.channels.college as string | undefined,
+                committee: envSlackConfig.channels.committee as string | undefined,
+                hostel_channels: (envSlackConfig.channels.hostels as Record<string, string> | undefined) || {},
             };
         }
 
@@ -78,10 +78,10 @@ export async function getSlackChannelConfig(): Promise<SlackChannelConfig> {
         
         // On error, use env config and cache it for 10 seconds (shorter to retry sooner)
         const fallbackConfig: SlackChannelConfig = {
-            hostel: envSlackConfig.channels.hostel,
-            college: envSlackConfig.channels.college,
-            committee: envSlackConfig.channels.committee,
-            hostel_channels: envSlackConfig.channels.hostels as Record<string, string> || {},
+            hostel: envSlackConfig.channels.hostel as string | undefined,
+            college: envSlackConfig.channels.college as string | undefined,
+            committee: envSlackConfig.channels.committee as string | undefined,
+            hostel_channels: (envSlackConfig.channels.hostels as Record<string, string> | undefined) || {},
         };
         
         configCache.config = fallbackConfig;

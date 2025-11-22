@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { RefreshCw, Clock, MessageSquare, CheckCircle, Trash2, FileText, UserCog, AlertTriangle, ArrowUpRight } from "lucide-react";
+import { RefreshCw, Clock, MessageSquare, CheckCircle, Trash2, FileText, UserCog, AlertTriangle, ArrowUpRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { ReassignDialog } from "./ReassignDialog";
 import { normalizeStatusForComparison } from "@/lib/utils";
@@ -285,7 +285,14 @@ export function AdminActions({
 							/>
 						</div>
 						<Button type="submit" disabled={loading === "tat"}>
-							{loading === "tat" ? "Setting..." : "Set"}
+							{loading === "tat" ? (
+								<>
+									<Loader2 className="w-4 h-4 animate-spin mr-2" />
+									Setting...
+								</>
+							) : (
+								"Set"
+							)}
 						</Button>
 						<Button
 							type="button"
@@ -369,7 +376,14 @@ export function AdminActions({
 						</div>
 						<div className="flex gap-2">
 							<Button type="submit" disabled={loading === "comment"}>
-								{loading === "comment" ? "Sending..." : commentType === "question" ? "Ask Question" : "Add Comment"}
+								{loading === "comment" ? (
+									<>
+										<Loader2 className="w-4 h-4 animate-spin mr-2" />
+										Sending...
+									</>
+								) : (
+									commentType === "question" ? "Ask Question" : "Add Comment"
+								)}
 							</Button>
 							<Button
 								type="button"
@@ -411,7 +425,14 @@ export function AdminActions({
 									Cancel
 								</Button>
 								<Button variant="destructive" onClick={handleDelete} disabled={loading === "delete"}>
-									{loading === "delete" ? "Deleting..." : "Delete"}
+									{loading === "delete" ? (
+										<>
+											<Loader2 className="w-4 h-4 animate-spin mr-2" />
+											Deleting...
+										</>
+									) : (
+										"Delete"
+									)}
 								</Button>
 							</DialogFooter>
 						</DialogContent>
@@ -531,7 +552,14 @@ export function AdminActions({
 										Cancel
 									</Button>
 									<Button type="submit" disabled={loading === "forward"}>
-										{loading === "forward" ? "Forwarding..." : "Forward"}
+										{loading === "forward" ? (
+											<>
+												<Loader2 className="w-4 h-4 animate-spin mr-2" />
+												Forwarding...
+											</>
+										) : (
+											"Forward"
+										)}
 									</Button>
 								</DialogFooter>
 							</form>
@@ -581,7 +609,14 @@ export function AdminActions({
 										Cancel
 									</Button>
 									<Button type="submit" disabled={loading === "escalate"}>
-										{loading === "escalate" ? "Escalating..." : "Escalate"}
+										{loading === "escalate" ? (
+											<>
+												<Loader2 className="w-4 h-4 animate-spin mr-2" />
+												Escalating...
+											</>
+										) : (
+											"Escalate"
+										)}
 									</Button>
 								</DialogFooter>
 							</form>

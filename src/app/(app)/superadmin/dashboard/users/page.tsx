@@ -73,7 +73,7 @@ export default async function SuperAdminUsersPage() {
             firstName: clerkUser.firstName,
             lastName: clerkUser.lastName,
           });
-        } catch (error) {
+        } catch {
           // Fallback to database data if Clerk fetch fails or times out
           clerkUserMap.set(dbUser.clerkId!, {
             emailAddresses: dbUser.email ? [{ emailAddress: dbUser.email }] : [],

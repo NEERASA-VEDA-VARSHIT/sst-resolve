@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Loader2, Save, TestTube, Plus, Trash2, Building2 } from "lucide-react";
 
@@ -388,7 +387,7 @@ export default function NotificationSettingsPage() {
                                 </Button>
                             </div>
                             <p className="text-xs text-muted-foreground">
-                                Select a hostel and click "Add Mapping" to configure its Slack channel
+                                Select a hostel and click &quot;Add Mapping&quot; to configure its Slack channel
                             </p>
                         </div>
                     )}

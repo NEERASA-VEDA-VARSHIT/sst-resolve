@@ -446,7 +446,7 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
         } catch (error) {
           console.warn(`[processTicketCreated] Error accessing Slack channel config for ticket ${ticket.id}:`, error);
           // Fallback to env config
-          channelOverride = slackConfig.channels.hostel;
+          channelOverride = slackConfig.channels.hostel as string || undefined;
         }
       }
 
