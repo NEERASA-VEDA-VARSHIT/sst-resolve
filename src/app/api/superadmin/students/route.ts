@@ -113,9 +113,25 @@ export async function GET(request: NextRequest) {
 		const totalCount = Number(countResult.count);
 		const totalPages = Math.ceil(totalCount / limit);
 
+		// Map students data to include full_name and resolve batch_year
+		const studentsWithFullName = studentsData.map((student) => {
+			const firstName = student.first_name || "";
+			const lastName = student.last_name || "";
+			const fullName = [firstName, lastName].filter(Boolean).join(" ").trim() || "Unknown";
+			
+			// Use batch_year from join, fallback to batch_year_direct
+			const batchYear = student.batch_year || student.batch_year_direct || null;
+			
+			return {
+				...student,
+				full_name: fullName,
+				batch_year: batchYear,
+			};
+		});
+
 		return NextResponse.json(
 			{
-				students: studentsData,
+				students: studentsWithFullName,
 				pagination: {
 					page,
 					limit,

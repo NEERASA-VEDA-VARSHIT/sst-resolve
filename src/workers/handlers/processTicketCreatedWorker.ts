@@ -320,6 +320,7 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
     const studentEmail = contactEmail || creator?.email;
     if (studentEmail) {
       try {
+        console.log(`[processTicketCreated] Sending email for ticket #${ticket.id} to ${studentEmail}`);
         const emailTemplate = getTicketCreatedEmail(
           ticket.id,
           categoryName,
@@ -342,16 +343,25 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
         if (emailResult?.messageId) {
           setMetadataValue("originalEmailMessageId", emailResult.messageId);
           setMetadataValue("originalEmailSubject", emailTemplate.subject);
+          console.log(`[processTicketCreated] ✅ Email sent successfully for ticket #${ticket.id} (Message-ID: ${emailResult.messageId})`);
+        } else {
+          console.warn(`[processTicketCreated] ⚠️ Email sent for ticket #${ticket.id} but no Message-ID returned`);
         }
       } catch (error) {
         console.error(
-          `[processTicketCreated] Failed to send email for ticket ${ticket.id}`,
-          error
+          `[processTicketCreated] ❌ Failed to send email for ticket ${ticket.id}:`,
+          error instanceof Error ? error.message : error
         );
+        if (error instanceof Error && error.stack) {
+          console.error(`[processTicketCreated] Error stack:`, error.stack);
+        }
       }
     } else {
       console.warn(
-        `[processTicketCreated] No email found for ticket ${ticket.id}; skipping email send`
+        `[processTicketCreated] ⚠️ No email found for ticket #${ticket.id}; skipping email send`
+      );
+      console.warn(
+        `[processTicketCreated] Debug info - contactEmail: ${contactEmail || 'null'}, creator?.email: ${creator?.email || 'null'}`
       );
     }
 

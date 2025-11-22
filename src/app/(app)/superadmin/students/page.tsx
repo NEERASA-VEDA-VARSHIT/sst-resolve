@@ -5,9 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { StudentBulkUpload } from "@/components/admin/StudentBulkUpload";
+import { AddSingleStudentDialog } from "@/components/admin/AddSingleStudentDialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { BulkEditDialog } from "@/components/admin/BulkEditDialog";
-import { Edit2, Users, Upload, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { Edit2, Users, Upload, Search, ChevronLeft, ChevronRight, UserPlus } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -62,6 +63,7 @@ export default function SuperAdminStudentsPage() {
 		totalPages: 0,
 	});
 	const [showUploadView, setShowUploadView] = useState(false);
+	const [showAddStudentDialog, setShowAddStudentDialog] = useState(false);
 	const [selectedStudents, setSelectedStudents] = useState<number[]>([]);
 	const [showBulkEditDialog, setShowBulkEditDialog] = useState(false);
 
@@ -156,13 +158,19 @@ export default function SuperAdminStudentsPage() {
 				<div>
 					<h1 className="text-3xl font-bold">Student Management</h1>
 					<p className="text-muted-foreground">
-						Manage student profiles and bulk upload via CSV
+						Manage student profiles, add individual students, or bulk upload via CSV
 					</p>
 				</div>
-				<Button onClick={() => setShowUploadView(true)}>
-					<Upload className="w-4 h-4 mr-2" />
-					Bulk Upload
-				</Button>
+				<div className="flex gap-2">
+					<Button variant="outline" onClick={() => setShowAddStudentDialog(true)}>
+						<UserPlus className="w-4 h-4 mr-2" />
+						Add Student
+					</Button>
+					<Button onClick={() => setShowUploadView(true)}>
+						<Upload className="w-4 h-4 mr-2" />
+						Bulk Upload
+					</Button>
+				</div>
 			</div>
 
 			{/* Filters */}
@@ -378,6 +386,15 @@ export default function SuperAdminStudentsPage() {
 					</Card>
 				</div>
 			)}
+
+			{/* Add Student Dialog */}
+			<AddSingleStudentDialog
+				open={showAddStudentDialog}
+				onOpenChange={setShowAddStudentDialog}
+				onSuccess={() => {
+					fetchStudents();
+				}}
+			/>
 
 			{/* Bulk Edit Dialog */}
 			<BulkEditDialog
