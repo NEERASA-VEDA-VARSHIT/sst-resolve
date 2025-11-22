@@ -12,8 +12,9 @@ import { FileText, Shield, Settings, Building2, Users, Calendar, AlertCircle, Ba
 import { StatsCards } from "@/components/dashboard/StatsCards";
 import { PaginationControls } from "@/components/dashboard/PaginationControls";
 import { getUserRoleFromDB } from "@/lib/db-roles";
-import { getOrCreateUser } from "@/lib/user-sync";
+import { getCachedAdminUser } from "@/lib/admin/cached-queries";
 import { normalizeStatusForComparison } from "@/lib/utils";
+import { getTicketStatuses } from "@/lib/status/getTicketStatuses";
 
 // Create alias for users table to use for assigned admin (unused but kept for potential future use)
 // const assignedAdmin = alias(users, 'assigned_admin');
@@ -25,11 +26,13 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
     redirect("/");
   }
 
-  // Ensure user exists in database
-  const dbUser = await getOrCreateUser(userId);
+  // Use cached functions for better performance
+  const { dbUser, role } = await getCachedAdminUser(userId);
 
-  // Get role from database (single source of truth)
-  const role = await getUserRoleFromDB(userId);
+  if (!dbUser) {
+    console.error('[SuperAdmin Dashboard] Failed to create/fetch user');
+    redirect("/");
+  }
 
   if (role !== 'super_admin') {
     redirect('/student/dashboard');
@@ -113,16 +116,13 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
   };
   let ticketRows: TicketRow[] = [];
   try {
-    const [totalResult] = await db
-      .select({ count: count() })
-      .from(tickets)
-      .where(whereConditions);
-
-    totalCount = totalResult?.count || 0;
-
-    // Fetch tickets with joins for category and creator info
-    // Note: We'll fetch assigned admin info separately to avoid alias issues
-    const ticketRowsRaw: TicketRowRaw[] = await db
+    // Parallelize count and ticket fetch for better performance
+    const [totalResultArray, ticketRowsRaw] = await Promise.all([
+      db
+        .select({ count: count() })
+        .from(tickets)
+        .where(whereConditions),
+      db
       .select({
         // All ticket columns explicitly
         id: tickets.id,
@@ -168,14 +168,18 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
         creator_last_name: users.last_name,
         creator_email: users.email,
       })
-      .from(tickets)
-      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
-      .leftJoin(categories, eq(tickets.category_id, categories.id))
-      .leftJoin(users, eq(tickets.created_by, users.id))
-      .where(whereConditions)
-      .orderBy(desc(tickets.created_at))
-      .limit(limit)
-      .offset(offsetValue);
+        .from(tickets)
+        .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
+        .leftJoin(categories, eq(tickets.category_id, categories.id))
+        .leftJoin(users, eq(tickets.created_by, users.id))
+        .where(whereConditions)
+        .orderBy(desc(tickets.created_at))
+        .limit(limit)
+        .offset(offsetValue) as Promise<TicketRowRaw[]>,
+    ]);
+
+    const [totalResult] = totalResultArray;
+    totalCount = totalResult?.count || 0;
 
     // Fetch assigned admin info separately for tickets that have an assigned_to
     const assignedToIds = [...new Set(ticketRowsRaw.map(t => t.assigned_to).filter(Boolean))];

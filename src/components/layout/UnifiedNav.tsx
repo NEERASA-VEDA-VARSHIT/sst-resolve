@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, memo, useCallback } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
@@ -54,6 +54,14 @@ export function UnifiedNav() {
       // Use AbortController for cleanup
       const controller = new AbortController();
       
+      // Use sessionStorage to cache role to avoid repeated API calls
+      const cachedRole = typeof window !== 'undefined' ? sessionStorage.getItem(`role_${user.id}`) : null;
+      if (cachedRole && ['student', 'admin', 'super_admin', 'committee'].includes(cachedRole)) {
+        setRole(cachedRole as UserRole);
+        setRoleLoading(false);
+        return;
+      }
+      
       fetch(`/api/auth/role?userId=${user.id}`, { 
         cache: "no-store",
         signal: controller.signal
@@ -64,7 +72,12 @@ export function UnifiedNav() {
         })
         .then(data => {
           if (data?.role) {
-            setRole(data.role as UserRole);
+            const roleValue = data.role as UserRole;
+            setRole(roleValue);
+            // Cache in sessionStorage
+            if (typeof window !== 'undefined') {
+              sessionStorage.setItem(`role_${user.id}`, roleValue);
+            }
           }
         })
         .catch(err => {
@@ -87,169 +100,174 @@ export function UnifiedNav() {
     }
   }, [user?.id]);
   
-  const isSuperAdmin = role === "super_admin";
-  const isCommittee = role === "committee";
-  const isRegularAdmin = role === "admin";
+  // Memoize role-based flags
+  const isSuperAdmin = useMemo(() => role === "super_admin", [role]);
+  const isCommittee = useMemo(() => role === "committee", [role]);
+  const isRegularAdmin = useMemo(() => role === "admin", [role]);
+  const isStudent = useMemo(() => role === "student", [role]);
   
   // Show loading shimmer while fetching role
   if (!mounted || roleLoading) {
     return <NavLoadingShimmer />;
   }
   
-  // Get profile link based on role
-  const getProfileLink = () => {
+  // Memoize profile link
+  const profileLink = useMemo(() => {
+    if (isSuperAdmin) return "/superadmin/profile";
+    if (isRegularAdmin) return "/admin/profile";
     if (isCommittee) return "/committee/profile";
-    // For now, admin and superadmin use student profile page
-    // TODO: Create dedicated profile pages for admin/superadmin if needed
     return "/student/profile";
-  };
+  }, [isSuperAdmin, isRegularAdmin, isCommittee]);
 
-  // Build navigation items based on role
-  const navItems = mounted
-    ? (
-        [
-          // Home for everyone
-          {
-            title: "Home",
-            href: "/",
-            icon: Home,
-            show: true,
-          },
-          // Student dashboard
-          {
-            title: "My Tickets",
-            href: "/student/dashboard",
-            icon: FileText,
-            show: role === "student",
-          },
-          // Admin dashboard items
-          ...(isRegularAdmin || isCommittee
-            ? [
-                {
-                  title: "Dashboard",
-                  href: "/admin/dashboard",
-                  icon: LayoutDashboard,
-                  show: true,
-                },
-                {
-                  title: "Today",
-                  href: "/admin/dashboard/today",
-                  icon: Calendar,
-                  show: true,
-                },
-                {
-                  title: "Escalated",
-                  href: "/admin/dashboard/escalated",
-                  icon: AlertCircle,
-                  show: true,
-                },
-                {
-                  title: "Analytics",
-                  href: "/admin/dashboard/analytics",
-                  icon: TrendingUp,
-                  show: true,
-                },
-                {
-                  title: "Groups",
-                  href: "/admin/dashboard/groups",
-                  icon: Users,
-                  show: true,
-                },
-              ]
-            : []),
-          // Super Admin dashboard items
-          ...(isSuperAdmin
-            ? [
-                {
-                  title: "Dashboard",
-                  href: "/superadmin/dashboard",
-                  icon: LayoutDashboard,
-                  show: true,
-                },
-                {
-                  title: "All Tickets",
-                  href: "/superadmin/tickets",
-                  icon: FileText,
-                  show: true,
-                },
-                {
-                  title: "Today",
-                  href: "/superadmin/dashboard/today",
-                  icon: Calendar,
-                  show: true,
-                },
-                {
-                  title: "Escalated",
-                  href: "/superadmin/dashboard/escalated",
-                  icon: AlertCircle,
-                  show: true,
-                },
-                {
-                  title: "Analytics",
-                  href: "/superadmin/dashboard/analytics",
-                  icon: BarChart3,
-                  show: true,
-                },
-                {
-                  title: "Groups",
-                  href: "/superadmin/dashboard/groups",
-                  icon: Users,
-                  show: true,
-                },
-                {
-                  title: "Categories",
-                  href: "/superadmin/dashboard/categories",
-                  icon: Building2,
-                  show: true,
-                },
-                {
-                  title: "Staff",
-                  href: "/superadmin/dashboard/staff",
-                  icon: Shield,
-                  show: true,
-                },
-                {
-                  title: "Users",
-                  href: "/superadmin/dashboard/users",
-                  icon: User,
-                  show: true,
-                },
-                {
-                  title: "Forms",
-                  href: "/superadmin/dashboard/forms",
-                  icon: FileText,
-                  show: true,
-                },
-                {
-                  title: "Committees",
-                  href: "/superadmin/dashboard/committees",
-                  icon: Users,
-                  show: true,
-                },
-                {
-                  title: "Master Data",
-                  href: "/superadmin/dashboard/master-data",
-                  icon: Settings,
-                  show: true,
-                },
-                {
-                  title: "Ticket Assignment",
-                  href: "/superadmin/settings/ticket-assignment",
-                  icon: UserCheck,
-                  show: true,
-                },
-              ]
-            : []),
-        ].filter((item) => item.show)
-      )
-    : [];
+  // Memoize navigation items to prevent recalculation on every render
+  const navItems = useMemo(() => {
+    if (!mounted) return [];
+    
+    const items = [
+      // Home for everyone
+      {
+        title: "Home",
+        href: "/",
+        icon: Home,
+        show: true,
+      },
+      // Student dashboard
+      {
+        title: "My Tickets",
+        href: "/student/dashboard",
+        icon: FileText,
+        show: isStudent,
+      },
+      // Admin dashboard items
+      ...(isRegularAdmin || isCommittee
+        ? [
+            {
+              title: "Dashboard",
+              href: "/admin/dashboard",
+              icon: LayoutDashboard,
+              show: true,
+            },
+            {
+              title: "Today",
+              href: "/admin/dashboard/today",
+              icon: Calendar,
+              show: true,
+            },
+            {
+              title: "Escalated",
+              href: "/admin/dashboard/escalated",
+              icon: AlertCircle,
+              show: true,
+            },
+            {
+              title: "Analytics",
+              href: "/admin/dashboard/analytics",
+              icon: TrendingUp,
+              show: true,
+            },
+            {
+              title: "Groups",
+              href: "/admin/dashboard/groups",
+              icon: Users,
+              show: true,
+            },
+          ]
+        : []),
+      // Super Admin dashboard items
+      ...(isSuperAdmin
+        ? [
+            {
+              title: "Dashboard",
+              href: "/superadmin/dashboard",
+              icon: LayoutDashboard,
+              show: true,
+            },
+            {
+              title: "All Tickets",
+              href: "/superadmin/tickets",
+              icon: FileText,
+              show: true,
+            },
+            {
+              title: "Today",
+              href: "/superadmin/dashboard/today",
+              icon: Calendar,
+              show: true,
+            },
+            {
+              title: "Escalated",
+              href: "/superadmin/dashboard/escalated",
+              icon: AlertCircle,
+              show: true,
+            },
+            {
+              title: "Analytics",
+              href: "/superadmin/dashboard/analytics",
+              icon: BarChart3,
+              show: true,
+            },
+            {
+              title: "Groups",
+              href: "/superadmin/dashboard/groups",
+              icon: Users,
+              show: true,
+            },
+            {
+              title: "Categories",
+              href: "/superadmin/dashboard/categories",
+              icon: Building2,
+              show: true,
+            },
+            {
+              title: "Staff",
+              href: "/superadmin/dashboard/staff",
+              icon: Shield,
+              show: true,
+            },
+            {
+              title: "Users",
+              href: "/superadmin/dashboard/users",
+              icon: User,
+              show: true,
+            },
+            {
+              title: "Forms",
+              href: "/superadmin/dashboard/forms",
+              icon: FileText,
+              show: true,
+            },
+            {
+              title: "Committees",
+              href: "/superadmin/dashboard/committees",
+              icon: Users,
+              show: true,
+            },
+            {
+              title: "Master Data",
+              href: "/superadmin/dashboard/master-data",
+              icon: Settings,
+              show: true,
+            },
+            {
+              title: "Ticket Assignment",
+              href: "/superadmin/settings/ticket-assignment",
+              icon: UserCheck,
+              show: true,
+            },
+          ]
+        : []),
+    ];
+    
+    return items.filter((item) => item.show);
+  }, [mounted, isStudent, isRegularAdmin, isCommittee, isSuperAdmin]);
 
-  const isActive = (href: string) => {
+  // Memoize active state checker
+  const isActive = useCallback((href: string) => {
     if (href === "/") {
       return pathname === "/";
     }
     return pathname?.startsWith(href);
-  };
+  }, [pathname]);
 
   return (
     <>
@@ -346,7 +364,7 @@ export function UnifiedNav() {
                           <>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem asChild>
-                              <Link href={getProfileLink()} className="cursor-pointer">
+                              <Link href={profileLink} className="cursor-pointer">
                                 <User className="mr-2 h-4 w-4" />
                                 <span>Profile</span>
                               </Link>
@@ -485,7 +503,7 @@ export function UnifiedNav() {
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem asChild>
-                      <Link href={getProfileLink()} className="cursor-pointer">
+                      <Link href={profileLink} className="cursor-pointer">
                         <User className="mr-2 h-4 w-4" />
                         <span>Profile</span>
                       </Link>
