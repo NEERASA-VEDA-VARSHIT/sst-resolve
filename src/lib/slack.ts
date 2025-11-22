@@ -4,8 +4,21 @@ import { slackConfig } from "@/conf/config";
 const slack = slackConfig.botToken ? new WebClient(slackConfig.botToken) : null;
 
 // Channel mapping driven by config
+const getHostelChannel = (): string => {
+	const defaultHostel = slackConfig.channels.hostel as string;
+	if (defaultHostel) return defaultHostel;
+	// Fallback to first available hostel channel from config
+	const hostelsConfig = slackConfig.channels.hostels as Record<string, string> | undefined;
+	if (hostelsConfig && typeof hostelsConfig === 'object') {
+		const firstHostelChannel = Object.values(hostelsConfig)[0];
+		if (firstHostelChannel) return firstHostelChannel;
+	}
+	// Last resort: use a channel that likely exists
+	return "#tickets-velankani";
+};
+
 const SLACK_CHANNELS: Record<"Hostel" | "College" | "Committee", string> = {
-	Hostel: (slackConfig.channels.hostel as string) || "#tickets-hostel",
+	Hostel: getHostelChannel(),
 	College: (slackConfig.channels.college as string) || "#tickets-college",
 	Committee: (slackConfig.channels.committee as string) || "#tickets-committee",
 };

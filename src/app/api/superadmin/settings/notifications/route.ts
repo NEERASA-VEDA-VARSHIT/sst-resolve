@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db, notification_settings } from "@/db";
 import { eq } from "drizzle-orm";
 import { auth } from "@clerk/nextjs/server";
+import { invalidateSlackConfigCache } from "@/lib/slack-config";
 
 export async function GET() {
     try {
@@ -78,6 +79,9 @@ export async function PATCH(req: Request) {
                 })
                 .where(eq(notification_settings.id, existingSettings[0].id));
         }
+
+        // Invalidate cache so new settings take effect immediately
+        invalidateSlackConfigCache();
 
         return NextResponse.json({ success: true });
     } catch (error) {

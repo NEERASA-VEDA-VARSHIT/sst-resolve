@@ -37,16 +37,31 @@ export default async function SuperAdminUsersPage() {
     .leftJoin(roles, eq(users.role_id, roles.id));
 
   // Get Clerk user details for email addresses
+  // Optimize: Only fetch Clerk data when needed (missing email or name), and batch with concurrency limit
   const client = await clerkClient();
   const clerkUserMap = new Map<string, { emailAddresses: Array<{ emailAddress: string }>; firstName: string | null; lastName: string | null }>();
 
-  // Fetch Clerk details for users that have clerk_id
-  await Promise.all(
-    dbUsers
-      .filter(u => u.clerkId)
-      .map(async (dbUser) => {
+  // Filter users that need Clerk data (only if missing email or name in DB)
+  // This significantly reduces API calls
+  const usersNeedingClerkData = dbUsers.filter(u => u.clerkId && (!u.email || !u.firstName || !u.lastName));
+
+  // Batch Clerk API calls with concurrency limit to avoid rate limits and timeouts
+  const BATCH_SIZE = 10; // Process 10 users at a time to avoid overwhelming Clerk API
+  
+  for (let i = 0; i < usersNeedingClerkData.length; i += BATCH_SIZE) {
+    const batch = usersNeedingClerkData.slice(i, i + BATCH_SIZE);
+    
+    await Promise.all(
+      batch.map(async (dbUser) => {
         try {
-          const clerkUser = await client.users.getUser(dbUser.clerkId!);
+          // Use Promise.race with timeout to prevent hanging (5 second timeout)
+          const clerkUser = await Promise.race([
+            client.users.getUser(dbUser.clerkId!),
+            new Promise<never>((_, reject) => 
+              setTimeout(() => reject(new Error('Clerk API timeout')), 5000)
+            )
+          ]);
+
           const emailAddresses = Array.isArray(clerkUser.emailAddresses)
             ? clerkUser.emailAddresses.map((email: { emailAddress?: string | null }) => ({
                 emailAddress: typeof email?.emailAddress === 'string' ? email.emailAddress : String(email?.emailAddress || ''),
@@ -58,8 +73,8 @@ export default async function SuperAdminUsersPage() {
             firstName: clerkUser.firstName,
             lastName: clerkUser.lastName,
           });
-        } catch {
-          // Fallback to database email if Clerk fetch fails
+        } catch (error) {
+          // Fallback to database data if Clerk fetch fails or times out
           clerkUserMap.set(dbUser.clerkId!, {
             emailAddresses: dbUser.email ? [{ emailAddress: dbUser.email }] : [],
             firstName: dbUser.firstName,
@@ -67,7 +82,8 @@ export default async function SuperAdminUsersPage() {
           });
         }
       })
-  );
+    );
+  }
 
   // Map database users to the format expected by IntegratedUserManagement
   const mappedUsers = dbUsers.map(dbUser => {

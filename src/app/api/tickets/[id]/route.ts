@@ -7,6 +7,7 @@ import { postThreadReply } from "@/lib/slack";
 import { TICKET_STATUS } from "@/conf/constants";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
+import { getAdminAssignment, ticketMatchesAdminAssignment } from "@/lib/admin-assignment";
 import type { TicketMetadata } from "@/db/types";
 // Removed: statusToEnum - status values are already in correct format from database
 
@@ -135,19 +136,40 @@ export async function GET(
       }
     }
 
-    // Admin/SPOC → only assigned tickets or unassigned?
-    // Usually admins can view all tickets or at least those in their domain.
-    // For now, let's allow admins to view any ticket if they are admin.
-    // The previous code restricted to assigned tickets, but that might be too strict for a "view" operation.
-    // But let's stick to the previous logic if it was intended.
-    // Previous logic:
-    // if (role === "admin") { ... if (!staffRow || ticketRecord.assigned_to !== staffRow.id) ... }
-    // This implies admins can ONLY view tickets assigned to them.
-    // However, usually admins should be able to view unassigned tickets too to pick them up.
-    // Let's allow admins to view all tickets for now, as per standard ticket system behavior.
-    // If strict assignment is needed, we can add it back.
+    // Admin/SPOC → must have access based on domain/scope OR be assigned
+    if (role === "admin") {
+      const dbUser = await getOrCreateUser(userId);
+      if (!dbUser) {
+        return NextResponse.json({ error: "User not found" }, { status: 404 });
+      }
 
-    // Super admin → full access
+      // Check if ticket is assigned to this admin
+      const isAssigned = ticketRecord.assigned_to === dbUser.id;
+
+      if (!isAssigned) {
+        // Not assigned - check if admin has access via domain/scope
+        const adminAssignment = await getAdminAssignment(userId);
+        
+        // Get ticket category name for matching
+        const ticketCategoryName = ticketRecord.category_name || null;
+        const ticketLocation = ticketRecord.location || null;
+
+        // Check if ticket matches admin's domain/scope assignment
+        const hasAccess = ticketMatchesAdminAssignment(
+          { category: ticketCategoryName, location: ticketLocation },
+          adminAssignment
+        );
+
+        if (!hasAccess) {
+          return NextResponse.json({ 
+            error: "Forbidden: You don't have access to this ticket" 
+          }, { status: 403 });
+        }
+      }
+      // If assigned OR has domain/scope access, allow viewing
+    }
+
+    // Super admin → full access (no restrictions)
 
     return NextResponse.json({
       ...ticketRecord,
@@ -200,14 +222,41 @@ export async function PATCH(
         category_id: tickets.category_id,
         location: tickets.location,
         description: tickets.description,
+        category_name: categories.name,
       })
       .from(tickets)
       .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
+      .leftJoin(categories, eq(tickets.category_id, categories.id))
       .where(eq(tickets.id, ticketId))
       .limit(1);
 
     if (!ticket) {
       return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
+    }
+
+    // Security check: Admin must have access to this ticket (domain/scope or assigned)
+    if (role === "admin") {
+      const dbUser = await getOrCreateUser(userId);
+      if (!dbUser) {
+        return NextResponse.json({ error: "User not found" }, { status: 404 });
+      }
+
+      const isAssigned = ticket.assigned_to === dbUser.id;
+
+      if (!isAssigned) {
+        // Check domain/scope access
+        const adminAssignment = await getAdminAssignment(userId);
+        const hasAccess = ticketMatchesAdminAssignment(
+          { category: ticket.category_name || null, location: ticket.location || null },
+          adminAssignment
+        );
+
+        if (!hasAccess) {
+          return NextResponse.json({ 
+            error: "Forbidden: You don't have access to modify this ticket" 
+          }, { status: 403 });
+        }
+      }
     }
 
     // Check if committee member has access to this ticket (if tagged to their committee)

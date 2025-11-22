@@ -16,6 +16,7 @@ import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
 import { TicketStatusBadge } from "@/components/tickets/TicketStatusBadge";
 import { slackConfig } from "@/conf/config";
+import { getAdminAssignment, ticketMatchesAdminAssignment } from "@/lib/admin-assignment";
 
 // Force dynamic rendering for real-time ticket data
 export const dynamic = "force-dynamic";
@@ -24,53 +25,91 @@ export default async function AdminTicketPage({ params }: { params: Promise<{ ti
   const { userId } = await auth();
   if (!userId) redirect("/");
 
-  // Ensure user exists in database
-  await getOrCreateUser(userId);
-
-  // Get role from database (single source of truth)
-  const role = await getUserRoleFromDB(userId);
-  if (role !== "admin" && role !== "super_admin") redirect("/student/dashboard");
-
   const { ticketId } = await params;
   const id = Number(ticketId);
   if (!Number.isFinite(id)) notFound();
 
+  // Ensure user exists in database and get role (do this first for auth check)
+  await getOrCreateUser(userId);
+  const role = await getUserRoleFromDB(userId);
+  if (role !== "admin" && role !== "super_admin") redirect("/student/dashboard");
+
+  // Parallelize ticket fetch and forward targets query for better performance
   const assignedUser = aliasedTable(users, "assigned_user");
 
-  // Fetch ticket with joins for category, creator, and assigned staff
-  const ticketRows = await db
-    .select({
-      id: tickets.id,
-      status: ticket_statuses.value,
-      status_label: ticket_statuses.label,
-      status_badge_color: ticket_statuses.badge_color,
-      description: tickets.description,
-      location: tickets.location,
-      created_by: tickets.created_by,
-      category_id: tickets.category_id,
-      assigned_to: tickets.assigned_to,
-      escalation_level: tickets.escalation_level,
-      metadata: tickets.metadata,
-      due_at: tickets.resolution_due_at,
-      created_at: tickets.created_at,
-      updated_at: tickets.updated_at,
-      resolved_at: tickets.resolved_at,
-      category_name: categories.name,
-      creator_first_name: users.first_name,
-      creator_last_name: users.last_name,
-      creator_email: users.email,
-      assigned_staff_id: assignedUser.id,
-      slack_thread_id: tickets.slack_thread_id,
-    })
-    .from(tickets)
-    .leftJoin(categories, eq(tickets.category_id, categories.id))
-    .leftJoin(users, eq(tickets.created_by, users.id))
-    .leftJoin(assignedUser, eq(tickets.assigned_to, assignedUser.id))
-    .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
-    .where(eq(tickets.id, id))
-    .limit(1);
+  const [ticketRowsResult, forwardTargetsResult] = await Promise.all([
+    // Fetch ticket with joins
+    db
+      .select({
+        id: tickets.id,
+        status: ticket_statuses.value,
+        status_label: ticket_statuses.label,
+        status_badge_color: ticket_statuses.badge_color,
+        description: tickets.description,
+        location: tickets.location,
+        created_by: tickets.created_by,
+        category_id: tickets.category_id,
+        assigned_to: tickets.assigned_to,
+        escalation_level: tickets.escalation_level,
+        metadata: tickets.metadata,
+        due_at: tickets.resolution_due_at,
+        created_at: tickets.created_at,
+        updated_at: tickets.updated_at,
+        resolved_at: tickets.resolved_at,
+        category_name: categories.name,
+        creator_first_name: users.first_name,
+        creator_last_name: users.last_name,
+        creator_email: users.email,
+        assigned_staff_id: assignedUser.id,
+        slack_thread_id: tickets.slack_thread_id,
+      })
+      .from(tickets)
+      .leftJoin(categories, eq(tickets.category_id, categories.id))
+      .leftJoin(users, eq(tickets.created_by, users.id))
+      .leftJoin(assignedUser, eq(tickets.assigned_to, assignedUser.id))
+      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
+      .where(eq(tickets.id, id))
+      .limit(1),
+    
+    // Fetch forward targets (super admins) - only needed for AdminActions
+    db
+      .select({
+        id: users.id,
+        first_name: users.first_name,
+        last_name: users.last_name,
+        email: users.email,
+      })
+      .from(users)
+      .leftJoin(roles, eq(users.role_id, roles.id))
+      .where(eq(roles.name, "super_admin")),
+  ]);
+
+  const ticketRows = ticketRowsResult;
 
   if (ticketRows.length === 0) notFound();
+  
+  // Security check: Ensure admin has access to this ticket (if not super_admin)
+  if (role === "admin") {
+    const dbUser = await getOrCreateUser(userId);
+    if (!dbUser) redirect("/");
+    
+    const ticketRow = ticketRows[0];
+    const isAssigned = ticketRow.assigned_to === dbUser.id;
+    
+    if (!isAssigned) {
+      // Check domain/scope access
+      const adminAssignment = await getAdminAssignment(userId);
+      const hasAccess = ticketMatchesAdminAssignment(
+        { category: ticketRow.category_name || null, location: ticketRow.location || null },
+        adminAssignment
+      );
+      
+      if (!hasAccess) {
+        redirect("/admin/dashboard"); // Redirect to dashboard if no access
+      }
+    }
+  }
+  
   const ticket = {
     ...ticketRows[0],
     creator_name: [ticketRows[0].creator_first_name, ticketRows[0].creator_last_name].filter(Boolean).join(' ').trim() || null,
@@ -111,16 +150,7 @@ export default async function AdminTicketPage({ params }: { params: Promise<{ ti
   const hasTATDue = tatDate && tatDate.getTime() < new Date().getTime();
   const isTATToday = tatDate && tatDate.toDateString() === new Date().toDateString();
 
-  const forwardTargetsRaw = await db
-    .select({
-      id: users.id,
-      first_name: users.first_name,
-      last_name: users.last_name,
-      email: users.email,
-    })
-    .from(users)
-    .leftJoin(roles, eq(users.role_id, roles.id))
-    .where(eq(roles.name, "super_admin"));
+  const forwardTargetsRaw = forwardTargetsResult;
 
   const forwardTargets = forwardTargetsRaw
     .filter((admin) => !!admin.id)
@@ -346,7 +376,11 @@ export default async function AdminTicketPage({ params }: { params: Promise<{ ti
           {ticket.slack_thread_id && (
             <SlackThreadView
               threadId={ticket.slack_thread_id}
-              channel={(slackConfig.channels.hostel as string) || "#tickets-hostel"}
+              channel={
+                (slackConfig.channels.hostel as string) ||
+                (Object.values(slackConfig.channels.hostels as Record<string, string> || {})[0]) ||
+                "#tickets-velankani"
+              }
             />
           )}
         </div>

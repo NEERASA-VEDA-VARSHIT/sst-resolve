@@ -61,7 +61,17 @@ export default async function StudentTicketPage({ params }: { params: Promise<{ 
     getTicketStatuses(),
   ]);
 
-  if (!data) notFound();
+  if (!data) {
+    // getFullTicketData returns null if ticket doesn't exist or user doesn't own it
+    // This prevents students from viewing other students' tickets
+    notFound();
+  }
+
+  // Additional security check: Ensure ticket belongs to this student
+  // (getFullTicketData already checks this, but defense-in-depth)
+  if (data.ticket.created_by !== dbUser.id) {
+    redirect("/student/dashboard");
+  }
 
   // Explicitly type subSubcategory to avoid unknown inference
   interface SubSubcategory {

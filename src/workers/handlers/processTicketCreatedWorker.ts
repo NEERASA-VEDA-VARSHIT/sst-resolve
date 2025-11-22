@@ -59,7 +59,17 @@ const normalizeMetadata = (metadata: Record<string, unknown> | null): Record<str
 const getDefaultSlackChannelFor = (category: SlackCategory): string => {
   switch (category) {
     case "Hostel":
-      return (slackConfig.channels.hostel as string) || "#tickets-hostel";
+      // Use configured default hostel channel, or first available hostel channel, or fallback
+      const defaultHostel = slackConfig.channels.hostel as string;
+      if (defaultHostel) return defaultHostel;
+      // Fallback to first available hostel channel from config
+      const hostelsConfig = slackConfig.channels.hostels as Record<string, string> | undefined;
+      if (hostelsConfig && typeof hostelsConfig === 'object') {
+        const firstHostelChannel = Object.values(hostelsConfig)[0];
+        if (firstHostelChannel) return firstHostelChannel;
+      }
+      // Last resort: use a channel that likely exists
+      return "#tickets-velankani";
     case "College":
       return slackConfig.channels.college;
     case "Committee":
@@ -425,30 +435,19 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
         ccUserIds = [];
       }
 
-      // Safety check: ensure hostels is a valid object before accessing
-      let hostelChannels: Record<string, string> = {};
+      // Get Slack channel configuration from database (with env fallback and caching)
       let channelOverride: string | undefined = undefined;
       
-      try {
-        type SlackChannelsConfig = { hostels?: Record<string, unknown>; [key: string]: unknown };
-        const hostelsConfig = (slackConfig?.channels as unknown as SlackChannelsConfig)?.hostels;
-        if (hostelsConfig && typeof hostelsConfig === 'object' && !Array.isArray(hostelsConfig)) {
-          // Convert Record<string, unknown> to Record<string, string>
-          const converted: Record<string, string> = {};
-          for (const [key, value] of Object.entries(hostelsConfig)) {
-            if (typeof value === 'string') {
-              converted[key] = value;
-            }
-          }
-          hostelChannels = converted;
+      if (categoryName === "Hostel") {
+        try {
+          // Use cached config lookup (60-second cache, very fast after first call)
+          const { getHostelSlackChannel } = await import("@/lib/slack-config");
+          channelOverride = await getHostelSlackChannel(hostelName);
+        } catch (error) {
+          console.warn(`[processTicketCreated] Error accessing Slack channel config for ticket ${ticket.id}:`, error);
+          // Fallback to env config
+          channelOverride = slackConfig.channels.hostel;
         }
-        
-        if (categoryName === "Hostel" && hostelName && hostelChannels[hostelName]) {
-          channelOverride = hostelChannels[hostelName];
-        }
-      } catch (error) {
-        console.warn(`[processTicketCreated] Error accessing Slack hostels config for ticket ${ticket.id}:`, error);
-        // Continue with empty channels - will use default channel
       }
 
       try {

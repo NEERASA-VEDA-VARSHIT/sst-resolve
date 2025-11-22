@@ -87,8 +87,10 @@ export function CommitteeTagging({ ticketId, onTagAdded, onTagRemoved }: Committ
   }, [ticketId]); // Only refetch when ticketId changes
 
   useEffect(() => {
-    fetchCommittees();
-    fetchTags();
+    // Fetch both in parallel for better performance
+    Promise.all([fetchCommittees(), fetchTags()]).catch((error) => {
+      console.error("Error fetching committee data:", error);
+    });
   }, [fetchCommittees, fetchTags]); // Now these functions are stable
 
   const handleAddTag = async () => {

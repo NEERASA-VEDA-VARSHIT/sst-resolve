@@ -105,8 +105,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if an inactive item with the same slug exists
-    const [existingInactive] = await db
+    // Check if a field with the same slug exists (active or inactive)
+    const [existingField] = await db
       .select({
         id: category_fields.id,
         subcategory_id: category_fields.subcategory_id,
@@ -126,19 +126,38 @@ export async function POST(request: NextRequest) {
       .where(
         and(
           eq(category_fields.subcategory_id, parseInt(subcategory_id)),
-          eq(category_fields.slug, slug),
-          eq(category_fields.active, false)
+          eq(category_fields.slug, slug)
         )
       )
       .limit(1);
 
+    // If an active field exists with the same slug, generate a unique slug
+    let finalSlug = slug;
+    if (existingField && existingField.active) {
+      // Find all fields with slugs starting with the base slug to generate a unique one
+      const allFields = await db
+        .select({ slug: category_fields.slug })
+        .from(category_fields)
+        .where(eq(category_fields.subcategory_id, parseInt(subcategory_id)));
+
+      // Generate unique slug by appending a number
+      let counter = 2;
+      let candidateSlug = `${slug}-${counter}`;
+      while (allFields.some(f => f.slug === candidateSlug)) {
+        counter++;
+        candidateSlug = `${slug}-${counter}`;
+      }
+      finalSlug = candidateSlug;
+    }
+
     let newField;
-    if (existingInactive) {
-      // Reactivate the existing item
+    if (existingField && !existingField.active) {
+      // Reactivate the existing inactive item
       [newField] = await db
         .update(category_fields)
         .set({
           name,
+          slug: finalSlug, // Use the final slug (might be auto-generated)
           field_type,
           required: required || false,
           placeholder: placeholder || null,
@@ -149,19 +168,19 @@ export async function POST(request: NextRequest) {
           active: true,
           updated_at: new Date(),
         })
-        .where(eq(category_fields.id, existingInactive.id))
+        .where(eq(category_fields.id, existingField.id))
         .returning();
       
       // Delete old options and recreate them
-      await db.delete(field_options).where(eq(field_options.field_id, existingInactive.id));
+      await db.delete(field_options).where(eq(field_options.field_id, existingField.id));
     } else {
-      // Create the field
+      // Create the field with the final slug (auto-generated if needed)
       [newField] = await db
         .insert(category_fields)
         .values({
           subcategory_id: parseInt(subcategory_id),
           name,
-          slug,
+          slug: finalSlug,
           field_type,
           required: required || false,
           placeholder: placeholder || null,
@@ -195,10 +214,18 @@ export async function POST(request: NextRequest) {
         .from(field_options)
         .where(eq(field_options.field_id, newField.id))
         .orderBy(asc(field_options.display_order));
-      return NextResponse.json({ ...newField, options: fieldOptions }, { status: 201 });
+      return NextResponse.json({ 
+        ...newField, 
+        options: fieldOptions,
+        slug_auto_generated: finalSlug !== slug // Indicate if slug was auto-generated
+      }, { status: 201 });
     }
 
-    return NextResponse.json({ ...newField, options: [] }, { status: 201 });
+    return NextResponse.json({ 
+      ...newField, 
+      options: [],
+      slug_auto_generated: finalSlug !== slug // Indicate if slug was auto-generated
+    }, { status: 201 });
   } catch (error) {
     console.error("Error creating field:", error);
     if (error && typeof error === 'object' && 'code' in error && error.code === "23505") {

@@ -1,7 +1,7 @@
 
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { db, categories, subcategories, sub_subcategories, students, category_fields, category_profile_fields, field_options, hostels } from "@/db";
+import { db, categories, subcategories, sub_subcategories, students, category_fields, category_profile_fields, field_options, hostels, class_sections } from "@/db";
 import { eq, asc } from "drizzle-orm";
 import { getOrCreateUser } from "@/lib/user-sync";
 import TicketForm from "@/components/student/ticket-form/TicketForm";
@@ -13,14 +13,20 @@ export default async function NewTicketPage() {
   const dbUser = await getOrCreateUser(userId);
   if (!dbUser) redirect("/");
 
-  // Fetch student row from DB
-  const [student] = await db
-    .select()
+  // Fetch student row from DB with class section name
+  const [studentData] = await db
+    .select({
+      student: students,
+      class_section_name: class_sections.name,
+    })
     .from(students)
+    .leftJoin(class_sections, eq(students.class_section_id, class_sections.id))
     .where(eq(students.user_id, dbUser.id))
     .limit(1);
 
-  if (!student) redirect("/student/profile");
+  if (!studentData?.student) redirect("/student/profile");
+
+  const student = studentData.student;
 
   // Fetch hostels to map ID to name
   const hostelsList = await db
@@ -46,7 +52,7 @@ export default async function NewTicketPage() {
     hostel: studentHostel?.name || null,  // Use hostel name instead of ID
     roomNumber: student.room_no,
     batchYear: student.batch_year,
-    classSection: student.class_section_id ? String(student.class_section_id) : null,
+    classSection: studentData.class_section_name || null,  // Use class section name instead of ID
   };
 
   // Fetch categories
