@@ -177,9 +177,8 @@ async function handleUserCreated(eventData: ClerkUserEventData) {
  * Updates user record in database when user updates their profile
  */
 async function handleUserUpdated(eventData: ClerkUserEventData) {
+	const clerkUserId = eventData.id;
 	try {
-		const clerkUserId = eventData.id;
-
 		// Use sync utility to update user
 		// getOrCreateUser now handles pending users and duplicate emails gracefully
 		await getOrCreateUser(clerkUserId);

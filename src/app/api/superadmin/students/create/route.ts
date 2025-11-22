@@ -12,11 +12,6 @@ import { users, students, hostels, batches, class_sections, roles } from "@/db/s
 import { eq } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 
-function capitalize(str: string): string {
-	if (!str) return str;
-	return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
-}
-
 function splitFullName(name: string): { first_name: string; last_name: string } {
 	if (!name) return { first_name: "", last_name: "" };
 	const parts = name.trim().split(/\s+/);
