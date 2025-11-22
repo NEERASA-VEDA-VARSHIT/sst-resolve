@@ -146,9 +146,17 @@ export async function POST(request: NextRequest) {
 			.limit(1);
 
 		if (existingUser) {
+			// Check if user has already signed up with Clerk (not just a pending user)
+			if (existingUser.clerk_id && !existingUser.clerk_id.startsWith('pending_')) {
+				return NextResponse.json(
+					{ error: "A user with this email already exists and has signed up. Please use a different email address." },
+					{ status: 409 }
+				);
+			}
+			// User exists but is pending - we can still return an error to avoid duplicates
 			return NextResponse.json(
-				{ error: "A user with this email already exists" },
-				{ status: 400 }
+				{ error: "A user with this email already exists. Please use a different email address." },
+				{ status: 409 }
 			);
 		}
 
@@ -248,6 +256,30 @@ export async function POST(request: NextRequest) {
 		);
 	} catch (error: unknown) {
 		console.error("Create student error:", error);
+		
+		// Handle PostgreSQL duplicate key errors specifically
+		if (error instanceof Error && 'code' in error && error.code === '23505') {
+			// Check if it's an email duplicate
+			if (error.message.includes('email') || error.message.includes('users_email_unique')) {
+				return NextResponse.json(
+					{ error: "A user with this email already exists. Please use a different email address." },
+					{ status: 409 } // 409 Conflict is more appropriate for duplicate resources
+				);
+			}
+			// Check if it's a roll number duplicate
+			if (error.message.includes('roll_no') || error.message.includes('students_roll_no')) {
+				return NextResponse.json(
+					{ error: "A student with this roll number already exists. Please use a different roll number." },
+					{ status: 409 }
+				);
+			}
+			// Generic duplicate key error
+			return NextResponse.json(
+				{ error: "This record already exists in the database. Please check for duplicates." },
+				{ status: 409 }
+			);
+		}
+		
 		const errorMessage = error instanceof Error ? error.message : "Internal Server Error";
 		return NextResponse.json(
 			{ error: errorMessage },
