@@ -16,7 +16,7 @@ export async function POST() {
         for (const domain of domainData) {
             try {
                 await db.insert(domains).values(domain).onConflictDoNothing();
-            } catch (err) {
+            } catch {
                 console.log(`Domain ${domain.name} might already exist, skipping...`);
             }
         }
@@ -37,7 +37,7 @@ export async function POST() {
             for (const scope of scopeData) {
                 try {
                     await db.insert(scopes).values(scope).onConflictDoNothing();
-                } catch (err) {
+                } catch {
                     console.log(`Scope ${scope.name} might already exist, skipping...`);
                 }
             }

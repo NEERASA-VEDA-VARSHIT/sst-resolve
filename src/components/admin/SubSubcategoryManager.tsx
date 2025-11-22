@@ -1,17 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Edit, Trash2, ChevronDown, ChevronRight } from "lucide-react";
+import { Plus, Edit, Trash2 } from "lucide-react";
 import { SubSubcategoryDialog } from "./SubSubcategoryDialog";
 import { toast } from "sonner";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 
 interface SubSubcategory {
   id: number;
@@ -32,10 +27,11 @@ export function SubSubcategoryManager({ subcategoryId }: SubSubcategoryManagerPr
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingSubSubcategory, setEditingSubSubcategory] = useState<SubSubcategory | null>(null);
-  const [expandedSubSubcategories, setExpandedSubSubcategories] = useState<Set<number>>(new Set());
+  // const [expandedSubSubcategories, setExpandedSubSubcategories] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     fetchSubSubcategories();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subcategoryId]);
 
   const fetchSubSubcategories = async () => {
@@ -105,7 +101,8 @@ export function SubSubcategoryManager({ subcategoryId }: SubSubcategoryManagerPr
     }
   };
 
-  const toggleSubSubcategory = (id: number) => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const toggleSubSubcategory = (_id: number) => {
     setExpandedSubSubcategories((prev) => {
       const newSet = new Set(prev);
       if (newSet.has(id)) {

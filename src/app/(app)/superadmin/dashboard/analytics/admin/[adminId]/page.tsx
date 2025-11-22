@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { tickets, categories, users, ticket_statuses, domains, scopes } from "@/db/schema";
 import { eq, desc, inArray, gte, and } from "drizzle-orm";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { FileText, Clock, CheckCircle2, AlertCircle, TrendingUp, Users, ArrowLeft, Calendar, Zap, Target, Activity, Mail, Phone } from "lucide-react";
+import { FileText, Clock, CheckCircle2, AlertCircle, TrendingUp, Users, ArrowLeft, Zap, Target, Activity, Mail, Phone } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { getOrCreateUser } from "@/lib/user-sync";
@@ -294,9 +294,9 @@ export default async function AdminDetailPage({
     t.resolved_at && t.resolved_at >= startOfToday
   ).length;
 
-  const resolvedThisWeek = resolvedTickets.filter(t =>
-    t.resolved_at && t.resolved_at >= startOfWeek
-  ).length;
+  // const resolvedThisWeek = resolvedTickets.filter(t =>
+  //   t.resolved_at && t.resolved_at >= startOfWeek
+  // ).length;
 
   const resolvedThisMonth = resolvedTickets.filter(t =>
     t.resolved_at && t.resolved_at >= startOfMonth

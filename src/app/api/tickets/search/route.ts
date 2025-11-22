@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import { tickets, users, ticket_statuses } from "@/db/schema";
+import { tickets, ticket_statuses } from "@/db/schema";
 import { and, eq, gte, lte, like, or, sql } from "drizzle-orm";
-import { getUserRoleFromDB } from "@/lib/db-roles";
 
 /**
  * ============================================

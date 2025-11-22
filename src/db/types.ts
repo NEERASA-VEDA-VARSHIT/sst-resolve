@@ -105,7 +105,7 @@ export interface ActivityLog {
 	ticket_id?: number;
 	user_id?: string;
 	action: string; // 'create_ticket','assign','status_change','escalate','reopen'
-	details?: Record<string, any>; // old/new values, extra context
+	details?: Record<string, unknown>; // old/new values, extra context
 	created_at?: string; // ISO timestamp
 }
 

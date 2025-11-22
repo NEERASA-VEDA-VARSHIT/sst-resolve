@@ -10,7 +10,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { students } from "@/db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
 
@@ -74,7 +74,7 @@ export async function PATCH(request: NextRequest) {
 
 		let deactivated = 0;
 		if (idsToDeactivate.length > 0) {
-			const result = await db
+			await db
 				.update(students)
 				.set({
 					active: false,

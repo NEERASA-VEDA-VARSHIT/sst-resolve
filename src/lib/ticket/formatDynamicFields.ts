@@ -107,10 +107,10 @@ function findFieldDefinition(
  * Resolve the display value for a select field
  */
 function resolveSelectValue(
-  rawValue: any,
+  rawValue: unknown,
   fieldDef: FieldDefinition,
-  categorySchema: any
-): any {
+  categorySchema: Record<string, unknown>
+): unknown {
   if (!fieldDef || !rawValue) {
     return rawValue;
   }
@@ -209,8 +209,8 @@ function extractFieldDefinitions(categorySchema: CategorySchema): FieldDefinitio
  * Main function: Extract and format dynamic fields from metadata
  */
 export function extractDynamicFields(
-  metadata: any,
-  categorySchema: any
+  metadata: Record<string, unknown>,
+  categorySchema: Record<string, unknown>
 ): DynamicField[] {
   // Guard against null/undefined metadata
   if (!metadata || typeof metadata !== 'object') {
@@ -251,7 +251,7 @@ export function extractDynamicFields(
       const fieldType = fieldDef?.field_type || 'text';
       
       // Resolve display value (especially for select fields)
-      let displayValue = value;
+      let displayValue: unknown = value;
       if (fieldType === 'select' && fieldDef) {
         displayValue = resolveSelectValue(value, fieldDef, categorySchema);
       }

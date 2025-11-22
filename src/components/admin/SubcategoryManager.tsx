@@ -76,6 +76,7 @@ export function SubcategoryManager({ categoryId, categoryDefaultAdmin }: Subcate
 
   useEffect(() => {
     fetchSubcategories();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [categoryId]);
 
   const fetchSubcategories = async () => {

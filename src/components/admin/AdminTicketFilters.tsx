@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Filter, Search, X, ChevronDown, ChevronUp, Calendar, User, MapPin, Clock, Tag, RotateCcw, AlertTriangle, Building2, GraduationCap, ArrowUpDown } from "lucide-react";
+import { Filter, Search, X, ChevronDown, ChevronUp, Clock, RotateCcw, AlertTriangle, Building2, GraduationCap, ArrowUpDown } from "lucide-react";
 // Removed static LOCATIONS import - now fetching from database
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
@@ -44,10 +44,6 @@ export function AdminTicketFilters() {
   const [tat, setTat] = useState<string>(searchParams.get("tat") || "");
   const [status, setStatus] = useState<string>("");
   
-  // Get subcategories for selected category
-  const availableSubcategories = category
-    ? categoryOptions.find(cat => cat.value === category)?.subcategories || []
-    : [];
   
   // Fetch filter options from API
   useEffect(() => {

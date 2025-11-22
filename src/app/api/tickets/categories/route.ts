@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { categories, subcategories } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -22,7 +22,7 @@ import { eq } from "drizzle-orm";
  * ============================================
  */
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     // 1. Fetch all active categories
     const categoryRows = await db

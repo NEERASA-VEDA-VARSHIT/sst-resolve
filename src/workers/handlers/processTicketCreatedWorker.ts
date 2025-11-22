@@ -15,7 +15,7 @@ type TicketRecord = {
   id: number;
   description: string | null;
   location: string | null;
-  metadata: Record<string, any> | null;
+  metadata: Record<string, unknown> | null;
   categoryId: number | null;
   createdBy: string | null;
   statusId: number | null;
@@ -42,7 +42,7 @@ const firstString = (...values: Array<string | number | null | undefined>) => {
   return undefined;
 };
 
-const normalizeMetadata = (metadata: Record<string, any> | null): Record<string, any> => {
+const normalizeMetadata = (metadata: Record<string, unknown> | null): Record<string, unknown> => {
   // Safety check: ensure metadata is a valid object (not null, not array, not primitive)
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
     return {};
@@ -119,7 +119,7 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
       id: ticketRow.id,
       description: ticketRow.description,
       location: ticketRow.location,
-      metadata: ticketRow.metadata as Record<string, any> | null,
+      metadata: ticketRow.metadata as Record<string, unknown> | null,
       categoryId: ticketRow.categoryId,
       createdBy: ticketRow.createdBy,
       statusId: ticketRow.statusId,
@@ -163,8 +163,8 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
     }
 
     // Safely normalize and access metadata
-    let metadata: Record<string, any> = {};
-    let metadataProfile: Record<string, any> = {};
+    let metadata: Record<string, unknown> = {};
+    let metadataProfile: Record<string, unknown> = {};
     
     try {
       metadata = normalizeMetadata(ticket.metadata);
@@ -173,7 +173,7 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
       if (metadata && typeof metadata === 'object' && !Array.isArray(metadata) && metadata.profile) {
         const profile = metadata.profile;
         if (profile && typeof profile === "object" && !Array.isArray(profile)) {
-          metadataProfile = profile;
+          metadataProfile = profile as Record<string, unknown>;
         }
       }
     } catch (error) {
@@ -183,8 +183,16 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
       metadataProfile = {};
     }
 
+    // Ensure metadata is a Record<string, unknown>
+    const safeMetadata: Record<string, unknown> = (metadata && typeof metadata === 'object' && !Array.isArray(metadata))
+      ? metadata as Record<string, unknown>
+      : {};
+    const safeMetadataProfile: Record<string, unknown> = (metadataProfile && typeof metadataProfile === 'object' && !Array.isArray(metadataProfile))
+      ? metadataProfile as Record<string, unknown>
+      : {};
+
     // Safely access metadata properties with fallbacks
-    const safeGet = (obj: any, ...keys: string[]): any => {
+    const safeGet = (obj: Record<string, unknown>, ...keys: string[]): unknown => {
       for (const key of keys) {
         if (obj && typeof obj === 'object' && !Array.isArray(obj) && obj[key] != null) {
           return obj[key];
@@ -193,13 +201,22 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
       return undefined;
     };
 
-    let subcategoryName = firstString(safeGet(metadata, 'subcategory')) || "";
-    if (!subcategoryName && safeGet(metadata, 'subcategoryId') && ticket.categoryId) {
+    const subcategoryValue = safeGet(safeMetadata, 'subcategory');
+    let subcategoryName = firstString(
+      typeof subcategoryValue === 'string' ? subcategoryValue :
+      typeof subcategoryValue === 'number' ? subcategoryValue :
+      null
+    ) || "";
+    const subcategoryIdValue = safeGet(safeMetadata, 'subcategoryId');
+    if (!subcategoryName && subcategoryIdValue && ticket.categoryId) {
       try {
         const { getSubcategoryById } = await import("@/lib/categories");
-        const subcategory = await getSubcategoryById(safeGet(metadata, 'subcategoryId'), ticket.categoryId);
-        if (subcategory?.name) {
-          subcategoryName = subcategory.name;
+        const subcategoryIdNum = typeof subcategoryIdValue === 'number' ? subcategoryIdValue : Number(subcategoryIdValue);
+        if (!isNaN(subcategoryIdNum)) {
+          const subcategory = await getSubcategoryById(subcategoryIdNum, ticket.categoryId);
+          if (subcategory?.name) {
+            subcategoryName = subcategory.name;
+          }
         }
       } catch (error) {
         console.warn(
@@ -209,48 +226,54 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
       }
     }
 
+    const toFirstStringValue = (val: unknown): string | number | null | undefined => {
+      if (val === null || val === undefined) return val;
+      if (typeof val === 'string' || typeof val === 'number') return val;
+      return null;
+    };
+    
     const contactName = firstString(
-      safeGet(metadata, 'contactName'),
-      safeGet(metadata, 'fullName'),
-      safeGet(metadataProfile, 'name'),
-      safeGet(metadataProfile, 'fullName'),
+      toFirstStringValue(safeGet(safeMetadata, 'contactName')),
+      toFirstStringValue(safeGet(safeMetadata, 'fullName')),
+      toFirstStringValue(safeGet(safeMetadataProfile, 'name')),
+      toFirstStringValue(safeGet(safeMetadataProfile, 'fullName')),
       creator?.name
     );
     const contactPhone = firstString(
-      safeGet(metadata, 'contactPhone'),
-      safeGet(metadata, 'phone'),
-      safeGet(metadataProfile, 'phone'),
-      safeGet(metadataProfile, 'mobile'),
+      toFirstStringValue(safeGet(safeMetadata, 'contactPhone')),
+      toFirstStringValue(safeGet(safeMetadata, 'phone')),
+      toFirstStringValue(safeGet(safeMetadataProfile, 'phone')),
+      toFirstStringValue(safeGet(safeMetadataProfile, 'mobile')),
       creator?.phone
     );
     const contactEmail = firstString(
-      safeGet(metadata, 'contactEmail'),
-      safeGet(metadata, 'email'),
-      safeGet(metadataProfile, 'email'),
+      toFirstStringValue(safeGet(safeMetadata, 'contactEmail')),
+      toFirstStringValue(safeGet(safeMetadata, 'email')),
+      toFirstStringValue(safeGet(safeMetadataProfile, 'email')),
       creator?.email
     );
     const roomNumber = firstString(
-      safeGet(metadata, 'roomNumber'),
-      safeGet(metadataProfile, 'roomNumber'),
-      safeGet(metadataProfile, 'room_no')
+      toFirstStringValue(safeGet(safeMetadata, 'roomNumber')),
+      toFirstStringValue(safeGet(safeMetadataProfile, 'roomNumber')),
+      toFirstStringValue(safeGet(safeMetadataProfile, 'room_no'))
     );
     const batchYearRaw =
-      safeGet(metadata, 'batchYear') ?? safeGet(metadataProfile, 'batchYear') ?? safeGet(metadataProfile, 'batch_year');
+      safeGet(safeMetadata, 'batchYear') ?? safeGet(safeMetadataProfile, 'batchYear') ?? safeGet(safeMetadataProfile, 'batch_year');
     const batchYear = typeof batchYearRaw === "number" ? batchYearRaw : parseInt(String(batchYearRaw || ""), 10);
     const classSection = firstString(
-      safeGet(metadata, 'classSection'),
-      safeGet(metadataProfile, 'classSection'),
-      safeGet(metadataProfile, 'class_section')
+      toFirstStringValue(safeGet(safeMetadata, 'classSection')),
+      toFirstStringValue(safeGet(safeMetadataProfile, 'classSection')),
+      toFirstStringValue(safeGet(safeMetadataProfile, 'class_section'))
     );
     const hostelName = firstString(
-      safeGet(metadata, 'hostel'),
-      safeGet(metadataProfile, 'hostel'),
-      safeGet(metadata, 'location'),
+      toFirstStringValue(safeGet(safeMetadata, 'hostel')),
+      toFirstStringValue(safeGet(safeMetadataProfile, 'hostel')),
+      toFirstStringValue(safeGet(safeMetadata, 'location')),
       ticket.location
     );
 
     // Safety check: ensure metadata is a valid object before spreading
-    let metadataToPersist: Record<string, any> = {};
+    let metadataToPersist: Record<string, unknown> = {};
     let metadataDirty = false;
 
     try {
@@ -390,9 +413,17 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
       let channelOverride: string | undefined = undefined;
       
       try {
-        const hostelsConfig = (slackConfig?.channels as any)?.hostels;
+        type SlackChannelsConfig = { hostels?: Record<string, unknown>; [key: string]: unknown };
+        const hostelsConfig = (slackConfig?.channels as unknown as SlackChannelsConfig)?.hostels;
         if (hostelsConfig && typeof hostelsConfig === 'object' && !Array.isArray(hostelsConfig)) {
-          hostelChannels = hostelsConfig;
+          // Convert Record<string, unknown> to Record<string, string>
+          const converted: Record<string, string> = {};
+          for (const [key, value] of Object.entries(hostelsConfig)) {
+            if (typeof value === 'string') {
+              converted[key] = value;
+            }
+          }
+          hostelChannels = converted;
         }
         
         if (categoryName === "Hostel" && hostelName && hostelChannels[hostelName]) {
@@ -430,7 +461,7 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
     if (metadataDirty) {
       try {
         // Final safety check before updating metadata
-        let safeMetadata: Record<string, any> = {};
+        let safeMetadata: Record<string, unknown> = {};
         
         if (metadataToPersist && typeof metadataToPersist === 'object' && !Array.isArray(metadataToPersist)) {
           // Try to serialize to ensure it's valid JSON
@@ -450,7 +481,7 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
                     JSON.stringify(value); // Test if value is serializable
                     safeMetadata[key] = value;
                   }
-                } catch (valueError) {
+                } catch {
                   console.warn(`[processTicketCreated] Skipping non-serializable metadata key ${key} for ticket ${ticket.id}`);
                 }
               }

@@ -46,11 +46,14 @@ export async function processTicketCommentAddedWorker(payload: CommentAddedPaylo
     }
 
     const ticketData = ticket[0];
-    const metadata = ticketData.metadata as any || {};
+    type TicketMetadata = { slackMessageTs?: unknown; slackChannel?: unknown; [key: string]: unknown };
+    const metadata = (ticketData.metadata && typeof ticketData.metadata === 'object' && !Array.isArray(ticketData.metadata))
+      ? (ticketData.metadata as TicketMetadata)
+      : {};
 
     // 1. Post to Slack thread (if exists)
-    const slackMessageTs = metadata.slackMessageTs;
-    const slackChannel = metadata.slackChannel;
+    const slackMessageTs = typeof metadata.slackMessageTs === 'string' ? metadata.slackMessageTs : undefined;
+    const slackChannel = typeof metadata.slackChannel === 'string' ? metadata.slackChannel : undefined;
 
     if (slackMessageTs && slackChannel) {
       try {
@@ -78,14 +81,16 @@ export async function processTicketCommentAddedWorker(payload: CommentAddedPaylo
 
       if (author_role === "student") {
         // Notify assigned admin
-        const assignedAdmin = ticketData.assigned_admin as any;
+        type AssignedAdmin = { user?: { email?: string }; full_name?: string };
+        const assignedAdmin = ticketData.assigned_admin as unknown as AssignedAdmin;
         if (assignedAdmin?.user?.email) {
           recipientEmail = assignedAdmin.user.email;
           recipientName = assignedAdmin.full_name || "Admin";
         }
       } else {
         // Notify student
-        const createdByUser = ticketData.created_by_user as any;
+        type CreatedByUser = { email?: string; first_name?: string; last_name?: string };
+        const createdByUser = ticketData.created_by_user as unknown as CreatedByUser;
         if (createdByUser?.email) {
           recipientEmail = createdByUser.email;
           const firstName = createdByUser.first_name || "";
@@ -109,8 +114,8 @@ export async function processTicketCommentAddedWorker(payload: CommentAddedPaylo
           subject: emailTemplate.subject,
           html: emailTemplate.html,
           ticketId: ticket_id,
-          threadMessageId: metadata.emailMessageId,
-          originalSubject: metadata.originalEmailSubject,
+          threadMessageId: typeof metadata.emailMessageId === 'string' ? metadata.emailMessageId : undefined,
+          originalSubject: typeof metadata.originalEmailSubject === 'string' ? metadata.originalEmailSubject : undefined,
         });
 
         console.log(`[Worker] Sent comment email to ${recipientName} (${recipientEmail})`);

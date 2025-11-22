@@ -37,7 +37,8 @@ export async function claimNextOutboxRow(): Promise<OutboxRow | null> {
   });
 }
 
-export async function markOutboxSuccess(outboxId: number, _metadata?: Record<string, any>) {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function markOutboxSuccess(outboxId: number, _metadata?: Record<string, unknown>) {
   await db
     .update(outbox)
     .set({

@@ -11,8 +11,6 @@ import {
   FileText,
   Settings,
   Home,
-  Globe,
-  Plus,
   LogOut,
   ChevronRight,
   User,
@@ -65,7 +63,6 @@ export function UnifiedNav() {
     }
   }, [user?.id]);
   
-  const isAdmin = role === "admin" || role === "super_admin" || role === "committee";
   const isSuperAdmin = role === "super_admin";
   const isCommittee = role === "committee";
   const isRegularAdmin = role === "admin";

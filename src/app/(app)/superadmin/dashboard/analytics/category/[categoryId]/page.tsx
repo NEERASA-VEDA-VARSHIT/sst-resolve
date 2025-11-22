@@ -17,7 +17,6 @@ import {
   Clock,
   CheckCircle2,
   Users,
-  Layers,
   TrendingUp,
 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
@@ -225,9 +224,9 @@ export default async function CategoryAnalyticsDetailPage({
   const resolvedToday = resolvedTickets.filter(
     (ticket) => ticket.resolved_at && ticket.resolved_at >= startOfToday,
   ).length;
-  const resolvedThisWeek = resolvedTickets.filter(
-    (ticket) => ticket.resolved_at && ticket.resolved_at >= startOfWeek,
-  ).length;
+  // const resolvedThisWeek = resolvedTickets.filter(
+  //   (ticket) => ticket.resolved_at && ticket.resolved_at >= startOfWeek,
+  // ).length;
 
   const resolutionRate = totalTickets > 0 ? Math.round((resolvedTickets.length / totalTickets) * 100) : 0;
   const openRate = totalTickets > 0 ? Math.round((openTickets.length / totalTickets) * 100) : 0;

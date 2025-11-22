@@ -4,7 +4,7 @@
  */
 
 import { db, users, roles, admin_assignments, domains, scopes } from "@/db";
-import { eq, and, or, sql, isNull } from "drizzle-orm";
+import { eq, and, or, isNull } from "drizzle-orm";
 
 export interface AdminAssignment {
   domain: string | null; // "Hostel" | "College" | null

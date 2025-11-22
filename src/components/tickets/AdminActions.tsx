@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { RefreshCw, Clock, MessageSquare, CheckCircle, RotateCcw, Trash2, FileText, UserCog, AlertTriangle, ArrowUpRight } from "lucide-react";
+import { RefreshCw, Clock, MessageSquare, CheckCircle, Trash2, FileText, UserCog, AlertTriangle, ArrowUpRight } from "lucide-react";
 import { toast } from "sonner";
 import { ReassignDialog } from "./ReassignDialog";
 import { normalizeStatusForComparison } from "@/lib/utils";
@@ -63,29 +63,6 @@ export function AdminActions({
 		}
 	}, [showForwardDialog]);
 
-	const handleStatusUpdate = async (status: string) => {
-		setLoading(status);
-		try {
-			const response = await fetch(`/api/tickets/${ticketId}/status`, {
-				method: "PATCH",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ status }),
-			});
-
-			if (response.ok) {
-				toast.success(`Ticket status updated successfully`);
-				router.refresh();
-			} else {
-				const error = await response.json().catch(() => ({ error: "Failed to update ticket status" }));
-				toast.error(error.error || "Failed to update ticket status");
-			}
-		} catch (error) {
-			console.error("Error updating status:", error);
-			toast.error("Failed to update ticket status. Please try again.");
-		} finally {
-			setLoading(null);
-		}
-	};
 
 	const handleSetTAT = async (e: React.FormEvent) => {
 		e.preventDefault();

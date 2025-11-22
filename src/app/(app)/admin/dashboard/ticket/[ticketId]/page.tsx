@@ -14,7 +14,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
-import { normalizeStatusForComparison } from "@/lib/utils";
 import { TicketStatusBadge } from "@/components/tickets/TicketStatusBadge";
 import { slackConfig } from "@/conf/config";
 

@@ -44,7 +44,13 @@ export async function postToSlackChannel(
             ? `\nCC: ${ccUserIds.map((id) => `<@${id}>`).join(" ")}`
             : "";
 
-        const blocks = [
+        type SlackBlock = {
+			type: string;
+			text?: { type: string; text: string };
+			elements?: Array<Record<string, unknown>>;
+			[key: string]: unknown;
+		};
+		const blocks: SlackBlock[] = [
 			{
 				type: "section",
 				text: {
@@ -125,7 +131,7 @@ export async function postToSlackChannel(
 						action_id: "ticket_close",
 					},
 				],
-			} as any);
+			});
 		}
 
 		console.log("[Slack] Sending chat.postMessage", {

@@ -63,6 +63,7 @@ export function CategoryAssignmentsManager({ categoryId }: { categoryId: number 
     useEffect(() => {
         fetchAssignments();
         fetchStaff();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [categoryId]);
 
     async function fetchAssignments() {

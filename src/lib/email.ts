@@ -87,9 +87,10 @@ export interface EmailOptions {
 }
 
 // Generate a consistent Message-ID for a ticket
-function getTicketMessageId(ticketId: number): string {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function getTicketMessageId(_ticketId: number): string {
 	const domain = process.env.EMAIL_DOMAIN || "sst-resolve.local";
-	return `<ticket-${ticketId}@${domain}>`;
+	return `<ticket-${_ticketId}@${domain}>`;
 }
 
 export async function sendEmail({ to, subject, html, ticketId, threadMessageId, originalSubject }: EmailOptions) {
@@ -105,7 +106,19 @@ export async function sendEmail({ to, subject, html, ticketId, threadMessageId, 
 	}
 
 	try {
-		const mailOptions: any = {
+		type MailOptions = {
+			from?: string;
+			to: string;
+			subject: string;
+			html: string;
+			text?: string;
+			attachments?: Array<{ filename: string; path: string }>;
+			headers?: Record<string, string>;
+			messageId?: string;
+			inReplyTo?: string;
+			references?: string;
+		};
+		const mailOptions: MailOptions = {
 			from: process.env.SMTP_FROM || process.env.SMTP_USER,
 			to,
 			subject,

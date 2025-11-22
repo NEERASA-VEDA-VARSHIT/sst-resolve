@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { db, tickets, ticket_statuses, students } from "@/db";
+import { db, tickets, ticket_statuses } from "@/db";
 import { eq } from "drizzle-orm";
 import { RateTicketSchema } from "@/schema/ticket.schema";
 
@@ -22,7 +22,7 @@ export async function POST(
 	{ params }: { params: Promise<{ id: string }> }
 ) {
 	try {
-		const { userId, sessionClaims } = await auth();
+		const { userId } = await auth();
 		
 		if (!userId) {
 			return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

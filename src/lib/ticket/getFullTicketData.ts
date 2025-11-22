@@ -12,7 +12,7 @@ import {
   hostels,
   ticket_statuses
 } from "@/db/schema";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import {
   getCategorySchema,
   getSubcategoryById,
@@ -82,9 +82,11 @@ export async function getFullTicketData(ticketId: number, userId: string) {
     }
 
     // Parse metadata with error handling
-    let metadata: any = {};
+    let metadata: Record<string, unknown> = {};
     try {
-      metadata = (ticketData.ticket_metadata as any) || {};
+      metadata = (ticketData.ticket_metadata && typeof ticketData.ticket_metadata === 'object' && !Array.isArray(ticketData.ticket_metadata)) 
+        ? (ticketData.ticket_metadata as Record<string, unknown>) 
+        : {};
     } catch (error) {
       console.error('[getFullTicketData] Error parsing metadata:', error);
       // Continue with empty metadata
@@ -104,17 +106,20 @@ export async function getFullTicketData(ticketId: number, userId: string) {
     let subcategory = null;
     let subSubcategory = null;
 
-    if (metadata?.subcategoryId && ticketData.ticket_category_id) {
+    const subcategoryId = typeof metadata?.subcategoryId === 'number' ? metadata.subcategoryId : null;
+    const subSubcategoryId = typeof metadata?.subSubcategoryId === 'number' ? metadata.subSubcategoryId : null;
+    
+    if (subcategoryId && ticketData.ticket_category_id) {
       subcategory = await getSubcategoryById(
-        metadata.subcategoryId,
+        subcategoryId,
         ticketData.ticket_category_id
       );
     }
 
-    if (metadata?.subSubcategoryId && metadata?.subcategoryId) {
+    if (subSubcategoryId && subcategoryId) {
       subSubcategory = await getSubSubcategoryById(
-        metadata.subSubcategoryId,
-        metadata.subcategoryId
+        subSubcategoryId,
+        subcategoryId
       );
     }
 
@@ -179,7 +184,9 @@ export async function getFullTicketData(ticketId: number, userId: string) {
     }
 
     // 8. Extract dynamic fields using helper
-    const dynamicFields = extractDynamicFields(metadata, categorySchema);
+    const dynamicFields = categorySchema && typeof categorySchema === 'object' && !Array.isArray(categorySchema)
+      ? extractDynamicFields(metadata, categorySchema as Record<string, unknown>)
+      : [];
 
     // 9. Extract comments and normalize dates
     const comments = Array.isArray(metadata?.comments) ? metadata.comments : [];

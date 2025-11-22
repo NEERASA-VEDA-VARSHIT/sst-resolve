@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db, domains, scopes, categories, committees, hostels, batches, class_sections, roles } from "@/db";
 import { eq } from "drizzle-orm";
@@ -8,7 +8,7 @@ import { getUserRoleFromDB } from "@/lib/db-roles";
  * GET /api/admin/master-data
  * Fetch all master data needed for admin forms (domains, scopes, categories, committees)
  */
-export async function GET(_request: NextRequest) {
+export async function GET() {
     try {
         const { userId } = await auth();
         if (!userId) {

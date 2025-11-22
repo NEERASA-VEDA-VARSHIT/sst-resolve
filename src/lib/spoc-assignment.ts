@@ -4,8 +4,8 @@
  * Follows hierarchy: field > subcategory > category > escalation rules
  */
 
-import { db, users, roles, categories, subcategories, category_fields, category_assignments, domains, scopes } from "@/db";
-import { eq, and, or, isNull, inArray, sql } from "drizzle-orm";
+import { db, users, roles, categories, domains, scopes } from "@/db";
+import { eq, and } from "drizzle-orm";
 
 /**
  * Find the appropriate SPOC (Single Point of Contact) for a ticket
@@ -34,7 +34,8 @@ export async function findSPOCForTicket(
             AND column_name = 'assigned_admin_id'
           ) as exists;
         `);
-        const columnExists = (columnCheck[0] as any)?.exists === true;
+        type ColumnCheckResult = { exists?: boolean };
+        const columnExists = (columnCheck[0] as ColumnCheckResult)?.exists === true;
 
         if (columnExists) {
           // Use raw SQL to avoid Drizzle processing undefined column references
@@ -48,8 +49,10 @@ export async function findSPOCForTicket(
             LIMIT 1
           `);
 
-          if (fieldAssignments.length > 0 && (fieldAssignments[0] as any)?.assigned_admin_id) {
-            const adminId = (fieldAssignments[0] as any).assigned_admin_id;
+          type FieldAssignmentResult = { assigned_admin_id?: string };
+          if (fieldAssignments.length > 0 && (fieldAssignments[0] as FieldAssignmentResult)?.assigned_admin_id) {
+            const adminId = (fieldAssignments[0] as FieldAssignmentResult).assigned_admin_id;
+            if (!adminId || typeof adminId !== 'string') return null;
             const adminUser = await db
               .select({
                 clerk_id: users.clerk_id,
@@ -81,7 +84,8 @@ export async function findSPOCForTicket(
             AND column_name = 'assigned_admin_id'
           ) as exists;
         `);
-        const columnExists = (columnCheck[0] as any)?.exists === true;
+        type ColumnCheckResult = { exists?: boolean };
+        const columnExists = (columnCheck[0] as ColumnCheckResult)?.exists === true;
 
         if (columnExists) {
           // Use raw SQL to avoid Drizzle processing undefined column references
@@ -92,8 +96,10 @@ export async function findSPOCForTicket(
             LIMIT 1
           `);
 
-          if (subcategoryResult.length > 0 && (subcategoryResult[0] as any)?.assigned_admin_id) {
-            const adminId = (subcategoryResult[0] as any).assigned_admin_id;
+          type SubcategoryResult = { assigned_admin_id?: string };
+          if (subcategoryResult.length > 0 && (subcategoryResult[0] as SubcategoryResult)?.assigned_admin_id) {
+            const adminId = (subcategoryResult[0] as SubcategoryResult).assigned_admin_id;
+            if (!adminId || typeof adminId !== 'string') return null;
             const adminUser = await db
               .select({
                 clerk_id: users.clerk_id,
@@ -124,7 +130,8 @@ export async function findSPOCForTicket(
             AND table_name = 'category_assignments'
           ) as exists;
         `);
-        const tableExists = (tableCheck[0] as any)?.exists === true;
+        type TableCheckResult = { exists?: boolean };
+        const tableExists = (tableCheck[0] as TableCheckResult)?.exists === true;
 
         if (tableExists) {
           // Query category_assignments table
@@ -137,8 +144,10 @@ export async function findSPOCForTicket(
             LIMIT 1
           `);
 
-          if (assignments.length > 0 && (assignments[0] as any)?.user_id) {
-            const adminId = (assignments[0] as any).user_id;
+          type AssignmentResult = { user_id?: string };
+          if (assignments.length > 0 && (assignments[0] as AssignmentResult)?.user_id) {
+            const adminId = (assignments[0] as AssignmentResult).user_id;
+            if (!adminId || typeof adminId !== 'string') return null;
             const adminUser = await db
               .select({
                 clerk_id: users.clerk_id,

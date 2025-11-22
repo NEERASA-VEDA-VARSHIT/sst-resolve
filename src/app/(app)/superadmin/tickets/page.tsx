@@ -25,14 +25,14 @@ export default async function SuperAdminAllTicketsPage({ searchParams }: { searc
 
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const params = resolvedSearchParams || {};
-  const category = (typeof params["category"] === "string" ? params["category"] : params["category"]?.[0]) || "";
-  const subcategory = (typeof params["subcategory"] === "string" ? params["subcategory"] : params["subcategory"]?.[0]) || "";
+  // const category = (typeof params["category"] === "string" ? params["category"] : params["category"]?.[0]) || "";
+  // const subcategory = (typeof params["subcategory"] === "string" ? params["subcategory"] : params["subcategory"]?.[0]) || "";
   const location = (typeof params["location"] === "string" ? params["location"] : params["location"]?.[0]) || "";
   const tat = (typeof params["tat"] === "string" ? params["tat"] : params["tat"]?.[0]) || "";
-  const status = (typeof params["status"] === "string" ? params["status"] : params["status"]?.[0]) || "";
+  // const status = (typeof params["status"] === "string" ? params["status"] : params["status"]?.[0]) || "";
   const createdFrom = (typeof params["from"] === "string" ? params["from"] : params["from"]?.[0]) || "";
   const createdTo = (typeof params["to"] === "string" ? params["to"] : params["to"]?.[0]) || "";
-  const user = (typeof params["user"] === "string" ? params["user"] : params["user"]?.[0]) || "";
+  // const user = (typeof params["user"] === "string" ? params["user"] : params["user"]?.[0]) || "";
   const sort = (typeof params["sort"] === "string" ? params["sort"] : params["sort"]?.[0]) || "newest";
   const page = parseInt((typeof params["page"] === "string" ? params["page"] : params["page"]?.[0]) || "1", 10);
   const limit = Math.min(50, Math.max(5, parseInt((typeof params["limit"] === "string" ? params["limit"] : params["limit"]?.[0]) || "20", 10)));

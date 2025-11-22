@@ -41,6 +41,7 @@ export function ProfileFieldsConfig({ categoryId, categoryName }: ProfileFieldsC
 
 	useEffect(() => {
 		fetchProfileFields();
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [categoryId]);
 
 	const fetchProfileFields = async () => {

@@ -1,6 +1,6 @@
 // src/lib/deleteFieldWithArchive.ts
 import { db } from "@/db";
-import { deleted_category_fields, category_fields, field_options, tickets, users } from "@/db/schema";
+import { deleted_category_fields, category_fields, field_options } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 
 export async function archiveAndDeleteField(args: {
@@ -45,7 +45,9 @@ export async function archiveAndDeleteField(args: {
     WHERE metadata->>${field.slug} IS NOT NULL
        OR metadata->'dynamic_fields'->>${field.slug} IS NOT NULL
   `);
-  const ticketCount = parseInt((ticketCountResult as any)[0]?.count || '0', 10);
+  type TicketCountResult = { count?: string | number };
+  const countValue = (ticketCountResult[0] as TicketCountResult)?.count;
+  const ticketCount = parseInt(typeof countValue === 'number' ? String(countValue) : countValue || '0', 10);
 
   // 4. Get user UUID for deleted_by
   const [user] = await db
@@ -62,8 +64,8 @@ export async function archiveAndDeleteField(args: {
   if (ticketCount > 0) {
     await db.insert(deleted_category_fields).values({
       original_field_id: fieldId,
-      field_data: field as any,
-      options_data: options.length > 0 ? (options as any) : null,
+      field_data: field as Record<string, unknown>,
+      options_data: options.length > 0 ? (options as Array<Record<string, unknown>>) : null,
       deleted_by: user.id,
       deletion_reason: deletionReason || null,
       ticket_count: ticketCount,
@@ -94,14 +96,28 @@ export async function restoreDeletedField(originalFieldId: number) {
     throw new Error("Archived field not found");
   }
 
-  const fieldData = archived.field_data as any;
-  const optionsData = archived.options_data as any[];
+  const fieldData = archived.field_data as Record<string, unknown>;
+  const optionsData = (archived.options_data as Array<Record<string, unknown>>) || [];
 
   // Restore field (reuse original ID if possible)
+  type FieldInsertData = {
+    subcategory_id: number;
+    name: string;
+    slug: string;
+    field_type: string;
+    required: boolean;
+    placeholder?: string | null;
+    help_text?: string | null;
+    validation_rules?: unknown;
+    assigned_admin_id?: string | null;
+    display_order: number;
+    active: boolean;
+    updated_at: Date;
+  };
   const [restoredField] = await db
     .insert(category_fields)
     .values({
-      ...fieldData,
+      ...(fieldData as unknown as FieldInsertData),
       active: true,
       updated_at: new Date(),
     })
@@ -112,9 +128,9 @@ export async function restoreDeletedField(originalFieldId: number) {
     await db.insert(field_options).values(
       optionsData.map(opt => ({
         field_id: restoredField.id,
-        label: opt.label,
-        value: opt.value,
-        display_order: opt.display_order,
+        label: typeof opt.label === 'string' ? opt.label : String(opt.label || ''),
+        value: typeof opt.value === 'string' ? opt.value : String(opt.value || ''),
+        display_order: typeof opt.display_order === 'number' ? opt.display_order : 0,
         active: true,
       }))
     );

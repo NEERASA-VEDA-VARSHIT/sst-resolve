@@ -80,7 +80,7 @@ function formatDynamicFieldValue(fieldType: string, value: unknown): React.React
   if (Array.isArray(value)) {
     return (
       <div className="flex flex-wrap gap-2">
-        {value.map((item: any, idx: number) => (
+        {value.map((item: unknown, idx: number) => (
           <Badge key={idx} variant="outline">{sanitize(String(item))}</Badge>
         ))}
       </div>

@@ -53,7 +53,7 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [masterData, setMasterData] = useState<MasterData | null>(null);
-  const [loadingMasterData, setLoadingMasterData] = useState(true);
+  const [, setLoadingMasterData] = useState(true);
   const [isStaffDialogOpen, setIsStaffDialogOpen] = useState(false);
   const [selectedUserForStaff, setSelectedUserForStaff] = useState<User | null>(null);
   const [staffFormData, setStaffFormData] = useState({

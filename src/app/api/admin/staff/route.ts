@@ -6,7 +6,7 @@ import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
 import type { InferSelectModel } from "drizzle-orm";
 
-export async function GET(_request: NextRequest) {
+export async function GET() {
     try {
         const { userId } = await auth();
 

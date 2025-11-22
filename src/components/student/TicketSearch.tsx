@@ -11,9 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, X, Filter, ArrowUpDown } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Search, X, ArrowUpDown } from "lucide-react";
 import type { TicketStatus } from "@/lib/status/types";
 
 interface CategoryOption {
@@ -62,7 +60,7 @@ export default function TicketSearch({
   const [subSubcategoryFilter, setSubSubcategoryFilter] = useState(searchParams.get("sub_subcategory") || "");
   const [sortBy, setSortBy] = useState(currentSort || "newest");
   const [dynamicFilters, setDynamicFilters] = useState<Record<string, string>>({});
-  const [loadingFilters, setLoadingFilters] = useState(false);
+  const [loadingFilters] = useState(false);
 
   // Initialize dynamic filters from URL
   useEffect(() => {

@@ -27,9 +27,9 @@ interface AuthProviderProps {
  */
 export function AuthProvider({ children }: AuthProviderProps) {
     const { user, isLoaded } = useUser();
-    const userId = user?.id || null;
+    const userId = user?.id;
     const [role, setRole] = useState<Roles | null>(null);
-    const [roleLoading, setRoleLoading] = useState(true);
+    const [, setRoleLoading] = useState(true);
 
     useEffect(() => {
         if (user?.id) {

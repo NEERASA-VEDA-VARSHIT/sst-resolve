@@ -1,17 +1,16 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useState } from "react";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Edit, Trash2, ChevronRight, Settings, User } from "lucide-react";
+import { Plus, Edit, Trash2, Settings } from "lucide-react";
 import { CategoryDialog } from "./CategoryDialog";
 import { SubcategoryManager } from "./SubcategoryManager";
 import { ProfileFieldsConfig } from "./ProfileFieldsConfig";
 import { EscalationManager } from "./EscalationManager";
 import { CategoryAssignmentsManager } from "./CategoryAssignmentsManager";
 import { toast } from "sonner";
-import Link from "next/link";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface Category {
@@ -39,7 +38,6 @@ export function CategoryManager({ initialCategories }: CategoryManagerProps) {
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
-  const [loading, setLoading] = useState(false);
 
   const fetchCategories = async () => {
     try {

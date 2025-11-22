@@ -86,6 +86,7 @@ export default function CommitteesManagementPage() {
   useEffect(() => {
     fetchCommittees();
     fetchClerkUsers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchCommittees = async () => {
@@ -421,7 +422,7 @@ export default function CommitteesManagementPage() {
       <div className="space-y-3">
         {committees.map((committee) => {
           const members = committeeMembers[committee.id] || [];
-          const availableUsers = getAvailableUsers(committee.id);
+          // const availableUsers = getAvailableUsers(committee.id);
           
           return (
             <Card key={committee.id} className="border-2 hover:shadow-lg transition-all duration-300">

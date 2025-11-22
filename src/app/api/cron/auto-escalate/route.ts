@@ -97,7 +97,7 @@ export async function GET(request: NextRequest) {
 					if (createdAt && createdAt.getTime() < cutoffDate.getTime()) {
 						hasLifecycleBreach = true;
 					}
-				} catch (e) {
+				} catch {
 					// Ignore parse errors
 				}
 			}

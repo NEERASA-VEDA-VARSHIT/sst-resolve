@@ -94,7 +94,7 @@ export function resolveProfileFieldValue(
  */
 export function resolveProfileFields(
   profileFieldsConfig: ProfileFieldConfig[],
-  metadata: any,
+  metadata: Record<string, unknown>,
   studentRecord?: StudentRecord,
   userRecord?: UserRecord
 ): Array<{ field_name: string; label: string; value: string }> {

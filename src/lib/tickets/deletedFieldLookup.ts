@@ -59,7 +59,7 @@ export async function getFieldDefinitionsByIds(
   const activeFieldIds = new Set(activeFields.map(f => f.id));
   const missingIds = fieldIds.filter(id => !activeFieldIds.has(id));
 
-  const results: FieldDefinition[] = activeFieldsWithOptions as any;
+  const results: FieldDefinition[] = activeFieldsWithOptions as FieldDefinition[];
 
   // 2. Get deleted fields for missing IDs
   if (missingIds.length > 0) {
@@ -69,11 +69,19 @@ export async function getFieldDefinitionsByIds(
       .where(inArray(deleted_category_fields.original_field_id, missingIds));
 
     for (const deletedField of deletedFields) {
-      const fieldData = deletedField.field_data as any;
+      const fieldData = deletedField.field_data as Record<string, unknown>;
+      const optionsData = (deletedField.options_data as Array<Record<string, unknown>>) || [];
+      type FieldOption = { id: number; label: string; value: string; display_order: number };
+      const typedOptions: FieldOption[] = optionsData.map((opt, idx) => ({
+        id: idx,
+        label: typeof opt.label === 'string' ? opt.label : String(opt.label || ''),
+        value: typeof opt.value === 'string' ? opt.value : String(opt.value || ''),
+        display_order: typeof opt.display_order === 'number' ? opt.display_order : idx,
+      }));
       results.push({
-        ...fieldData,
+        ...(fieldData as unknown as FieldDefinition),
         id: deletedField.original_field_id,
-        options: (deletedField.options_data as any[]) || [],
+        options: typedOptions,
       });
     }
   }
@@ -119,5 +127,5 @@ export async function getActiveFieldsForSubcategory(
     })
   );
 
-  return fieldsWithOptions as any;
+  return fieldsWithOptions as FieldDefinition[];
 }

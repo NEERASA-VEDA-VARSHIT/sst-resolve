@@ -28,10 +28,9 @@ import {
   users,
   students,
   categories,
-  category_profile_fields,
   ticket_statuses
 } from "@/db/schema";
-import { eq, and, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { getOrCreateUser } from "@/lib/user-sync";
 import {
   getCategorySchema,
@@ -216,7 +215,9 @@ export async function GET(
     }
 
     // 8. Extract dynamic fields using helper
-    const dynamicFields = extractDynamicFields(metadata, categorySchema);
+    const dynamicFields = categorySchema && typeof categorySchema === 'object' && !Array.isArray(categorySchema)
+      ? extractDynamicFields(metadata, categorySchema as Record<string, unknown>)
+      : [];
 
     // 9. Extract comments
     type Comment = { isInternal?: boolean; type?: string };

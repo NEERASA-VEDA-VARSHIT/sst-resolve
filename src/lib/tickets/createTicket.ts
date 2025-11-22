@@ -152,7 +152,7 @@ export async function createTicket(args: {
   }
 
   // Build metadata object (store both ids and names)
-  let metadata: Record<string, any> = {};
+  let metadata: Record<string, unknown> = {};
   if (subcategoryRecord) {
     metadata.subcategory = subcategoryRecord.name;
     metadata.subcategoryId = subcategoryRecord.id;
@@ -185,7 +185,7 @@ export async function createTicket(args: {
   if (subcategoryRecord?.id && detailsObj) {
     // Fetch current active fields to map slugs to IDs
     const { category_fields } = await import("@/db/schema");
-    const { and, eq } = await import("drizzle-orm");
+    const { eq } = await import("drizzle-orm");
 
     const activeFields = await db
       .select({ id: category_fields.id, slug: category_fields.slug })
@@ -241,7 +241,7 @@ export async function createTicket(args: {
       categoryRecord.name,
       payload.location || null,
       categoryRecord.id,
-      metadata.subcategoryId || null,
+      (typeof metadata.subcategoryId === 'number' ? metadata.subcategoryId : null),
       fieldSlugs
     );
     if (clerkAssigned) {

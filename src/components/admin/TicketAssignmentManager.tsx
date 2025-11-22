@@ -40,6 +40,7 @@ interface Category {
   scope_id: number | null;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 interface Assignment {
   id: number;
   category_id: number;

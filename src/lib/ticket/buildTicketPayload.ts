@@ -20,8 +20,8 @@ interface FormData {
   subSubcategoryId: number | null;
   description: string;
   location: string;
-  details: Record<string, any>;
-  profile: Record<string, any>;
+  details: Record<string, unknown>;
+  profile: Record<string, unknown>;
   contactEmail: string;
   contactName: string;
   contactPhone: string;
@@ -47,13 +47,14 @@ interface TicketPayload {
 /**
  * Safely get or generate email from roll number and name
  */
-function generateEmail(rollNo: string, name: string): string {
-  if (!rollNo || !name) return "";
-  const namePart = name
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function generateEmail(_rollNo: string, _name: string): string {
+  if (!_rollNo || !_name) return "";
+  const namePart = _name
     .toLowerCase()
     .replace(/\s+/g, ".")
     .replace(/[^a-z0-9.]/g, "");
-  return `${namePart}.${rollNo.toLowerCase()}@sst.scaler.com`;
+  return `${namePart}.${_rollNo.toLowerCase()}@sst.scaler.com`;
 }
 
 /**
@@ -62,7 +63,7 @@ function generateEmail(rollNo: string, name: string): string {
 function getFinalValue(
   profileValue: unknown,
   legacyValue: string,
-  profileFallback: any
+  profileFallback: string | null | undefined | Record<string, unknown>
 ): string {
   const profileStr =
     profileValue !== undefined && profileValue !== null
@@ -71,7 +72,7 @@ function getFinalValue(
   const legacyStr = legacyValue?.trim() || "";
   const fallbackStr =
     profileFallback !== undefined && profileFallback !== null
-      ? String(profileFallback)
+      ? typeof profileFallback === 'string' ? profileFallback : String(profileFallback)
       : "";
 
   return profileStr || legacyStr || fallbackStr;
@@ -93,59 +94,23 @@ export function buildTicketPayload(
   const profileValues = formData.profile || {};
 
   // Extract contact information with fallback chain
-  const finalRollNo = getFinalValue(
-    profileValues.rollNo,
-    formData.contactRollNo,
-    studentProfile?.userNumber
-  );
+  // const finalRollNo = getFinalValue(
+  //   profileValues.rollNo,
+  //   formData.contactRollNo,
+  //   studentProfile?.userNumber
+  // );
 
-  const finalName = getFinalValue(
-    profileValues.name,
-    formData.contactName,
-    studentProfile?.fullName
-  );
-
-  const finalPhone = getFinalValue(
-    profileValues.phone,
-    formData.contactPhone,
-    studentProfile?.mobile
-  );
-
-  // Email: try profile email first, then generate from roll+name, then use student profile email
-  const emailFromProfile =
-    profileValues.email && String(profileValues.email).trim()
-      ? String(profileValues.email).trim()
-      : formData.contactEmail?.trim() || "";
-
-  const finalEmail =
-    emailFromProfile ||
-    generateEmail(finalRollNo, finalName) ||
-    studentProfile?.email ||
-    "";
+  // const finalName = getFinalValue(
+  //   profileValues.name,
+  //   formData.contactName,
+  //   studentProfile?.fullName
+  // );
 
   // Extract category-specific fields
   const finalLocation = getFinalValue(
     profileValues.hostel,
     formData.location,
     studentProfile?.hostel
-  );
-
-  const finalRoomNumber = getFinalValue(
-    profileValues.roomNumber,
-    formData.roomNumber,
-    studentProfile?.roomNumber
-  );
-
-  const finalBatchYear = getFinalValue(
-    profileValues.batchYear,
-    formData.batchYear,
-    studentProfile?.batchYear
-  );
-
-  const finalClassSection = getFinalValue(
-    profileValues.classSection,
-    formData.classSection,
-    studentProfile?.classSection
   );
 
   // Build clean payload

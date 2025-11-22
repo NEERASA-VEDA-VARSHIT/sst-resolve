@@ -151,7 +151,6 @@ function generateEmailFromRollNo(roll: string, name: string) {
 
 export default function TicketForm(props: TicketFormProps) {
   const {
-    dbUserId,
     student: studentProp,
     categories: categoriesProp,
     subcategories: subcategoriesProp,
@@ -215,16 +214,24 @@ export default function TicketForm(props: TicketFormProps) {
     }
 
     // map options by field_id
-    const optionsByField = new Map<number, any[]>();
-    for (const opt of fieldOptionsProp || []) {
-      const fieldId = (opt as any).field_id;
+    type FieldOption = {
+      id: number;
+      field_id?: number;
+      label?: string;
+      option_label?: string;
+      value?: string;
+      option_value?: string;
+    };
+    const optionsByField = new Map<number, Array<{ id: number; label: string; value: string }>>();
+    for (const opt of (fieldOptionsProp || []) as FieldOption[]) {
+      const fieldId = opt.field_id;
       if (fieldId == null) continue;
       
       const arr = optionsByField.get(fieldId) || [];
       arr.push({
         id: opt.id,
-        label: (opt as any).label || (opt as any).option_label, // Support both property names
-        value: (opt as any).value || (opt as any).option_value,
+        label: opt.label || opt.option_label || '', // Support both property names
+        value: opt.value || opt.option_value || '',
       });
       optionsByField.set(fieldId, arr);
     }
@@ -235,9 +242,11 @@ export default function TicketForm(props: TicketFormProps) {
       subcategories: Subcategory[];
       profileFields: ProfileFieldConfig[];
     }[] = (categoriesProp || []).map((c) => {
-      const rawSubs = subsByCat.get((c as any).id) || [];
+      const categoryId = typeof c === 'object' && c !== null && 'id' in c ? (c as { id: number }).id : null;
+      const rawSubs = categoryId ? subsByCat.get(categoryId) || [] : [];
       const subs = rawSubs.map((s) => {
-        const rawFields = fieldsBySub.get((s as any).id) || [];
+        const subcategoryId = typeof s === 'object' && s !== null && 'id' in s ? (s as { id: number }).id : null;
+        const rawFields = subcategoryId ? fieldsBySub.get(subcategoryId) || [] : [];
         const fields = rawFields.map((f) => ({
           ...f,
           placeholder: f.placeholder ?? null,
@@ -274,7 +283,7 @@ export default function TicketForm(props: TicketFormProps) {
      ------------------------- */
   const [form, setForm] = useState(() => {
     // initial profile prefill from student
-    const initialProfile: Record<string, any> = {};
+    const initialProfile: Record<string, string> = {};
     if (student) {
       if (student.userNumber) initialProfile["rollNo"] = student.userNumber;
       if (student.fullName) initialProfile["name"] = student.fullName;
@@ -291,8 +300,8 @@ export default function TicketForm(props: TicketFormProps) {
       subcategoryId: null as number | null,
       subSubcategoryId: null as number | null,
       description: "",
-      details: {} as Record<string, any>,
-      profile: initialProfile as Record<string, any>,
+      details: {} as Record<string, unknown>,
+      profile: initialProfile as Record<string, string>,
     };
   });
 
@@ -314,7 +323,7 @@ export default function TicketForm(props: TicketFormProps) {
 
   const setProfileField = useCallback((key: string, value: unknown) => {
     touchedProfileFields.current.add(key);
-    setForm((prev) => ({ ...prev, profile: { ...(prev.profile || {}), [key]: value } }));
+    setForm((prev) => ({ ...prev, profile: { ...(prev.profile || {}), [key]: String(value) } }));
     setErrors((prev) => {
       const copy = { ...prev };
       delete copy[key];
@@ -343,7 +352,7 @@ export default function TicketForm(props: TicketFormProps) {
     if (!pf || pf.length === 0 || !student) return;
 
     setForm((prev) => {
-      const next = { ...prev, profile: { ...(prev.profile || {}) } as Record<string, any> };
+      const next = { ...prev, profile: { ...(prev.profile || {}) } as Record<string, string> };
       let changed = false;
 
       for (const field of pf) {
@@ -437,23 +446,40 @@ export default function TicketForm(props: TicketFormProps) {
         if (fv === undefined || fv === null || (typeof fv === "string" && fv.trim() === "")) {
           newErrors[field.slug] = `${field.name} is required`;
         } else {
-          const rules = (field as any).validation_rules;
+          type ValidationRules = {
+            minLength?: number | null;
+            maxLength?: number | null;
+            pattern?: string | null;
+            errorMessage?: string | null;
+            min?: number | null;
+            max?: number | null;
+            [key: string]: unknown;
+          };
+          type FieldWithValidation = DynamicField & { validation_rules?: ValidationRules | null };
+          const rules = (field as FieldWithValidation).validation_rules;
           if (rules && typeof fv === "string") {
-            if (rules.minLength && fv.length < rules.minLength) {
-              newErrors[field.slug] = `${field.name} must be at least ${rules.minLength} characters`;
+            const minLength = typeof rules.minLength === 'number' ? rules.minLength : null;
+            const maxLength = typeof rules.maxLength === 'number' ? rules.maxLength : null;
+            const pattern = typeof rules.pattern === 'string' ? rules.pattern : null;
+            const errorMessage = typeof rules.errorMessage === 'string' ? rules.errorMessage : null;
+            
+            if (minLength !== null && fv.length < minLength) {
+              newErrors[field.slug] = `${field.name} must be at least ${minLength} characters`;
             }
-            if (rules.maxLength && fv.length > rules.maxLength) {
-              newErrors[field.slug] = `${field.name} must be at most ${rules.maxLength} characters`;
+            if (maxLength !== null && fv.length > maxLength) {
+              newErrors[field.slug] = `${field.name} must be at most ${maxLength} characters`;
             }
-            if (rules.pattern) {
-              const re = new RegExp(rules.pattern);
-              if (!re.test(fv)) newErrors[field.slug] = rules.errorMessage || `${field.name} format is invalid`;
+            if (pattern !== null) {
+              const re = new RegExp(pattern);
+              if (!re.test(fv)) newErrors[field.slug] = errorMessage || `${field.name} format is invalid`;
             }
           }
           if (rules && (rules.min !== undefined || rules.max !== undefined)) {
             const num = Number(fv);
-            if (rules.min !== undefined && num < rules.min) newErrors[field.slug] = `${field.name} must be at least ${rules.min}`;
-            if (rules.max !== undefined && num > rules.max) newErrors[field.slug] = `${field.name} must be at most ${rules.max}`;
+            const min = typeof rules.min === 'number' ? rules.min : null;
+            const max = typeof rules.max === 'number' ? rules.max : null;
+            if (min !== null && num < min) newErrors[field.slug] = `${field.name} must be at least ${min}`;
+            if (max !== null && num > max) newErrors[field.slug] = `${field.name} must be at most ${max}`;
           }
         }
       }
@@ -553,9 +579,10 @@ export default function TicketForm(props: TicketFormProps) {
     })();
   }, [uploadImage]);
 
-  const removeImage = (url: string) => {
+  const removeImage = useCallback((url: string) => {
     setForm((prev) => {
-      const newImages = (prev.details?.images || []).filter((u: string) => u !== url);
+      const images = Array.isArray(prev.details?.images) ? prev.details.images : [];
+      const newImages = images.filter((u: unknown) => typeof u === 'string' && u !== url);
       return {
         ...prev,
         details: {
@@ -564,7 +591,7 @@ export default function TicketForm(props: TicketFormProps) {
         },
       };
     });
-  };
+  }, []);
 
   /* -------------------------
      Submit
@@ -738,7 +765,7 @@ export default function TicketForm(props: TicketFormProps) {
         {sorted.map((f) => (
           <DynamicFieldRenderer
             key={f.id}
-            field={{ ...f, validation_rules: f.validation_rules ?? {} } as any}
+            field={{ ...f, validation_rules: f.validation_rules ?? {} } as DynamicField & { validation_rules: Record<string, unknown> }}
             value={form.details[f.slug]}
             onChange={(val) => setDetail(f.slug, val)}
             error={errors[f.slug]}

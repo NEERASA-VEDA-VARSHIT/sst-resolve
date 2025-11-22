@@ -24,7 +24,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Users, Plus, X, MessageSquare, CheckCircle2, Loader2 } from "lucide-react";
+import { Users, Plus, X, MessageSquare, Loader2 } from "lucide-react";
 
 interface Ticket {
   id: number;

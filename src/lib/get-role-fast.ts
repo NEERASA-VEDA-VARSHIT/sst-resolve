@@ -60,7 +60,7 @@ export async function getRoleFast(clerkId: string): Promise<UserRole | null> {
     });
 
     return role;
-  } catch (error) {
+  } catch {
     // Edge runtime database error (expected with postgres-js driver)
     // Middleware catches this and falls back to page-level authorization
     // Only log in development to avoid noise in production logs

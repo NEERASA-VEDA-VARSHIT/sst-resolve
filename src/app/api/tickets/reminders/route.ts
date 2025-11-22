@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { tickets, ticket_statuses } from "@/db/schema";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { postThreadReply } from "@/lib/slack";
 import { sendEmail, getTATReminderEmail } from "@/lib/email";
 
@@ -22,7 +22,7 @@ import { sendEmail, getTATReminderEmail } from "@/lib/email";
  * ============================================
  */
 
-export async function GET(request: NextRequest) {
+export async function GET() {
 	try {
 		// This endpoint should be called by a cron job (e.g., daily)
 		// Check for tickets where TAT date is today or has passed

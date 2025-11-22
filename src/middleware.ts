@@ -56,7 +56,7 @@ export default clerkMiddleware(async (auth, req) => {
   let role: string | null = null;
   try {
     role = await getRoleFast(userId);
-  } catch (error) {
+  } catch {
     // Edge runtime database error - let page handle authorization
     console.warn('[Middleware] DB query failed (Edge runtime), allowing access - page will authorize');
     return NextResponse.next();

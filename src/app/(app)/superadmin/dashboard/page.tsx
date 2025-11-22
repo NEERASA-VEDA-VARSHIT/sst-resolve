@@ -3,7 +3,6 @@ import { redirect } from "next/navigation";
 import { db, tickets, categories, users, ticket_statuses } from "@/db";
 import { desc, eq, isNull, or, sql, count } from "drizzle-orm";
 import type { TicketMetadata } from "@/db/types";
-import { alias } from "drizzle-orm/pg-core";
 import { TicketCard } from "@/components/layout/TicketCard";
 import { Card, CardContent } from "@/components/ui/card";
 import Link from "next/link";
@@ -38,11 +37,11 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
 
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const params = resolvedSearchParams || {};
-  const category = (typeof params["category"] === "string" ? params["category"] : params["category"]?.[0]) || "";
-  const subcategory = (typeof params["subcategory"] === "string" ? params["subcategory"] : params["subcategory"]?.[0]) || "";
-  const location = (typeof params["location"] === "string" ? params["location"] : params["location"]?.[0]) || "";
+  // const category = (typeof params["category"] === "string" ? params["category"] : params["category"]?.[0]) || "";
+  // const subcategory = (typeof params["subcategory"] === "string" ? params["subcategory"] : params["subcategory"]?.[0]) || "";
+  // const location = (typeof params["location"] === "string" ? params["location"] : params["location"]?.[0]) || "";
   const tat = (typeof params["tat"] === "string" ? params["tat"] : params["tat"]?.[0]) || "";
-  const status = (typeof params["status"] === "string" ? params["status"] : params["status"]?.[0]) || "";
+  // const status = (typeof params["status"] === "string" ? params["status"] : params["status"] : params["status"]?.[0]) || "";
   const escalatedFilter = (typeof params["escalated"] === "string" ? params["escalated"] : params["escalated"]?.[0]) || "";
   const createdFrom = (typeof params["from"] === "string" ? params["from"] : params["from"]?.[0]) || "";
   const createdTo = (typeof params["to"] === "string" ? params["to"] : params["to"]?.[0]) || "";

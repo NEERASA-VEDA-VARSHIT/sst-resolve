@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import { students, users } from "@/db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { students } from "@/db/schema";
+import { inArray } from "drizzle-orm";
 import { z } from "zod";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 

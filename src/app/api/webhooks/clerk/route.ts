@@ -124,11 +124,6 @@ type ClerkUserEventData = {
 async function handleUserCreated(eventData: ClerkUserEventData) {
 	try {
 		const clerkUserId = eventData.id;
-		const email = eventData.email_addresses?.[0]?.email_address || "";
-		const firstName = eventData.first_name || "";
-		const lastName = eventData.last_name || "";
-		const name = `${firstName} ${lastName}`.trim() || null;
-		const phone = eventData.phone_numbers?.[0]?.phone_number || null;
 
 		// Check if user already exists (idempotency)
 		const [existingUser] = await db

@@ -23,7 +23,6 @@ import { buildTimeline } from "@/lib/ticket/buildTimeline";
 import { normalizeStatusForComparison } from "@/lib/utils";
 import { getTicketStatuses, buildProgressMap } from "@/lib/status/getTicketStatuses";
 import { format } from "date-fns";
-import type { TicketMetadata } from "@/db/types";
 
 // Force dynamic rendering for real-time ticket data
 export const dynamic = "force-dynamic";
@@ -64,8 +63,37 @@ export default async function StudentTicketPage({ params }: { params: Promise<{ 
 
   if (!data) notFound();
 
-  const { ticket, category, subcategory, subSubcategory, creator, student, assignedStaff, spoc, profileFields, dynamicFields, comments, sla } = data;
-  const metadata = (ticket.metadata as TicketMetadata) || {};
+
+  const { ticket, category, subcategory, subSubcategory: rawSubSubcategory, creator, student, assignedStaff, spoc, profileFields, dynamicFields, comments, sla } = data;
+  
+  // Explicitly type subSubcategory to avoid unknown inference
+  type SubSubcategoryType = { id: number; name: string; slug: string; } | null;
+  let subSubcategory: SubSubcategoryType = null;
+  if (rawSubSubcategory && typeof rawSubSubcategory === 'object' && rawSubSubcategory !== null && 'name' in rawSubSubcategory && 'id' in rawSubSubcategory && 'slug' in rawSubSubcategory) {
+    subSubcategory = {
+      id: typeof (rawSubSubcategory as { id?: unknown }).id === 'number' ? (rawSubSubcategory as { id: number }).id : 0,
+      name: String((rawSubSubcategory as { name?: unknown }).name ?? ''),
+      slug: String((rawSubSubcategory as { slug?: unknown }).slug ?? ''),
+    };
+  }
+
+  // Helper function to render sub-subcategory section
+  const renderSubSubcategory = (): React.ReactElement | null => {
+    if (!subSubcategory) {
+      return null;
+    }
+    return (
+      <div className="space-y-2 p-3 rounded-lg bg-background/50 border border-border/50">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Sub-type</p>
+        <p className="text-base font-medium">{subSubcategory.name}</p>
+      </div>
+    );
+  };
+
+  const metadata = (ticket.metadata && typeof ticket.metadata === 'object' && !Array.isArray(ticket.metadata))
+    ? (ticket.metadata as Record<string, unknown>)
+    : {};
+
 
   // Resolve profile field values
   const resolvedProfileFields = resolveProfileFields(
@@ -191,13 +219,7 @@ export default async function StudentTicketPage({ params }: { params: Promise<{ 
                 </div>
               )}
 
-              {/* Sub-type (Sub-subcategory) */}
-              {subSubcategory && (
-                <div className="space-y-2 p-3 rounded-lg bg-background/50 border border-border/50">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Sub-type</p>
-                  <p className="text-base font-medium">{subSubcategory.name}</p>
-                </div>
-              )}
+              {renderSubSubcategory(subSubcategory)}
 
               {/* Description */}
               {ticket.description && (

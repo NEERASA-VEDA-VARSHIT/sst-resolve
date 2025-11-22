@@ -24,7 +24,8 @@ export async function findSPOCForTicket(
   location: string | null,
   categoryId: number,
   subcategoryId?: number | null,
-  fieldSlugs?: string[]
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _fieldSlugs?: string[]
 ): Promise<string | null> {
   try {
     // Try subcategory assignment first (if subcategoryId is provided)

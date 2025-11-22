@@ -3,8 +3,8 @@
  * Optimized queries for common operations
  */
 
-import { db, users, roles, admin_assignments, tickets, committee_members, committees, categories, ticket_statuses, domains, scopes } from "@/db";
-import { eq, and, or, isNull, isNotNull, lt, gte, sql, inArray } from "drizzle-orm";
+import { db, users, roles, admin_assignments, tickets, committee_members, categories, ticket_statuses, domains, scopes } from "@/db";
+import { eq, and, isNull, isNotNull, lt } from "drizzle-orm";
 import type { UserRole } from "@/types/auth";
 
 /**
@@ -109,10 +109,6 @@ export async function isAdmin(
     }
 
     // Check secondary assignments
-    const conditions = [
-      eq(admin_assignments.user_id, user.id)
-    ];
-
     if (options?.domain !== undefined) {
       if (options.domain === null) {
         // admin_assignments always have a domain_id (not null in schema), so this case is impossible for secondary assignments
@@ -234,7 +230,8 @@ export async function getPOCForCategory(categoryId: number): Promise<{
         AND column_name = 'default_authority'
       ) as exists;
     `);
-    const columnExists = (columnCheck[0] as any)?.exists === true;
+    type ColumnCheckResult = { exists?: boolean };
+    const columnExists = (columnCheck[0] as ColumnCheckResult)?.exists === true;
 
     if (!columnExists) {
       return null;
@@ -248,11 +245,16 @@ export async function getPOCForCategory(categoryId: number): Promise<{
       LIMIT 1
     `);
 
-    if (!categoryResult.length || !(categoryResult[0] as any)?.default_authority) {
+    type CategoryResult = { default_authority?: string };
+    if (!categoryResult.length || !(categoryResult[0] as CategoryResult)?.default_authority) {
       return null;
     }
 
-    const defaultAuthority = (categoryResult[0] as any).default_authority;
+    const defaultAuthority = (categoryResult[0] as CategoryResult).default_authority;
+    
+    if (!defaultAuthority) {
+      return null;
+    }
 
     const [poc] = await db
       .select({

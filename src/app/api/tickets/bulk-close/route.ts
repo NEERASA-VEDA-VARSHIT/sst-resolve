@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { and, eq, inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { db, tickets } from "@/db";
 import { BulkCloseTicketsSchema } from "@/schema/ticket.schema";
 import { getUserRoleFromDB } from "@/lib/db-roles";

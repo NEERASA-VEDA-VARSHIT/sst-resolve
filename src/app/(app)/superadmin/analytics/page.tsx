@@ -1,20 +1,18 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { db, tickets, categories, users, roles, domains, scopes, ticket_statuses } from "@/db";
-import { eq, sql, and, gte, desc, count } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
-    FileText, Clock, CheckCircle2, AlertCircle, TrendingUp, TrendingDown,
-    Users, ArrowLeft, Calendar, Zap, Target, BarChart3, PieChart,
-    Activity, Award, Hourglass, ChevronRight, AlertTriangle, Shield,
-    Globe, Building2, Layers, UserCheck, Filter
+    FileText, Clock, ArrowLeft, Zap, Target, Activity, Award, AlertTriangle, Shield,
+    Globe, Building2, Layers, UserCheck
 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { getOrCreateUser } from "@/lib/user-sync";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 import { Progress } from "@/components/ui/progress";
-import { getTicketStatuses, getAllTicketStatuses } from "@/lib/status/getTicketStatuses";
+import { getAllTicketStatuses } from "@/lib/status/getTicketStatuses";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -79,7 +77,7 @@ export default async function SuperAdminAnalyticsPage() {
             .where(sql`${roles.name} IN ('admin', 'super_admin', 'committee')`);
 
         // Fetch user counts by role
-        const userCounts = await db
+        await db
             .select({
                 role: roles.name,
                 count: sql<number>`count(*)`
@@ -100,7 +98,7 @@ export default async function SuperAdminAnalyticsPage() {
         startOfWeek.setDate(now.getDate() - now.getDay());
         startOfWeek.setHours(0, 0, 0, 0);
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        // const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
 
         // Last 7 days
         const last7Days = new Date(now);
@@ -123,7 +121,7 @@ export default async function SuperAdminAnalyticsPage() {
         const ticketsLast7Days = allTickets.filter(t => t.created_at && t.created_at >= last7Days);
         const ticketsLast30Days = allTickets.filter(t => t.created_at && t.created_at >= last30Days);
 
-        const resolvedToday = resolvedTickets.filter(t => t.resolved_at && t.resolved_at >= startOfToday);
+        // const resolvedToday = resolvedTickets.filter(t => t.resolved_at && t.resolved_at >= startOfToday);
         const resolvedThisWeek = resolvedTickets.filter(t => t.resolved_at && t.resolved_at >= startOfWeek);
         const resolvedThisMonth = resolvedTickets.filter(t => t.resolved_at && t.resolved_at >= startOfMonth);
 
@@ -151,7 +149,7 @@ export default async function SuperAdminAnalyticsPage() {
             : 0;
 
         const highRatingTickets = ratedTickets.filter(t => (t.rating || 0) >= 4).length;
-        const lowRatingTickets = ratedTickets.filter(t => (t.rating || 0) <= 2).length;
+        // const lowRatingTickets = ratedTickets.filter(t => (t.rating || 0) <= 2).length;
         const satisfactionRate = ratedTickets.length > 0
             ? Math.round((highRatingTickets / ratedTickets.length) * 100)
             : 0;

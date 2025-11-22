@@ -116,6 +116,7 @@ export default function SuperAdminStudentsPage() {
 
 	useEffect(() => {
 		fetchStudents();
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [pagination.page, hostelFilter, batchYearFilter]);
 
 	const handleSearch = () => {

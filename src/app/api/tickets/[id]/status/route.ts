@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import { tickets, users, outbox, ticket_statuses } from "@/db/schema";
+import { tickets, outbox, ticket_statuses } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";

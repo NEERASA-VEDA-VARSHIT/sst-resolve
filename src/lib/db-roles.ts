@@ -5,7 +5,7 @@
  */
 
 import { db, users, roles, domains, scopes, admin_assignments } from "@/db";
-import { eq, and, or } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import type { UserRole } from "@/types/auth";
 
 /**
@@ -364,8 +364,8 @@ export async function setUserRole(
  */
 export async function removeUserRole(
   clerkUserId: string,
-  roleName: UserRole, // kept for API compatibility, but we just demote the user
-  options?: {
+  _roleName: UserRole, // kept for API compatibility, but we just demote the user
+  _options?: {
     domain?: string | null;
     scope?: string | null;
   }
