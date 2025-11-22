@@ -1,6 +1,6 @@
 // src/lib/deleteFieldWithArchive.ts
 import { db } from "@/db";
-import { deleted_category_fields, category_fields, field_options } from "@/db/schema";
+import { deleted_category_fields, category_fields, field_options, users } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 
 export async function archiveAndDeleteField(args: {

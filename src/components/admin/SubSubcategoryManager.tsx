@@ -101,19 +101,6 @@ export function SubSubcategoryManager({ subcategoryId }: SubSubcategoryManagerPr
     }
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const toggleSubSubcategory = (_id: number) => {
-    setExpandedSubSubcategories((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(id)) {
-        newSet.delete(id);
-      } else {
-        newSet.add(id);
-      }
-      return newSet;
-    });
-  };
-
   if (loading) {
     return <div className="text-center py-4 text-sm text-muted-foreground">Loading sub-subcategories...</div>;
   }

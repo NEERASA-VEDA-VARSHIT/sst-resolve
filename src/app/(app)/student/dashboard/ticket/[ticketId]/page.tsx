@@ -63,32 +63,68 @@ export default async function StudentTicketPage({ params }: { params: Promise<{ 
 
   if (!data) notFound();
 
-
-  const { ticket, category, subcategory, subSubcategory: rawSubSubcategory, creator, student, assignedStaff, spoc, profileFields, dynamicFields, comments, sla } = data;
-  
   // Explicitly type subSubcategory to avoid unknown inference
-  type SubSubcategoryType = { id: number; name: string; slug: string; } | null;
-  let subSubcategory: SubSubcategoryType = null;
-  if (rawSubSubcategory && typeof rawSubSubcategory === 'object' && rawSubSubcategory !== null && 'name' in rawSubSubcategory && 'id' in rawSubSubcategory && 'slug' in rawSubSubcategory) {
-    subSubcategory = {
-      id: typeof (rawSubSubcategory as { id?: unknown }).id === 'number' ? (rawSubSubcategory as { id: number }).id : 0,
-      name: String((rawSubSubcategory as { name?: unknown }).name ?? ''),
-      slug: String((rawSubSubcategory as { slug?: unknown }).slug ?? ''),
-    };
+  interface SubSubcategory {
+    id: number;
+    name: string;
+    slug: string;
   }
 
-  // Helper function to render sub-subcategory section
-  const renderSubSubcategory = (): React.ReactElement | null => {
-    if (!subSubcategory) {
-      return null;
-    }
-    return (
-      <div className="space-y-2 p-3 rounded-lg bg-background/50 border border-border/50">
-        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Sub-type</p>
-        <p className="text-base font-medium">{subSubcategory.name}</p>
-      </div>
-    );
-  };
+  interface RawSubSubcategory {
+    id?: unknown;
+    name?: unknown;
+    slug?: unknown;
+  }
+
+  // Explicitly type the entire destructuring to prevent unknown inference
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  interface TicketData {
+    ticket: any;
+    category: any;
+    subcategory: any;
+    subSubcategory: RawSubSubcategory | null;
+    creator: any;
+    student: any;
+    assignedStaff: any;
+    spoc: any;
+    profileFields: any[];
+    dynamicFields: any[];
+    comments: any[];
+    sla: any;
+  }
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+
+  const {
+    ticket,
+    category,
+    subcategory,
+    subSubcategory: rawSubSubcategory,
+    creator,
+    student,
+    assignedStaff,
+    spoc,
+    profileFields,
+    dynamicFields,
+    comments,
+    sla,
+  } = data as TicketData;
+  
+  // Explicitly type only subSubcategory to fix type inference
+  const typedRawSubSubcategory: RawSubSubcategory | null = rawSubSubcategory as RawSubSubcategory | null;
+
+  const subSubcategory: SubSubcategory | null = (
+    typedRawSubSubcategory &&
+    typeof typedRawSubSubcategory.id === "number" &&
+    typeof typedRawSubSubcategory.name === "string" &&
+    typeof typedRawSubSubcategory.slug === "string"
+      ? {
+          id: typedRawSubSubcategory.id,
+          name: typedRawSubSubcategory.name,
+          slug: typedRawSubSubcategory.slug,
+        }
+      : null
+  ) as SubSubcategory | null;
+
 
   const metadata = (ticket.metadata && typeof ticket.metadata === 'object' && !Array.isArray(ticket.metadata))
     ? (ticket.metadata as Record<string, unknown>)
@@ -219,7 +255,14 @@ export default async function StudentTicketPage({ params }: { params: Promise<{ 
                 </div>
               )}
 
-              {renderSubSubcategory(subSubcategory)}
+              {subSubcategory && (
+                <div className="space-y-2 p-3 rounded-lg bg-background/50 border border-border/50">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    Sub-type
+                  </p>
+                  <p className="text-base font-medium">{subSubcategory.name}</p>
+                </div>
+              )}
 
               {/* Description */}
               {ticket.description && (

@@ -362,11 +362,16 @@ export async function setUserRole(
  * Remove a role from a user
  * Effectively demotes to 'student' and clears primary domain/scope
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function removeUserRole(
   clerkUserId: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _roleName: UserRole, // kept for API compatibility, but we just demote the user
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _options?: {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     domain?: string | null;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     scope?: string | null;
   }
 ): Promise<void> {

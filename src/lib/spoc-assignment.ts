@@ -5,7 +5,7 @@
  */
 
 import { db, users, roles, categories, domains, scopes } from "@/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 
 /**
  * Find the appropriate SPOC (Single Point of Contact) for a ticket
