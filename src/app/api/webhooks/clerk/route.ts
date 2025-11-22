@@ -122,9 +122,8 @@ type ClerkUserEventData = {
 };
 
 async function handleUserCreated(eventData: ClerkUserEventData) {
+	const clerkUserId = eventData.id;
 	try {
-		const clerkUserId = eventData.id;
-
 		// Check if user already exists (idempotency)
 		const [existingUser] = await db
 			.select()
