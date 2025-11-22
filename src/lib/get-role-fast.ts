@@ -3,7 +3,7 @@
  * 
  * Direct database query optimized for Edge runtime
  * Avoids internal API calls which can cause issues in production
- * Includes 10-second cache to reduce database load
+ * Includes 30-second cache to reduce database load and timeout frequency
  */
 
 import { db } from "@/db";
@@ -12,8 +12,9 @@ import { eq } from "drizzle-orm";
 import type { UserRole } from "@/types/auth";
 
 /**
- * In-memory cache for role lookups (10-second TTL)
+ * In-memory cache for role lookups (30-second TTL)
  * Safe for Edge runtime - reduces DB queries significantly
+ * Increased from 10s to 30s to reduce database load and timeout frequency
  */
 const roleCache = new Map<string, { role: UserRole | null; expires: number }>();
 
@@ -53,10 +54,10 @@ export async function getRoleFast(clerkId: string): Promise<UserRole | null> {
       }
     }
 
-    // Cache for 10 seconds
+    // Cache for 30 seconds to reduce database load
     roleCache.set(clerkId, {
       role,
-      expires: now + 10_000
+      expires: now + 30_000
     });
 
     return role;
@@ -68,10 +69,10 @@ export async function getRoleFast(clerkId: string): Promise<UserRole | null> {
       console.warn("[getRoleFast] DB query failed (Edge runtime) - fallback to page auth");
     }
 
-    // On error, cache null for 10 seconds to avoid hammering DB
+    // On error, cache null for 30 seconds to avoid hammering DB
     roleCache.set(clerkId, {
       role: null,
-      expires: now + 10_000
+      expires: now + 30_000
     });
 
     return null;

@@ -10,9 +10,10 @@ import { normalizeStatusForComparison, formatStatus } from "@/lib/utils";
 interface CommentFormProps {
 	ticketId: number;
 	currentStatus?: string;
+	comments?: Array<{ source?: string; author?: string; [key: string]: unknown }>;
 }
 
-export function CommentForm({ ticketId, currentStatus }: CommentFormProps) {
+export function CommentForm({ ticketId, currentStatus, comments = [] }: CommentFormProps) {
 	const router = useRouter();
 	const [comment, setComment] = useState("");
 	const [loading, setLoading] = useState(false);
@@ -20,8 +21,16 @@ export function CommentForm({ ticketId, currentStatus }: CommentFormProps) {
 	// Normalize status for comparison (handles both uppercase enum and lowercase constants)
 	const normalizedStatus = normalizeStatusForComparison(currentStatus);
 
-	// Check if student can reply (only when status is "awaiting_student_response")
-	const canReply = normalizedStatus === "awaiting_student_response";
+	// Check if the last comment was from a student
+	// Students can only reply if the last comment was from an admin/committee (not from a student)
+	const lastComment = comments.length > 0 ? comments[comments.length - 1] : null;
+	const lastCommentSource = lastComment?.source;
+	const lastCommentIsFromStudent = lastCommentSource === "website";
+	
+	// Check if student can reply:
+	// 1. Status must be "awaiting_student_response"
+	// 2. Last comment must NOT be from a student (must be from admin/committee)
+	const canReply = normalizedStatus === "awaiting_student_response" && !lastCommentIsFromStudent;
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
@@ -58,12 +67,21 @@ export function CommentForm({ ticketId, currentStatus }: CommentFormProps) {
 	};
 
 	// Hide form if student can't reply
-	if (!canReply && normalizedStatus && normalizedStatus !== "open" && normalizedStatus !== "in_progress") {
-		return (
-			<div className="text-sm text-muted-foreground p-3 bg-muted/50 rounded-lg">
-				You can only reply when the admin has asked a question. Current status: <strong>{formatStatus(currentStatus)}</strong>
-			</div>
-		);
+	if (!canReply) {
+		if (lastCommentIsFromStudent) {
+			return (
+				<div className="text-sm text-muted-foreground p-3 bg-muted/50 rounded-lg">
+					You have already replied. Please wait for the admin to ask another question before replying again.
+				</div>
+			);
+		}
+		if (normalizedStatus && normalizedStatus !== "open" && normalizedStatus !== "in_progress") {
+			return (
+				<div className="text-sm text-muted-foreground p-3 bg-muted/50 rounded-lg">
+					You can only reply when the admin has asked a question. Current status: <strong>{formatStatus(currentStatus)}</strong>
+				</div>
+			);
+		}
 	}
 
 	return (

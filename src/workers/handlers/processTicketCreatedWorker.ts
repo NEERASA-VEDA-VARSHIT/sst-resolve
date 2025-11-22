@@ -372,6 +372,7 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
     }
 
     if (shouldSendSlack(categoryName)) {
+      console.log(`[processTicketCreated] Sending Slack notification for ticket #${ticket.id} (category: ${categoryName})`);
       const header = "🆕 New Ticket Raised";
       const contactLines: string[] = [];
       if (contactName) contactLines.push(`Name: ${contactName}`);
@@ -451,6 +452,11 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
       }
 
       try {
+        console.log(`[processTicketCreated] Calling postToSlackChannel for ticket #${ticket.id}`, {
+          category: categoryName,
+          channelOverride,
+          ccUserIds: ccUserIds?.length || 0,
+        });
         const messageTs = await postToSlackChannel(
           categoryName as SlackCategory,
           `${header}\n${body}`,
@@ -460,17 +466,26 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
         );
 
         if (messageTs) {
+          console.log(`[processTicketCreated] ✅ Slack message sent successfully for ticket #${ticket.id}, ts: ${messageTs}`);
           setMetadataValue("slackMessageTs", messageTs);
           setMetadataValue(
             "slackChannel",
             channelOverride || getDefaultSlackChannelFor(categoryName as SlackCategory)
           );
+        } else {
+          console.warn(`[processTicketCreated] ⚠️ Slack message returned null for ticket #${ticket.id}. Check Slack configuration and logs.`);
         }
       } catch (error) {
         console.error(
-          `[processTicketCreated] Failed to post Slack message for ticket ${ticket.id}`,
+          `[processTicketCreated] ❌ Failed to post Slack message for ticket ${ticket.id}`,
           error
         );
+        if (error instanceof Error) {
+          console.error(`[processTicketCreated] Error details:`, {
+            message: error.message,
+            stack: error.stack,
+          });
+        }
       }
     }
 

@@ -22,10 +22,16 @@ export async function postToSlackChannel(
 		ticketId,
 		channelOverride,
 		hasBotToken: !!slackConfig.botToken,
+		slackEnabled: slackConfig.enabled,
 	});
 
+	if (!slackConfig.enabled) {
+		console.warn("[Slack] Slack is disabled in config (no SLACK_BOT_TOKEN or SLACK_WEBHOOK_URL)");
+		return null;
+	}
+
 	if (!slack) {
-		console.warn("[Slack] SLACK_BOT_TOKEN not set; skipping Slack send.");
+		console.error("[Slack] SLACK_BOT_TOKEN not set; skipping Slack send. Check your environment variables.");
 		return null;
 	}
 
@@ -139,6 +145,7 @@ export async function postToSlackChannel(
 			category,
 			ticketId,
 			ccCount: ccUserIds?.length || 0,
+			textLength: text.length,
 		});
         const result = await slack.chat.postMessage({
 			channel: normalizedChannel,
@@ -147,11 +154,20 @@ export async function postToSlackChannel(
 		});
 		
 		const messageTs = result.ts || null;
-		console.log("[Slack] Message posted", {
-			channel: normalizedChannel,
-			ticketId,
-			messageTs,
-		});
+		if (messageTs) {
+			console.log("[Slack] ✅ Message posted successfully", {
+				channel: normalizedChannel,
+				ticketId,
+				messageTs,
+				ok: result.ok,
+			});
+		} else {
+			console.warn("[Slack] ⚠️ Message posted but no timestamp returned", {
+				channel: normalizedChannel,
+				ticketId,
+				result: result,
+			});
+		}
 		return messageTs;
 	} catch (error: unknown) {
 		type SlackError = {

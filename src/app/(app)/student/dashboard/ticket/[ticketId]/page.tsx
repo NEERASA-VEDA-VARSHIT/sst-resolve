@@ -446,18 +446,25 @@ export default async function StudentTicketPage({ params }: { params: Promise<{ 
                 </div>
               )}
 
-              {/* Students can reply only when admin asked a question */}
+              {/* Students can reply only when admin asked a question and they haven't already replied */}
               {normalizedStatus === "awaiting_student_response" && (
                 <div className="pt-4 border-t">
-                  <Alert className="border-amber-200 bg-amber-50/50 dark:bg-amber-950/20 mb-4">
-                    <AlertCircle className="h-4 w-4 text-amber-600" />
-                    <AlertDescription>
-                      <span className="font-medium text-amber-900 dark:text-amber-100">
-                        Admin has asked a question. Please respond below.
-                      </span>
-                    </AlertDescription>
-                  </Alert>
-                  <CommentForm ticketId={ticket.id} currentStatus={statusValue || undefined} />
+                  {/* Only show alert if student can actually reply (last comment is from admin) */}
+                  {comments.length > 0 && comments[comments.length - 1]?.source !== "website" && (
+                    <Alert className="border-amber-200 bg-amber-50/50 dark:bg-amber-950/20 mb-4">
+                      <AlertCircle className="h-4 w-4 text-amber-600" />
+                      <AlertDescription>
+                        <span className="font-medium text-amber-900 dark:text-amber-100">
+                          Admin has asked a question. Please respond below.
+                        </span>
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                  <CommentForm 
+                    ticketId={ticket.id} 
+                    currentStatus={statusValue || undefined}
+                    comments={comments}
+                  />
                 </div>
               )}
             </CardContent>

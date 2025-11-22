@@ -67,7 +67,7 @@ export default function StaffManagementPage() {
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [clerkUsers, setClerkUsers] = useState<ClerkUser[]>([]);
   const [masterData, setMasterData] = useState<MasterData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [loadingMasterData, setLoadingMasterData] = useState(true);
   const [saving, setSaving] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -98,6 +98,7 @@ export default function StaffManagementPage() {
         const data = await response.json();
         setStaff(data.staff || []);
       } else {
+        console.error("Failed to fetch staff:", response.status, response.statusText);
         toast.error("Failed to fetch staff");
       }
     } catch (error) {
@@ -338,13 +339,15 @@ export default function StaffManagementPage() {
     return domain === "Hostel" ? "text-blue-600 dark:text-blue-400" : "text-purple-600 dark:text-purple-400";
   };
 
-  if (loading || loadingMasterData) {
+  // Show loading state only if we haven't loaded master data yet
+  // Once master data is loaded (even if empty), show the page
+  if (loadingMasterData && !masterData) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center space-y-3">
           <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto" />
           <p className="text-sm text-muted-foreground">
-            {loading ? "Loading staff..." : "Loading master data..."}
+            Loading staff management...
           </p>
         </div>
       </div>

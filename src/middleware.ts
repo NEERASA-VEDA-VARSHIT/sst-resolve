@@ -53,13 +53,14 @@ export default clerkMiddleware(async (auth, req) => {
   // This prevents "Failed query" errors while maintaining security at page level
 
   // Try to fetch role with timeout (may fail in Edge runtime with some DB drivers)
-  // Use a short timeout to prevent middleware from hanging
+  // Use a reasonable timeout to prevent middleware from hanging while allowing DB queries to complete
   let role: string | null = null;
   
   try {
-    // Create a timeout promise that rejects after 1.5 seconds
+    // Create a timeout promise that rejects after 2.5 seconds
+    // Increased from 1.5s to allow more time for database queries in Edge runtime
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('TIMEOUT')), 1500);
+      setTimeout(() => reject(new Error('TIMEOUT')), 2500);
     });
     
     // Race between the role query and timeout
@@ -70,10 +71,17 @@ export default clerkMiddleware(async (auth, req) => {
   } catch (error) {
     // Check if it was a timeout
     if (error instanceof Error && error.message === 'TIMEOUT') {
-      console.warn('[Middleware] Role query timed out (>1.5s), allowing access - page will authorize');
+      // Only log in development to reduce production log noise
+      // Pages handle authorization anyway, so this is not a critical error
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('[Middleware] Role query timed out (>2.5s), allowing access - page will authorize');
+      }
     } else {
       // Edge runtime database error - let page handle authorization
-      console.warn('[Middleware] DB query failed (Edge runtime), allowing access - page will authorize');
+      // Only log in development
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('[Middleware] DB query failed (Edge runtime), allowing access - page will authorize');
+      }
     }
     // On any error (timeout or DB error), allow access and let page handle authorization
     return NextResponse.next();

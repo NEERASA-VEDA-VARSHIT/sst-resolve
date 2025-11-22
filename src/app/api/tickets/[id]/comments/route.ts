@@ -171,6 +171,20 @@ export async function POST(
       if (commentType !== "student_visible") {
         return NextResponse.json({ error: "Students cannot add internal notes" }, { status: 403 });
       }
+      
+      // Check if the last comment was from a student - if so, prevent adding another comment
+      const metadata = (ticket.metadata as TicketMetadata & { comments?: Array<Record<string, unknown>> }) || {};
+      const comments = Array.isArray(metadata.comments) ? metadata.comments : [];
+      if (comments.length > 0) {
+        const lastComment = comments[comments.length - 1];
+        const lastCommentSource = lastComment?.source;
+        // If last comment was from a student (source === "website"), prevent adding another comment
+        if (lastCommentSource === "website") {
+          return NextResponse.json({ 
+            error: "You have already replied. Please wait for the admin to ask another question before replying again." 
+          }, { status: 403 });
+        }
+      }
     } else if (isCommittee) {
       // keep behavior: committee members should only add student-visible comments (internal notes are admin-only)
       if (commentType !== "student_visible") {
