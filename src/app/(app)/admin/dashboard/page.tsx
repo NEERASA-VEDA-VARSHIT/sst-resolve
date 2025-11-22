@@ -1,7 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { db, tickets, users, categories, ticket_statuses, domains } from "@/db";
-import { desc, eq, inArray } from "drizzle-orm";
+import { db, tickets, categories, domains } from "@/db";
+import { eq, inArray } from "drizzle-orm";
 import type { TicketMetadata } from "@/db/types";
 import { TicketCard } from "@/components/layout/TicketCard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";

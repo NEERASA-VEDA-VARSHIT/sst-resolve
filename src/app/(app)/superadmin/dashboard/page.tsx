@@ -11,10 +11,8 @@ import { Button } from "@/components/ui/button";
 import { FileText, Shield, Settings, Building2, Users, Calendar, AlertCircle, BarChart3 } from "lucide-react";
 import { StatsCards } from "@/components/dashboard/StatsCards";
 import { PaginationControls } from "@/components/dashboard/PaginationControls";
-import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getCachedAdminUser } from "@/lib/admin/cached-queries";
 import { normalizeStatusForComparison } from "@/lib/utils";
-import { getTicketStatuses } from "@/lib/status/getTicketStatuses";
 
 // Create alias for users table to use for assigned admin (unused but kept for potential future use)
 // const assignedAdmin = alias(users, 'assigned_admin');

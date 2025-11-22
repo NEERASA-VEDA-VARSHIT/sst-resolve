@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, memo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
@@ -100,18 +100,13 @@ export function UnifiedNav() {
     }
   }, [user?.id]);
   
-  // Memoize role-based flags
+  // Memoize role-based flags (must be before early return)
   const isSuperAdmin = useMemo(() => role === "super_admin", [role]);
   const isCommittee = useMemo(() => role === "committee", [role]);
   const isRegularAdmin = useMemo(() => role === "admin", [role]);
   const isStudent = useMemo(() => role === "student", [role]);
   
-  // Show loading shimmer while fetching role
-  if (!mounted || roleLoading) {
-    return <NavLoadingShimmer />;
-  }
-  
-  // Memoize profile link
+  // Memoize profile link (must be before early return)
   const profileLink = useMemo(() => {
     if (isSuperAdmin) return "/superadmin/profile";
     if (isRegularAdmin) return "/admin/profile";
@@ -119,7 +114,7 @@ export function UnifiedNav() {
     return "/student/profile";
   }, [isSuperAdmin, isRegularAdmin, isCommittee]);
 
-  // Memoize navigation items to prevent recalculation on every render
+  // Memoize navigation items to prevent recalculation on every render (must be before early return)
   const navItems = useMemo(() => {
     if (!mounted) return [];
     
@@ -261,13 +256,18 @@ export function UnifiedNav() {
     return items.filter((item) => item.show);
   }, [mounted, isStudent, isRegularAdmin, isCommittee, isSuperAdmin]);
 
-  // Memoize active state checker
+  // Memoize active state checker (must be before early return)
   const isActive = useCallback((href: string) => {
     if (href === "/") {
       return pathname === "/";
     }
     return pathname?.startsWith(href);
   }, [pathname]);
+
+  // Show loading shimmer while fetching role (after hooks)
+  if (!mounted || roleLoading) {
+    return <NavLoadingShimmer />;
+  }
 
   return (
     <>

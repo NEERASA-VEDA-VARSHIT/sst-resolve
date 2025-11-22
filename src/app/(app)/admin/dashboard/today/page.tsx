@@ -14,7 +14,7 @@ import { ticketMatchesAdminAssignment } from "@/lib/admin-assignment";
 // Revalidate every 30 seconds for fresh data
 export const revalidate = 30;
 
-export default async function AdminTodayPendingPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
+export default async function AdminTodayPendingPage() {
   const { userId } = await auth();
   if (!userId) redirect("/");
 

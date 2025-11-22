@@ -1,17 +1,17 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { db, tickets, users, domains, scopes, categories, ticket_statuses } from "@/db";
-import { desc, eq, or, and, isNull } from "drizzle-orm";
+import { db, tickets, categories, ticket_statuses } from "@/db";
+import { desc, eq } from "drizzle-orm";
 import { TicketGrouping } from "@/components/admin/TicketGrouping";
 import { SelectableTicketList } from "@/components/admin/SelectableTicketList";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
-import { ArrowLeft, Users, Package, Search, Filter } from "lucide-react";
-import { getUserRoleFromDB } from "@/lib/db-roles";
+import { ArrowLeft, Users, Package } from "lucide-react";
 import { getCachedAdminUser, getCachedAdminAssignment } from "@/lib/admin/cached-queries";
 import { ticketMatchesAdminAssignment } from "@/lib/admin-assignment";
+import type { Ticket } from "@/db/types-only";
 
 export default async function AdminGroupsPage() {
   try {
@@ -174,7 +174,7 @@ export default async function AdminGroupsPage() {
                     location: t.location || null,
                     created_at: t.created_at,
                     updated_at: t.updated_at,
-                  })) as any}
+                  })) as unknown as Ticket[]}
                   basePath="/admin/dashboard"
                 />
               )}
