@@ -92,96 +92,97 @@ export async function getFullTicketData(ticketId: number, userId: string) {
       // Continue with empty metadata
     }
 
-    // 2. Fetch category with SLA info
-    const category = ticketData.ticket_category_id
-      ? await getCategoryById(ticketData.ticket_category_id)
-      : null;
-
-    // 3. Fetch category schema (cached, optimized)
-    const categorySchema = ticketData.ticket_category_id
-      ? await getCategorySchema(ticketData.ticket_category_id)
-      : null;
-
-    // 4. Derive subcategory and sub-subcategory from IDs ONLY (authoritative)
-    let subcategory = null;
-    let subSubcategory = null;
-
+    // 2-5. Fetch category-related data in parallel for performance
     const subcategoryId = typeof metadata?.subcategoryId === 'number' ? metadata.subcategoryId : null;
     const subSubcategoryId = typeof metadata?.subSubcategoryId === 'number' ? metadata.subSubcategoryId : null;
     
-    if (subcategoryId && ticketData.ticket_category_id) {
-      subcategory = await getSubcategoryById(
-        subcategoryId,
-        ticketData.ticket_category_id
-      );
-    }
+    const [
+      category,
+      categorySchema,
+      profileFields,
+      subcategory,
+      subSubcategory
+    ] = await Promise.all([
+      // Fetch category with SLA info
+      ticketData.ticket_category_id
+        ? getCategoryById(ticketData.ticket_category_id)
+        : Promise.resolve(null),
+      // Fetch category schema (cached, optimized)
+      ticketData.ticket_category_id
+        ? getCategorySchema(ticketData.ticket_category_id)
+        : Promise.resolve(null),
+      // Fetch profile fields configuration
+      ticketData.ticket_category_id
+        ? getCategoryProfileFields(ticketData.ticket_category_id)
+        : Promise.resolve([]),
+      // Fetch subcategory if ID exists
+      (subcategoryId && ticketData.ticket_category_id)
+        ? getSubcategoryById(subcategoryId, ticketData.ticket_category_id)
+        : Promise.resolve(null),
+      // Fetch sub-subcategory if ID exists
+      (subSubcategoryId && subcategoryId)
+        ? getSubSubcategoryById(subSubcategoryId, subcategoryId)
+        : Promise.resolve(null),
+    ]);
 
-    if (subSubcategoryId && subcategoryId) {
-      subSubcategory = await getSubSubcategoryById(
-        subSubcategoryId,
-        subcategoryId
-      );
-    }
-
-    // 5. Fetch profile fields configuration
-    const profileFields = ticketData.ticket_category_id
-      ? await getCategoryProfileFields(ticketData.ticket_category_id)
-      : [];
-
-    // 6. Fetch assigned staff info (if assigned)
-    let assignedStaff = null;
-    if (ticketData.ticket_assigned_to) {
-      const [staffData] = await db
-        .select({
-          user_first_name: users.first_name,
-          user_last_name: users.last_name,
-          user_email: users.email,
-        })
-        .from(users)
-        .where(eq(users.id, ticketData.ticket_assigned_to))
-        .limit(1);
-
-      if (staffData) {
-        assignedStaff = {
-          name: [staffData.user_first_name, staffData.user_last_name].filter(Boolean).join(' ').trim() || "Unknown",
-          email: staffData.user_email || null,
-        };
-      }
-    }
-
-    // 7. Fetch SPOC info (if exists)
-    let spoc = null;
-    if (ticketData.ticket_category_id) {
-      try {
-        // Check if default_admin_id column exists (it should per schema)
-        const [categoryData] = await db
-          .select({ default_admin_id: categories.default_admin_id })
-          .from(categories)
-          .where(eq(categories.id, ticketData.ticket_category_id))
-          .limit(1);
-
-        if (categoryData?.default_admin_id) {
-          const [spocData] = await db
+    // 6-7. Fetch assigned staff and SPOC info in parallel
+    const [assignedStaffResult, spocResult] = await Promise.all([
+      // Fetch assigned staff info (if assigned)
+      ticketData.ticket_assigned_to
+        ? db
             .select({
               user_first_name: users.first_name,
               user_last_name: users.last_name,
               user_email: users.email,
             })
             .from(users)
-            .where(eq(users.id, categoryData.default_admin_id))
-            .limit(1);
+            .where(eq(users.id, ticketData.ticket_assigned_to))
+            .limit(1)
+        : Promise.resolve([]),
+      // Fetch SPOC info (if category exists)
+      ticketData.ticket_category_id
+        ? (async () => {
+            try {
+              const [categoryData] = await db
+                .select({ default_admin_id: categories.default_admin_id })
+                .from(categories)
+                .where(eq(categories.id, ticketData.ticket_category_id))
+                .limit(1);
 
-          if (spocData) {
-            spoc = {
-              name: [spocData.user_first_name, spocData.user_last_name].filter(Boolean).join(' ').trim() || "Unknown",
-              email: spocData.user_email || null,
-            };
-          }
+              if (categoryData?.default_admin_id) {
+                const [spocData] = await db
+                  .select({
+                    user_first_name: users.first_name,
+                    user_last_name: users.last_name,
+                    user_email: users.email,
+                  })
+                  .from(users)
+                  .where(eq(users.id, categoryData.default_admin_id))
+                  .limit(1);
+                return spocData ? [spocData] : [];
+              }
+              return [];
+            } catch (error) {
+              console.warn("SPOC lookup failed:", error);
+              return [];
+            }
+          })()
+        : Promise.resolve([]),
+    ]);
+
+    const assignedStaff = assignedStaffResult.length > 0
+      ? {
+          name: [assignedStaffResult[0].user_first_name, assignedStaffResult[0].user_last_name].filter(Boolean).join(' ').trim() || "Unknown",
+          email: assignedStaffResult[0].user_email || null,
         }
-      } catch (error) {
-        console.warn("SPOC lookup failed:", error);
-      }
-    }
+      : null;
+
+    const spoc = spocResult.length > 0
+      ? {
+          name: [spocResult[0].user_first_name, spocResult[0].user_last_name].filter(Boolean).join(' ').trim() || "Unknown",
+          email: spocResult[0].user_email || null,
+        }
+      : null;
 
     // 8. Extract dynamic fields using helper
     const dynamicFields = categorySchema && typeof categorySchema === 'object' && !Array.isArray(categorySchema)

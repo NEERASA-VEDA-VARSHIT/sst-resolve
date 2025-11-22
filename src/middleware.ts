@@ -52,13 +52,30 @@ export default clerkMiddleware(async (auth, req) => {
   // Solution: Let users access any authenticated route, pages will handle authorization
   // This prevents "Failed query" errors while maintaining security at page level
 
-  // Try to fetch role (may fail in Edge runtime with some DB drivers)
+  // Try to fetch role with timeout (may fail in Edge runtime with some DB drivers)
+  // Use a short timeout to prevent middleware from hanging
   let role: string | null = null;
+  
   try {
-    role = await getRoleFast(userId);
-  } catch {
-    // Edge runtime database error - let page handle authorization
-    console.warn('[Middleware] DB query failed (Edge runtime), allowing access - page will authorize');
+    // Create a timeout promise that rejects after 1.5 seconds
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('TIMEOUT')), 1500);
+    });
+    
+    // Race between the role query and timeout
+    role = await Promise.race([
+      getRoleFast(userId),
+      timeoutPromise
+    ]);
+  } catch (error) {
+    // Check if it was a timeout
+    if (error instanceof Error && error.message === 'TIMEOUT') {
+      console.warn('[Middleware] Role query timed out (>1.5s), allowing access - page will authorize');
+    } else {
+      // Edge runtime database error - let page handle authorization
+      console.warn('[Middleware] DB query failed (Edge runtime), allowing access - page will authorize');
+    }
+    // On any error (timeout or DB error), allow access and let page handle authorization
     return NextResponse.next();
   }
 

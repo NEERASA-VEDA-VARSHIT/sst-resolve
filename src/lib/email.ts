@@ -94,14 +94,18 @@ function getTicketMessageId(_ticketId: number): string {
 }
 
 export async function sendEmail({ to, subject, html, ticketId, threadMessageId, originalSubject }: EmailOptions) {
+	console.log(`[sendEmail] Attempting to send email to ${to}${ticketId ? ` for ticket #${ticketId}` : ''}`);
+	
 	if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-		console.warn("⚠️  SMTP credentials not configured; skipping email send.");
+		console.error("❌ [sendEmail] SMTP credentials not configured; skipping email send.");
+		console.error(`   SMTP_USER: ${process.env.SMTP_USER ? 'set' : 'NOT SET'}`);
+		console.error(`   SMTP_PASS: ${process.env.SMTP_PASS ? 'set' : 'NOT SET'}`);
 		return null;
 	}
 
 	// Validate email address
 	if (!to || !to.includes("@")) {
-		console.error(`❌ Invalid email address: ${to}`);
+		console.error(`❌ [sendEmail] Invalid email address: ${to}`);
 		return null;
 	}
 
@@ -168,10 +172,11 @@ export async function sendEmail({ to, subject, html, ticketId, threadMessageId, 
 		// For the first email, let Nodemailer generate the Message-ID automatically
 		// We'll store the actual Message-ID returned from sendMail() in ticket details
 
+		console.log(`[sendEmail] Sending mail via SMTP to ${to}...`);
 		const info = await transporter.sendMail(mailOptions);
 
 		if (info && info.messageId) {
-			console.log(`✅ Email sent to ${to} (Message-ID: ${info.messageId})`);
+			console.log(`✅ [sendEmail] Email sent successfully to ${to} (Message-ID: ${info.messageId})`);
 			if (ticketId && threadMessageId) {
 				const originalMessageId = threadMessageId.startsWith("<") && threadMessageId.endsWith(">")
 					? threadMessageId
@@ -180,7 +185,8 @@ export async function sendEmail({ to, subject, html, ticketId, threadMessageId, 
 				console.log(`   📋 Headers set: In-Reply-To=${originalMessageId}, References=${originalMessageId}`);
 			}
 		} else {
-			console.warn(`⚠️  Email sent but no Message-ID returned for ${to}`);
+			console.warn(`⚠️  [sendEmail] Email sent but no Message-ID returned for ${to}`);
+			console.warn(`   Info object: ${JSON.stringify(info)}`);
 		}
 
 		return info;
@@ -189,24 +195,32 @@ export async function sendEmail({ to, subject, html, ticketId, threadMessageId, 
 			message?: string;
 			code?: string;
 			command?: string;
+			response?: string;
+			responseCode?: number;
 			[key: string]: unknown;
 		};
 		const emailError = error as EmailError;
 		// Log detailed error information
-		console.error(`❌ Error sending email to ${to}:`, {
+		console.error(`❌ [sendEmail] Error sending email to ${to}:`, {
 			message: emailError.message,
 			code: emailError.code,
 			command: emailError.command,
 			response: emailError.response,
+			responseCode: emailError.responseCode,
 		});
 		
 		// Log specific error details
 		if (emailError.code === "EAUTH") {
-			console.error("   Authentication failed. Check SMTP credentials.");
+			console.error("   ❌ Authentication failed. Check SMTP credentials.");
+			console.error("   For Gmail: Use App Password, not regular password.");
 		} else if (emailError.code === "ECONNECTION") {
-			console.error("   Connection failed. Check SMTP host and port.");
+			console.error("   ❌ Connection failed. Check SMTP host and port.");
 		} else if (emailError.response) {
-			console.error(`   SMTP Server Response: ${emailError.response}`);
+			console.error(`   ❌ SMTP Server Response: ${emailError.response}`);
+		}
+		
+		if (error instanceof Error && error.stack) {
+			console.error(`   Stack trace:`, error.stack);
 		}
 		
 		// Don't throw - return null so calling code can handle gracefully

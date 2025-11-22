@@ -74,16 +74,8 @@ export default async function StudentDashboardPage({
     if (s === "ESCALATED") {
       conditions.push(sql`${tickets.escalation_level} > 0`);
     } else {
-      // Join with ticket_statuses to filter by status value
-      const [statusRow] = await db
-        .select({ id: ticket_statuses.id })
-        .from(ticket_statuses)
-        .where(eq(ticket_statuses.value, s))
-        .limit(1);
-      
-      if (statusRow) {
-        conditions.push(eq(tickets.status_id, statusRow.id));
-      }
+      // Filter by status value using the join (ticket_statuses is joined in main query)
+      conditions.push(eq(ticket_statuses.value, s));
     }
   }
 
@@ -92,30 +84,30 @@ export default async function StudentDashboardPage({
     conditions.push(ilike(categories.slug, categoryFilter.toLowerCase()));
   }
 
-  // Subcategory Filter (slug-based -> metadata ID)
-  if (subcategoryFilter) {
-    const [sub] = await db
-      .select({ id: subcategories.id })
-      .from(subcategories)
-      .where(eq(subcategories.slug, subcategoryFilter))
-      .limit(1);
+  // Subcategory and Sub-subcategory Filters - fetch in parallel
+  const [subcategoryResult, subSubcategoryResult] = await Promise.all([
+    subcategoryFilter
+      ? db
+          .select({ id: subcategories.id })
+          .from(subcategories)
+          .where(eq(subcategories.slug, subcategoryFilter))
+          .limit(1)
+      : Promise.resolve([]),
+    subSubcategoryFilter
+      ? db
+          .select({ id: sub_subcategories.id })
+          .from(sub_subcategories)
+          .where(eq(sub_subcategories.slug, subSubcategoryFilter))
+          .limit(1)
+      : Promise.resolve([]),
+  ]);
 
-    if (sub) {
-      conditions.push(sql`metadata->>'subcategoryId' = ${String(sub.id)}`);
-    }
+  if (subcategoryResult.length > 0) {
+    conditions.push(sql`metadata->>'subcategoryId' = ${String(subcategoryResult[0].id)}`);
   }
 
-  // Sub-subcategory Filter (slug-based -> metadata ID)
-  if (subSubcategoryFilter) {
-    const [subSub] = await db
-      .select({ id: sub_subcategories.id })
-      .from(sub_subcategories)
-      .where(eq(sub_subcategories.slug, subSubcategoryFilter))
-      .limit(1);
-
-    if (subSub) {
-      conditions.push(sql`metadata->>'subSubcategoryId' = ${String(subSub.id)}`);
-    }
+  if (subSubcategoryResult.length > 0) {
+    conditions.push(sql`metadata->>'subSubcategoryId' = ${String(subSubcategoryResult[0].id)}`);
   }
 
   // Dynamic Field Filters (f_ prefix)
@@ -162,8 +154,9 @@ export default async function StudentDashboardPage({
   }
 
   // -----------------------------
-  // 5. Fetch Filtered Tickets
+  // 5. Fetch Filtered Tickets (with LIMIT to prevent timeouts)
   // -----------------------------
+  const TICKET_LIMIT = 100; // Limit to prevent timeouts on large datasets
   const allTicketsRaw = await db
     .select({
       id: tickets.id,
@@ -213,7 +206,8 @@ export default async function StudentDashboardPage({
     .leftJoin(users, eq(tickets.created_by, users.id))
     .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
     .where(and(...conditions))
-    .orderBy(orderBy);
+    .orderBy(orderBy)
+    .limit(TICKET_LIMIT);
   
   // Map to TicketCard format
   const allTickets = allTicketsRaw.map(ticket => ({

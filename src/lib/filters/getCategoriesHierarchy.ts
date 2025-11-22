@@ -1,8 +1,10 @@
 import { db } from "@/db";
 import { categories, subcategories, sub_subcategories, category_fields, field_options } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { unstable_cache } from "next/cache";
 
-export async function getCategoriesHierarchy() {
+export const getCategoriesHierarchy = unstable_cache(
+  async () => {
     // Fetch all data in parallel for performance (without orderBy)
     const [
         activeCategories,
@@ -124,4 +126,10 @@ export async function getCategoriesHierarchy() {
     });
 
     return categoriesWithSubcategories;
-}
+  },
+  ["categories-hierarchy"],
+  {
+    revalidate: 300, // Cache for 5 minutes
+    tags: ["categories"],
+  }
+);

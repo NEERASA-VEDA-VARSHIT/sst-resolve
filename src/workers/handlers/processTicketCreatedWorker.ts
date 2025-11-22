@@ -335,6 +335,7 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
           classSection
         );
 
+        console.log(`[processTicketCreated] Attempting to send email to ${studentEmail} for ticket #${ticket.id}`);
         const emailResult = await sendEmail({
           to: studentEmail,
           subject: emailTemplate.subject,
@@ -346,8 +347,11 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
           setMetadataValue("originalEmailMessageId", emailResult.messageId);
           setMetadataValue("originalEmailSubject", emailTemplate.subject);
           console.log(`[processTicketCreated] ✅ Email sent successfully for ticket #${ticket.id} (Message-ID: ${emailResult.messageId})`);
+        } else if (emailResult === null) {
+          console.error(`[processTicketCreated] ❌ Email sending failed for ticket #${ticket.id} - sendEmail returned null`);
+          console.error(`[processTicketCreated] This usually means: SMTP not configured, invalid email address, or SMTP error occurred`);
         } else {
-          console.warn(`[processTicketCreated] ⚠️ Email sent for ticket #${ticket.id} but no Message-ID returned`);
+          console.warn(`[processTicketCreated] ⚠️ Email sent for ticket #${ticket.id} but no Message-ID returned (result: ${JSON.stringify(emailResult)})`);
         }
       } catch (error) {
         console.error(

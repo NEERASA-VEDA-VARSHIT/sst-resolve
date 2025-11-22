@@ -1,7 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { db, tickets } from "@/db";
-import { desc, sql, and, count } from "drizzle-orm";
+import { db, tickets, ticket_statuses, categories, users } from "@/db";
+import { desc, sql, and, count, eq } from "drizzle-orm";
 import Link from "next/link";
 import { TicketCard } from "@/components/layout/TicketCard";
 import { AdminTicketFilters } from "@/components/admin/AdminTicketFilters";
@@ -81,8 +81,12 @@ export default async function SuperAdminAllTicketsPage({ searchParams }: { searc
     created_at: Date;
     updated_at: Date;
     status_id: number;
+    status: string | null;
     category_id: number | null;
+    category_name: string | null;
     created_by: string;
+    creator_name: string | null;
+    creator_email: string | null;
     assigned_to: string | null;
     description: string | null;
     location: string | null;
@@ -104,44 +108,72 @@ export default async function SuperAdminAllTicketsPage({ searchParams }: { searc
     const [totalRow] = await totalQuery;
     total = totalRow?.total || 0;
 
-    // fetch page
-    const rowsQuery = whereClauses.length > 0
-      ? db.select({
-        id: tickets.id,
-        created_at: tickets.created_at,
-        updated_at: tickets.updated_at,
-        status_id: tickets.status_id,
-        category_id: tickets.category_id,
-        created_by: tickets.created_by,
-        assigned_to: tickets.assigned_to,
-        description: tickets.description,
-        location: tickets.location,
-        metadata: tickets.metadata,
-        escalation_level: tickets.escalation_level,
-        resolved_at: tickets.resolved_at,
-        acknowledged_at: tickets.acknowledged_at,
-        resolution_due_at: tickets.resolution_due_at,
-        rating: tickets.rating,
-      }).from(tickets).where(and(...whereClauses)).orderBy(desc(tickets.created_at)).limit(limit).offset(offset)
-      : db.select({
-        id: tickets.id,
-        created_at: tickets.created_at,
-        updated_at: tickets.updated_at,
-        status_id: tickets.status_id,
-        category_id: tickets.category_id,
-        created_by: tickets.created_by,
-        assigned_to: tickets.assigned_to,
-        description: tickets.description,
-        location: tickets.location,
-        metadata: tickets.metadata,
-        escalation_level: tickets.escalation_level,
-        resolved_at: tickets.resolved_at,
-        acknowledged_at: tickets.acknowledged_at,
-        resolution_due_at: tickets.resolution_due_at,
-        rating: tickets.rating,
-      }).from(tickets).orderBy(desc(tickets.created_at)).limit(limit).offset(offset);
+    // fetch page with joins for status, category, and creator info
+    type TicketRowRaw = {
+      id: number;
+      created_at: Date;
+      updated_at: Date;
+      status_id: number;
+      status: string | null;
+      category_id: number | null;
+      category_name: string | null;
+      created_by: string;
+      creator_first_name: string | null;
+      creator_last_name: string | null;
+      creator_email: string | null;
+      assigned_to: string | null;
+      description: string | null;
+      location: string | null;
+      metadata: unknown;
+      escalation_level: number;
+      resolved_at: Date | null;
+      acknowledged_at: Date | null;
+      resolution_due_at: Date | null;
+      rating: number | null;
+    };
 
-    allTickets = await rowsQuery;
+    const baseQuery = db
+      .select({
+        id: tickets.id,
+        created_at: tickets.created_at,
+        updated_at: tickets.updated_at,
+        status_id: tickets.status_id,
+        status: ticket_statuses.value,
+        category_id: tickets.category_id,
+        category_name: categories.name,
+        created_by: tickets.created_by,
+        creator_first_name: users.first_name,
+        creator_last_name: users.last_name,
+        creator_email: users.email,
+        assigned_to: tickets.assigned_to,
+        description: tickets.description,
+        location: tickets.location,
+        metadata: tickets.metadata,
+        escalation_level: tickets.escalation_level,
+        resolved_at: tickets.resolved_at,
+        acknowledged_at: tickets.acknowledged_at,
+        resolution_due_at: tickets.resolution_due_at,
+        rating: tickets.rating,
+      })
+      .from(tickets)
+      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
+      .leftJoin(categories, eq(tickets.category_id, categories.id))
+      .leftJoin(users, eq(tickets.created_by, users.id))
+      .orderBy(desc(tickets.created_at))
+      .limit(limit)
+      .offset(offset);
+
+    const rowsQuery = whereClauses.length > 0
+      ? baseQuery.where(and(...whereClauses))
+      : baseQuery;
+
+    const rawTickets: TicketRowRaw[] = await rowsQuery;
+    
+    // Transform to combine first_name and last_name into creator_name
+    allTickets = rawTickets.map(t => ({
+      ...t,
+      creator_name: [t.creator_first_name, t.creator_last_name].filter(Boolean).join(" ").trim() || null,
+    }));
   } catch (error) {
     console.error('[Super Admin All Tickets] Error fetching tickets:', error);
     throw new Error('Failed to load tickets');
@@ -224,7 +256,13 @@ export default async function SuperAdminAllTicketsPage({ searchParams }: { searc
           {allTickets.map((ticket) => (
             <TicketCard 
               key={ticket.id} 
-              ticket={ticket as Ticket & { status?: string | null; category_name?: string | null; creator_name?: string | null; creator_email?: string | null; }} 
+              ticket={{
+                ...ticket,
+                status: ticket.status || null,
+                category_name: ticket.category_name || null,
+                creator_name: ticket.creator_name || null,
+                creator_email: ticket.creator_email || null,
+              } as Ticket & { status?: string | null; category_name?: string | null; creator_name?: string | null; creator_email?: string | null; }} 
               basePath="/superadmin/dashboard" 
             />
           ))}
