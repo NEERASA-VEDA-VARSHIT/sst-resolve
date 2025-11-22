@@ -73,7 +73,10 @@ export async function POST(request: NextRequest) {
         .orderBy(desc(outboxTable.created_at))
         .limit(1);
       
-      if (outboxEvent && outboxEvent.payload) {
+      if (!outboxEvent) {
+        console.warn(`[Ticket API] No outbox event found for ticket #${ticket.id}. Email will be sent by cron job.`);
+      } else if (outboxEvent && outboxEvent.payload) {
+        console.log(`[Ticket API] Found outbox event ${outboxEvent.id} for ticket #${ticket.id}`);
         // Ensure payload is a valid object
         type TicketCreatedPayload = {
           ticket_id: number;
@@ -104,12 +107,16 @@ export async function POST(request: NextRequest) {
         }
         
         // Process immediately (non-blocking to avoid delaying the response)
+        console.log(`[Ticket API] Processing outbox event ${outboxEvent.id} for ticket #${payload.ticket_id}`);
         processTicketCreated(outboxEvent.id, payload)
-          .then(() => markOutboxSuccess(outboxEvent.id))
+          .then(() => {
+            console.log(`[Ticket API] ✅ Successfully processed outbox event ${outboxEvent.id}`);
+            return markOutboxSuccess(outboxEvent.id);
+          })
           .catch((error) => {
-            console.error("[Ticket API] Failed to process outbox immediately:", error);
+            console.error(`[Ticket API] ❌ Failed to process outbox event ${outboxEvent.id}:`, error);
             console.error("[Ticket API] Error stack:", error instanceof Error ? error.stack : "No stack trace");
-            markOutboxFailure(outboxEvent.id, error instanceof Error ? error.message : "Unknown error");
+            return markOutboxFailure(outboxEvent.id, error instanceof Error ? error.message : "Unknown error");
           });
       }
     } catch (error) {

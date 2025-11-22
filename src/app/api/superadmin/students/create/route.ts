@@ -133,42 +133,6 @@ export async function POST(request: NextRequest) {
 			}
 		}
 
-		// Check if user already exists
-		const [existingUser] = await db
-			.select()
-			.from(users)
-			.where(eq(users.email, cleanedEmail))
-			.limit(1);
-
-		if (existingUser) {
-			// Check if user has already signed up with Clerk (not just a pending user)
-			if (existingUser.clerk_id && !existingUser.clerk_id.startsWith('pending_')) {
-				return NextResponse.json(
-					{ error: "A user with this email already exists and has signed up. Please use a different email address." },
-					{ status: 409 }
-				);
-			}
-			// User exists but is pending - we can still return an error to avoid duplicates
-			return NextResponse.json(
-				{ error: "A user with this email already exists. Please use a different email address." },
-				{ status: 409 }
-			);
-		}
-
-		// Check if roll number already exists
-		const [existingStudentByRoll] = await db
-			.select()
-			.from(students)
-			.where(eq(students.roll_no, user_number.trim()))
-			.limit(1);
-
-		if (existingStudentByRoll) {
-			return NextResponse.json(
-				{ error: "A student with this roll number already exists" },
-				{ status: 400 }
-			);
-		}
-
 		// Get student role
 		const [studentRole] = await db
 			.select({ id: roles.id })
@@ -187,20 +151,70 @@ export async function POST(request: NextRequest) {
 		const nameParts = splitFullName(cleanFullName(full_name));
 		const cleanedName = cleanFullName(full_name);
 
-		// Create user and student in a transaction
+		// Check if user already exists
+		const [existingUser] = await db
+			.select()
+			.from(users)
+			.where(eq(users.email, cleanedEmail))
+			.limit(1);
+
+		// Check if student with this roll number already exists (and is linked to a different user)
+		const [existingStudentByRoll] = await db
+			.select({
+				id: students.id,
+				user_id: students.user_id,
+			})
+			.from(students)
+			.where(eq(students.roll_no, user_number.trim()))
+			.limit(1);
+
+		// If roll number exists and is linked to a different user, that's an error
+		if (existingStudentByRoll && existingUser && existingStudentByRoll.user_id !== existingUser.id) {
+			return NextResponse.json(
+				{ error: "A student with this roll number already exists and is linked to a different user" },
+				{ status: 400 }
+			);
+		}
+
+		// If roll number exists but no user exists, that's also an error (data inconsistency)
+		if (existingStudentByRoll && !existingUser) {
+			return NextResponse.json(
+				{ error: "A student with this roll number already exists. Please contact support." },
+				{ status: 400 }
+			);
+		}
+
+		// Create or update user and student in a transaction
 		const result = await db.transaction(async (tx) => {
-			// Create user
-			const [newUser] = await tx
-				.insert(users)
-				.values({
-					clerk_id: `pending_${cleanedEmail}`, // Temporary, will be updated on first login
-					email: cleanedEmail,
-					first_name: nameParts.first_name,
-					last_name: nameParts.last_name,
-					phone: cleanedMobile,
-					role_id: studentRole.id,
-				})
-				.returning();
+			let targetUser = existingUser;
+
+			// If user doesn't exist, create it
+			if (!targetUser) {
+				const [newUser] = await tx
+					.insert(users)
+					.values({
+						clerk_id: `pending_${cleanedEmail}`, // Temporary, will be updated on first login
+						email: cleanedEmail,
+						first_name: nameParts.first_name,
+						last_name: nameParts.last_name,
+						phone: cleanedMobile,
+						role_id: studentRole.id,
+					})
+					.returning();
+				targetUser = newUser;
+			} else {
+				// User exists - update their info (name, phone) but keep their clerk_id
+				await tx
+					.update(users)
+					.set({
+						first_name: nameParts.first_name,
+						last_name: nameParts.last_name,
+						phone: cleanedMobile || targetUser.phone,
+						role_id: studentRole.id, // Ensure they have student role
+						updated_at: new Date(),
+					})
+					.where(eq(users.id, targetUser.id));
+			}
 
 			// Get batch_year from batch_id if provided
 			let batch_year: number | null = null;
@@ -215,31 +229,67 @@ export async function POST(request: NextRequest) {
 				}
 			}
 
-			// Create student
-			const [newStudent] = await tx
-				.insert(students)
-				.values({
-					user_id: newUser.id,
-					roll_no: user_number.trim(),
-					room_no: room_number?.trim() || null,
-					hostel_id: hostel_id || null,
-					class_section_id: class_section_id || null,
-					batch_id: batch_id || null,
-					batch_year: batch_year,
-					department: department?.trim() || null,
-					source: "manual", // Track that this was created manually
-					active: true,
-					last_synced_at: new Date(),
-				})
-				.returning();
+			// Check if student record already exists for this user
+			const [existingStudent] = await tx
+				.select()
+				.from(students)
+				.where(eq(students.user_id, targetUser.id))
+				.limit(1);
 
-			return { user: newUser, student: newStudent };
+			let studentRecord;
+			let wasStudentCreated = false;
+			if (existingStudent) {
+				// Update existing student record
+				const [updatedStudent] = await tx
+					.update(students)
+					.set({
+						roll_no: user_number.trim(),
+						room_no: room_number?.trim() || null,
+						hostel_id: hostel_id || null,
+						class_section_id: class_section_id || null,
+						batch_id: batch_id || null,
+						batch_year: batch_year,
+						department: department?.trim() || null,
+						source: "manual", // Track that this was updated manually
+						active: true,
+						last_synced_at: new Date(),
+						updated_at: new Date(),
+					})
+					.where(eq(students.id, existingStudent.id))
+					.returning();
+				studentRecord = updatedStudent;
+				wasStudentCreated = false;
+			} else {
+				// Create new student record
+				const [newStudent] = await tx
+					.insert(students)
+					.values({
+						user_id: targetUser.id,
+						roll_no: user_number.trim(),
+						room_no: room_number?.trim() || null,
+						hostel_id: hostel_id || null,
+						class_section_id: class_section_id || null,
+						batch_id: batch_id || null,
+						batch_year: batch_year,
+						department: department?.trim() || null,
+						source: "manual", // Track that this was created manually
+						active: true,
+						last_synced_at: new Date(),
+					})
+					.returning();
+				studentRecord = newStudent;
+				wasStudentCreated = true;
+			}
+
+			return { user: targetUser, student: studentRecord, wasStudentCreated };
 		});
 
 		return NextResponse.json(
 			{
 				success: true,
-				message: "Student created successfully",
+				message: result.wasStudentCreated 
+					? "Student created successfully" 
+					: "Student profile updated successfully",
 				student: {
 					id: result.student.id,
 					roll_no: result.student.roll_no,
@@ -247,7 +297,7 @@ export async function POST(request: NextRequest) {
 					full_name: cleanedName,
 				},
 			},
-			{ status: 201 }
+			{ status: result.wasStudentCreated ? 201 : 200 }
 		);
 	} catch (error: unknown) {
 		console.error("Create student error:", error);

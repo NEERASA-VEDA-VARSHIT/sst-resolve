@@ -82,6 +82,7 @@ const shouldSendSlack = (categoryName: string): categoryName is SlackCategory =>
 };
 
 export async function processTicketCreated(outboxId: number, payload: TicketCreatedPayload) {
+  console.log(`[processTicketCreated] Starting processing for outbox ${outboxId} with payload:`, JSON.stringify(payload));
   try {
     // Safety check: ensure payload is a valid object
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
@@ -95,6 +96,7 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
     }
 
     const ticketId = Number(payload.ticket_id);
+    console.log(`[processTicketCreated] Processing ticket #${ticketId} from outbox ${outboxId}`);
     const [ticketRow] = await db
       .select({
         id: tickets.id,

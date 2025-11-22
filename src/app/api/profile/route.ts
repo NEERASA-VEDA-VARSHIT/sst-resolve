@@ -61,6 +61,7 @@ export async function GET() {
     const profile = await getStudentProfile(dbUser.id);
 
     if (!profile) {
+      console.warn(`[GET /api/profile] Student profile not found for user ${dbUser.id} (email: ${dbUser.email}, clerk_id: ${dbUser.clerk_id})`);
       return NextResponse.json(
         { error: "Student profile not found", needsLink: true, userNumber },
         { status: 404 }
@@ -151,6 +152,11 @@ export async function PATCH(request: NextRequest) {
     }
 
     /* ---------------------------
+       Check if student record exists
+    ----------------------------*/
+    const existingProfile = await getStudentProfile(dbUser.id);
+
+    /* ---------------------------
        Update STUDENT FIELDS
     ----------------------------*/
     const studentUpdates: Record<string, unknown> = {};
@@ -165,6 +171,16 @@ export async function PATCH(request: NextRequest) {
     }
 
     if (Object.keys(studentUpdates).length > 0) {
+      if (!existingProfile) {
+        // Student record doesn't exist - this shouldn't happen if user was created via admin form
+        // But we'll return a helpful error message
+        console.error(`[PATCH /api/profile] Student record not found for user ${dbUser.id} (email: ${dbUser.email})`);
+        return NextResponse.json(
+          { error: "Student profile not found. Please contact administration to create your student profile." },
+          { status: 404 }
+        );
+      }
+
       studentUpdates.updated_at = new Date();
 
       await db
@@ -178,8 +194,13 @@ export async function PATCH(request: NextRequest) {
     ----------------------------*/
     const profile = await getStudentProfile(dbUser.id);
 
-    if (!profile)
-      return NextResponse.json({ error: "Student profile not found" }, { status: 404 });
+    if (!profile) {
+      console.error(`[PATCH /api/profile] Student profile not found after update for user ${dbUser.id}`);
+      return NextResponse.json(
+        { error: "Student profile not found. Please contact administration to create your student profile." },
+        { status: 404 }
+      );
+    }
 
     // Construct full name from first_name and last_name
     const full_name = [dbUser.first_name, dbUser.last_name]
