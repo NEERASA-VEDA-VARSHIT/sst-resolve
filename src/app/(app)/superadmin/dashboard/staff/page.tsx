@@ -26,10 +26,19 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Users, Plus, Edit, Trash2, Building2, GraduationCap, MapPin, Loader2, User, Mail, Shield } from "lucide-react";
+import { Users, Plus, Trash2, Building2, GraduationCap, MapPin, Loader2, Mail, Search, MessageSquare, Phone, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface StaffMember {
   id: string;
@@ -74,8 +83,18 @@ export default function StaffManagementPage() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [editingStaff, setEditingStaff] = useState<StaffMember | null>(null);
   const [deletingStaffId, setDeletingStaffId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [roleFilter, setRoleFilter] = useState<string>("all");
+  const [domainFilter, setDomainFilter] = useState<string>("all");
+  const [formMode, setFormMode] = useState<"select" | "create">("select"); // "select" existing user or "create" new user
   const [formData, setFormData] = useState({
     clerkUserId: "",
+    // For creating new user
+    email: "",
+    firstName: "",
+    lastName: "",
+    phone: "",
+    // Staff assignment
     domain: "",
     scope: "",
     role: "admin",
@@ -175,8 +194,13 @@ export default function StaffManagementPage() {
   const handleOpenDialog = (staffMember?: StaffMember) => {
     if (staffMember) {
       setEditingStaff(staffMember);
+      setFormMode("select");
       setFormData({
         clerkUserId: staffMember.clerkUserId || "",
+        email: staffMember.email || "",
+        firstName: "",
+        lastName: "",
+        phone: staffMember.whatsappNumber || "",
         domain: staffMember.domain,
         scope: staffMember.scope || "",
         role: staffMember.role,
@@ -185,8 +209,13 @@ export default function StaffManagementPage() {
       });
     } else {
       setEditingStaff(null);
+      setFormMode("select");
       setFormData({
         clerkUserId: "",
+        email: "",
+        firstName: "",
+        lastName: "",
+        phone: "",
         domain: "",
         scope: "",
         role: "admin",
@@ -200,9 +229,14 @@ export default function StaffManagementPage() {
   const handleCloseDialog = () => {
     setIsDialogOpen(false);
     setEditingStaff(null);
+    setFormMode("select");
     setErrors({});
     setFormData({
       clerkUserId: "",
+      email: "",
+      firstName: "",
+      lastName: "",
+      phone: "",
       domain: "",
       scope: "",
       role: "admin",
@@ -220,28 +254,53 @@ export default function StaffManagementPage() {
     // Validation
     const newErrors: Record<string, string> = {};
 
-    if (!formData.clerkUserId || formData.clerkUserId === "none") {
-      newErrors.clerkUserId = "Please select a user";
+    if (formMode === "select") {
+      if (!formData.clerkUserId || formData.clerkUserId === "none") {
+        newErrors.clerkUserId = "Please select a user";
+      }
+    } else {
+      // Create new user mode
+      if (!formData.email || !formData.email.includes("@")) {
+        newErrors.email = "Please enter a valid email address";
+      }
+      if (!formData.firstName?.trim()) {
+        newErrors.firstName = "First name is required";
+      }
+      if (!formData.lastName?.trim()) {
+        newErrors.lastName = "Last name is required";
+      }
     }
 
-    if (!formData.domain) {
-      newErrors.domain = "Please select a domain";
-    }
+    // Domain and scope are optional for super_admin
+    if (formData.role !== "super_admin") {
+      if (!formData.domain) {
+        newErrors.domain = "Please select a domain";
+      }
 
-    if (formData.domain === "Hostel" && !formData.scope) {
-      newErrors.scope = "Please select a hostel (scope) for Hostel domain";
-    }
+      if (formData.domain === "Hostel" && !formData.scope) {
+        newErrors.scope = "Please select a hostel (scope) for Hostel domain";
+      }
 
-    if (formData.domain === "College" && formData.scope) {
-      newErrors.scope = "Scope should be empty for College domain";
+      if (formData.domain === "College" && formData.scope) {
+        newErrors.scope = "Scope should be empty for College domain";
+      }
+    } else {
+      // For super_admin, if domain is provided, validate scope accordingly
+      if (formData.domain && formData.domain === "Hostel" && !formData.scope) {
+        newErrors.scope = "Please select a hostel (scope) for Hostel domain";
+      }
+
+      if (formData.domain && formData.domain === "College" && formData.scope) {
+        newErrors.scope = "Scope should be empty for College domain";
+      }
     }
 
     if (!formData.role) {
       newErrors.role = "Please select a role";
     }
 
-    if (formData.role && formData.role !== "admin" && formData.role !== "super_admin") {
-      newErrors.role = "Role must be 'admin' or 'super_admin'";
+    if (formData.role && formData.role !== "admin" && formData.role !== "super_admin" && formData.role !== "committee") {
+      newErrors.role = "Role must be 'admin', 'super_admin', or 'committee'";
     }
 
     if (Object.keys(newErrors).length > 0) {
@@ -253,13 +312,40 @@ export default function StaffManagementPage() {
     setSaving(true);
 
     try {
-      const payload = {
-        ...formData,
-        clerkUserId: formData.clerkUserId === "none" ? null : formData.clerkUserId,
-        scope: formData.domain === "College" ? null : (formData.scope || null),
-        slackUserId: formData.slackUserId || null,
-        whatsappNumber: formData.whatsappNumber || null,
+      type StaffPayload = {
+        domain: string | null;
+        scope: string | null;
+        role: string;
+        slackUserId: string | null;
+        whatsappNumber: string | null;
+        clerkUserId?: string | null;
+        newUser?: {
+          email: string;
+          firstName: string;
+          lastName: string;
+          phone: string | null;
+        };
       };
+
+      const payload: StaffPayload = {
+        domain: formData.domain || null,
+        scope: formData.domain === "College" ? null : (formData.scope || null),
+        role: formData.role,
+        slackUserId: formData.slackUserId || null,
+        whatsappNumber: formData.whatsappNumber || formData.phone || null,
+      };
+
+      if (formMode === "select") {
+        payload.clerkUserId = formData.clerkUserId === "none" ? null : formData.clerkUserId;
+      } else {
+        // Create new user
+        payload.newUser = {
+          email: formData.email,
+          firstName: formData.firstName,
+          lastName: formData.lastName,
+          phone: formData.phone || null,
+        };
+      }
 
       let response;
       if (editingStaff) {
@@ -339,6 +425,20 @@ export default function StaffManagementPage() {
     return domain === "Hostel" ? "text-blue-600 dark:text-blue-400" : "text-purple-600 dark:text-purple-400";
   };
 
+  // Filter staff based on search and filters
+  const filteredStaff = staff.filter((member) => {
+    const matchesSearch = !searchQuery || 
+      member.fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      member.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      member.slackUserId?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      member.whatsappNumber?.includes(searchQuery);
+    
+    const matchesRole = roleFilter === "all" || member.role === roleFilter;
+    const matchesDomain = domainFilter === "all" || member.domain === domainFilter;
+    
+    return matchesSearch && matchesRole && matchesDomain;
+  });
+
   // Show loading state only if we haven't loaded master data yet
   // Once master data is loaded (even if empty), show the page
   if (loadingMasterData && !masterData) {
@@ -399,12 +499,12 @@ export default function StaffManagementPage() {
               <DialogHeader>
                 <DialogTitle>{editingStaff ? "Edit Staff Member" : "Add New Staff Member"}</DialogTitle>
                 <DialogDescription>
-                  {editingStaff ? "Update staff member details" : "Assign an admin to a domain and location. This determines which tickets they will automatically receive."}
+                  {editingStaff ? "Update staff member details" : "Assign an admin to a domain and location. This determines which tickets they will automatically receive. Note: Domain and scope are optional for Super Admin."}
                 </DialogDescription>
                 {!editingStaff && (
                   <ul className="mt-2 ml-4 list-disc text-sm space-y-1 text-muted-foreground">
-                    <li><strong>Domain:</strong> Select the category (Hostel/College)</li>
-                    <li><strong>Scope:</strong> For Hostel domain, select specific hostel. For College, no scope needed.</li>
+                    <li><strong>Domain:</strong> Select the category (Hostel/College). Optional for Super Admin.</li>
+                    <li><strong>Scope:</strong> For Hostel domain, select specific hostel. For College, no scope needed. Optional for Super Admin.</li>
                   </ul>
                 )}
               </DialogHeader>
@@ -417,66 +517,168 @@ export default function StaffManagementPage() {
                 </div>
               ) : (
                 <form onSubmit={handleSubmit} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="clerkUserId">Select User *</Label>
-                    <Select
-                      value={formData.clerkUserId || undefined}
-                      onValueChange={(value) => {
-                        setFormData({ ...formData, clerkUserId: value === "none" ? "" : value });
-                        setErrors({ ...errors, clerkUserId: "" });
-                      }}
-                      required
-                    >
-                      <SelectTrigger id="clerkUserId" className={errors.clerkUserId ? "border-destructive" : ""}>
-                        <SelectValue placeholder="Select a user" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">None</SelectItem>
-                        {clerkUsers
-                          .filter(user => {
-                            // When editing, show current user; when creating, exclude users already in staff
-                            if (editingStaff && staff.find(s => s.clerkUserId === user.id && s.id !== editingStaff.id)) {
-                              return false;
-                            }
-                            if (!editingStaff && staff.find(s => s.clerkUserId === user.id)) {
-                              return false;
-                            }
-                            return true;
-                          })
-                          .map((user, index) => {
-                            const displayName = user.name ||
-                              (user.firstName && user.lastName
-                                ? `${user.firstName} ${user.lastName}`
-                                : user.emailAddresses?.[0]?.emailAddress ||
-                                user.email ||
-                                user.id);
-                            return (
-                              <SelectItem key={`user-${user.id}-${index}`} value={user.id}>
-                                {displayName}
-                              </SelectItem>
-                            );
-                          })}
-                      </SelectContent>
-                    </Select>
-                    {selectedUser && (
-                      <div className="p-3 bg-muted rounded-lg space-y-1">
-                        <p className="text-sm font-medium">{selectedUserFullName}</p>
-                        {selectedUserEmail && (
-                          <p className="text-xs text-muted-foreground">{selectedUserEmail}</p>
+                  {!editingStaff && (
+                    <div className="space-y-2">
+                      <Label>User Selection Mode</Label>
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          variant={formMode === "select" ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => setFormMode("select")}
+                        >
+                          Select Existing User
+                        </Button>
+                        <Button
+                          type="button"
+                          variant={formMode === "create" ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => setFormMode("create")}
+                        >
+                          Create New User
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {formMode === "select" 
+                          ? "Select an existing user from Clerk to assign as staff."
+                          : "Create a new user account and assign them as staff. They will need to sign up with Clerk using this email."}
+                      </p>
+                    </div>
+                  )}
+
+                  {formMode === "select" ? (
+                    <div className="space-y-2">
+                      <Label htmlFor="clerkUserId">Select User *</Label>
+                      <Select
+                        value={formData.clerkUserId || undefined}
+                        onValueChange={(value) => {
+                          setFormData({ ...formData, clerkUserId: value === "none" ? "" : value });
+                          setErrors({ ...errors, clerkUserId: "" });
+                        }}
+                        required={formMode === "select"}
+                      >
+                        <SelectTrigger id="clerkUserId" className={errors.clerkUserId ? "border-destructive" : ""}>
+                          <SelectValue placeholder="Select a user" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">None</SelectItem>
+                          {clerkUsers
+                            .filter(user => {
+                              // When editing, show current user; when creating, exclude users already in staff
+                              if (editingStaff && staff.find(s => s.clerkUserId === user.id && s.id !== editingStaff.id)) {
+                                return false;
+                              }
+                              if (!editingStaff && staff.find(s => s.clerkUserId === user.id)) {
+                                return false;
+                              }
+                              return true;
+                            })
+                            .map((user, index) => {
+                              const displayName = user.name ||
+                                (user.firstName && user.lastName
+                                  ? `${user.firstName} ${user.lastName}`
+                                  : user.emailAddresses?.[0]?.emailAddress ||
+                                  user.email ||
+                                  user.id);
+                              return (
+                                <SelectItem key={`user-${user.id}-${index}`} value={user.id}>
+                                  {displayName}
+                                </SelectItem>
+                              );
+                            })}
+                        </SelectContent>
+                      </Select>
+                      {selectedUser && (
+                        <div className="p-3 bg-muted rounded-lg space-y-1">
+                          <p className="text-sm font-medium">{selectedUserFullName}</p>
+                          {selectedUserEmail && (
+                            <p className="text-xs text-muted-foreground">{selectedUserEmail}</p>
+                          )}
+                        </div>
+                      )}
+                      <p className="text-xs text-muted-foreground">
+                        Select a user from Clerk. Their name and email will be automatically used.
+                      </p>
+                      {errors.clerkUserId && (
+                        <p className="text-sm text-destructive">{errors.clerkUserId}</p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-4 p-4 border rounded-lg bg-muted/30">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="firstName">First Name *</Label>
+                          <Input
+                            id="firstName"
+                            value={formData.firstName}
+                            onChange={(e) => {
+                              setFormData({ ...formData, firstName: e.target.value });
+                              setErrors({ ...errors, firstName: "" });
+                            }}
+                            placeholder="John"
+                            required={formMode === "create"}
+                          />
+                          {errors.firstName && (
+                            <p className="text-sm text-destructive">{errors.firstName}</p>
+                          )}
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="lastName">Last Name *</Label>
+                          <Input
+                            id="lastName"
+                            value={formData.lastName}
+                            onChange={(e) => {
+                              setFormData({ ...formData, lastName: e.target.value });
+                              setErrors({ ...errors, lastName: "" });
+                            }}
+                            placeholder="Doe"
+                            required={formMode === "create"}
+                          />
+                          {errors.lastName && (
+                            <p className="text-sm text-destructive">{errors.lastName}</p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="email">Email *</Label>
+                        <Input
+                          id="email"
+                          type="email"
+                          value={formData.email}
+                          onChange={(e) => {
+                            setFormData({ ...formData, email: e.target.value });
+                            setErrors({ ...errors, email: "" });
+                          }}
+                          placeholder="john.doe@example.com"
+                          required={formMode === "create"}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          User must sign up with Clerk using this email address.
+                        </p>
+                        {errors.email && (
+                          <p className="text-sm text-destructive">{errors.email}</p>
                         )}
                       </div>
-                    )}
-                    <p className="text-xs text-muted-foreground">
-                      Select a user from Clerk. Their name and email will be automatically used.
-                    </p>
-                    {errors.clerkUserId && (
-                      <p className="text-sm text-destructive">{errors.clerkUserId}</p>
-                    )}
-                  </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="phone">Phone (WhatsApp)</Label>
+                        <Input
+                          id="phone"
+                          value={formData.phone}
+                          onChange={(e) => {
+                            setFormData({ ...formData, phone: e.target.value });
+                          }}
+                          placeholder="+1234567890"
+                        />
+                      </div>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="domain">Domain *</Label>
+                      <Label htmlFor="domain">
+                        Domain {formData.role !== "super_admin" && "*"}
+                        {formData.role === "super_admin" && <span className="text-muted-foreground text-xs ml-1">(Optional)</span>}
+                      </Label>
                       <Select
                         value={formData.domain}
                         onValueChange={(value) => {
@@ -487,7 +689,7 @@ export default function StaffManagementPage() {
                           });
                           setErrors({ ...errors, domain: "", scope: "" });
                         }}
-                        required
+                        required={formData.role !== "super_admin"}
                       >
                         <SelectTrigger id="domain" className={errors.domain ? "border-destructive" : ""}>
                           <SelectValue placeholder={masterData ? "Select domain" : "Loading..."} />
@@ -498,11 +700,13 @@ export default function StaffManagementPage() {
                           ) : masterData.domains.length === 0 ? (
                             <SelectItem value="empty" disabled>No domains available</SelectItem>
                           ) : (
-                            masterData.domains.map((domain) => (
-                              <SelectItem key={domain.value} value={domain.value}>
-                                {domain.label}
-                              </SelectItem>
-                            ))
+                            masterData.domains
+                              .filter(domain => domain.value && domain.value.trim() !== "")
+                              .map((domain) => (
+                                <SelectItem key={domain.value} value={domain.value}>
+                                  {domain.label}
+                                </SelectItem>
+                              ))
                           )}
                         </SelectContent>
                       </Select>
@@ -512,14 +716,17 @@ export default function StaffManagementPage() {
                     </div>
                     {formData.domain === "Hostel" && (
                       <div className="space-y-2">
-                        <Label htmlFor="scope">Scope (Hostel/Location) *</Label>
+                        <Label htmlFor="scope">
+                          Scope (Hostel/Location) {formData.role !== "super_admin" && "*"}
+                          {formData.role === "super_admin" && <span className="text-muted-foreground text-xs ml-1">(Optional)</span>}
+                        </Label>
                         <Select
                           value={formData.scope}
                           onValueChange={(value) => {
                             setFormData({ ...formData, scope: value });
                             setErrors({ ...errors, scope: "" });
                           }}
-                          required
+                          required={formData.role !== "super_admin"}
                           disabled={!masterData || (masterData.scopes.length === 0 && masterData.hostels.length === 0)}
                         >
                           <SelectTrigger id="scope" className={errors.scope ? "border-destructive" : ""}>
@@ -535,11 +742,13 @@ export default function StaffManagementPage() {
                                 {/* Show existing scopes from staff data (dynamic) */}
                                 {masterData.scopes.length > 0 && (
                                   <>
-                                    {masterData.scopes.map((scope) => (
-                                      <SelectItem key={`scope-${scope.value}`} value={scope.value}>
-                                        {scope.label}
-                                      </SelectItem>
-                                    ))}
+                                    {masterData.scopes
+                                      .filter(scope => scope.value && scope.value.trim() !== "")
+                                      .map((scope) => (
+                                        <SelectItem key={`scope-${scope.value}`} value={scope.value}>
+                                          {scope.label}
+                                        </SelectItem>
+                                      ))}
                                     {masterData.hostels.length > 0 && (
                                       <SelectItem value="divider" disabled>
                                         ──── From Hostels Table ────
@@ -549,7 +758,7 @@ export default function StaffManagementPage() {
                                 )}
                                 {/* Also show hostels from hostels table, but only if not already in scopes */}
                                 {masterData.hostels
-                                  .filter(hostel => !masterData.scopes.some(scope => scope.value === hostel.name))
+                                  .filter(hostel => hostel.name && hostel.name.trim() !== "" && !masterData.scopes.some(scope => scope.value === hostel.name))
                                   .map((hostel) => (
                                     <SelectItem key={`hostel-${hostel.id}`} value={hostel.name}>
                                       {hostel.name} {hostel.code ? `(${hostel.code})` : ''}
@@ -582,8 +791,14 @@ export default function StaffManagementPage() {
                     <Select
                       value={formData.role}
                       onValueChange={(value) => {
-                        setFormData({ ...formData, role: value });
-                        setErrors({ ...errors, role: "" });
+                        setFormData({ 
+                          ...formData, 
+                          role: value,
+                          // Clear domain/scope if super_admin is selected
+                          domain: value === "super_admin" ? "" : formData.domain,
+                          scope: value === "super_admin" ? "" : formData.scope,
+                        });
+                        setErrors({ ...errors, role: "", domain: "", scope: "" });
                       }}
                       required
                       disabled={!masterData || masterData.roles.length === 0}
@@ -597,14 +812,21 @@ export default function StaffManagementPage() {
                         ) : masterData.roles.length === 0 ? (
                           <SelectItem value="empty" disabled>No roles available</SelectItem>
                         ) : (
-                          masterData.roles.map((role) => (
-                            <SelectItem key={role.value} value={role.value}>
-                              {role.label}
-                            </SelectItem>
-                          ))
+                          masterData.roles
+                            .filter(role => role.value && role.value.trim() !== "")
+                            .map((role) => (
+                              <SelectItem key={role.value} value={role.value}>
+                                {role.label}
+                              </SelectItem>
+                            ))
                         )}
                       </SelectContent>
                     </Select>
+                    {formData.role === "super_admin" && (
+                      <p className="text-xs text-muted-foreground">
+                        ℹ️ Domain and scope are optional for Super Admin (they have access to all domains/scopes)
+                      </p>
+                    )}
                     {masterData && masterData.roles.length === 0 && (
                       <p className="text-xs text-amber-600 dark:text-amber-400">
                         ⚠️ No staff roles configured. Please configure roles in the system.
@@ -659,101 +881,202 @@ export default function StaffManagementPage() {
         </div>
       </div>
 
-      {/* Staff List */}
-      <div className="space-y-3">
-        {staff.map((member) => {
-          const DomainIcon = getDomainIcon(member.domain);
-          return (
-            <Card key={member.id} className="border-2 hover:shadow-lg transition-all duration-300">
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-lg bg-primary/10`}>
-                      <DomainIcon className={`w-5 h-5 ${getDomainColor(member.domain)}`} />
-                    </div>
-                    <div>
-                      <CardTitle className="text-lg">{member.fullName}</CardTitle>
-                      <CardDescription className="flex items-center gap-2 mt-1">
-                        <Badge variant={member.role === "super_admin" ? "destructive" : "default"}>
-                          {member.role === "super_admin" ? "Super Admin" : "Admin"}
-                        </Badge>
-                        <Badge variant="outline" className={getDomainColor(member.domain)}>
-                          {member.domain}
-                        </Badge>
-                        {member.scope && (
-                          <Badge variant="secondary" className="flex items-center gap-1">
-                            <MapPin className="w-3 h-3" />
-                            {member.scope}
-                          </Badge>
-                        )}
-                      </CardDescription>
-                    </div>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {member.email && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <Mail className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-muted-foreground">{member.email}</span>
-                  </div>
-                )}
-                {member.clerkUserId && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <User className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-muted-foreground font-mono text-xs">
-                      {member.clerkUserId.slice(0, 8)}...
-                    </span>
-                  </div>
-                )}
-                {member.slackUserId && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <Shield className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-muted-foreground font-mono text-xs">{member.slackUserId}</span>
-                  </div>
-                )}
-                <div className="flex gap-2 pt-2 border-t">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleOpenDialog(member)}
-                    className="flex-1"
-                  >
-                    <Edit className="w-4 h-4 mr-2" />
-                    Edit
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => {
-                      setDeletingStaffId(member.id);
-                      setIsDeleteDialogOpen(true);
-                    }}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+      {/* Search and Filters */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Search & Filter</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="md:col-span-1">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                <Input
+                  placeholder="Search by name, email, Slack ID..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+            </div>
+            <Select value={roleFilter} onValueChange={setRoleFilter}>
+              <SelectTrigger>
+                <SelectValue placeholder="Filter by role" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Roles</SelectItem>
+                <SelectItem value="admin">Admin</SelectItem>
+                <SelectItem value="super_admin">Super Admin</SelectItem>
+                <SelectItem value="committee">Committee</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={domainFilter} onValueChange={setDomainFilter}>
+              <SelectTrigger>
+                <SelectValue placeholder="Filter by domain" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Domains</SelectItem>
+                {masterData?.domains.map((domain) => (
+                  <SelectItem key={domain.value} value={domain.value}>
+                    {domain.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
 
-      {staff.length === 0 && (
-        <Card className="border-2 border-dashed">
-          <CardContent className="flex flex-col items-center justify-center py-16">
-            <Users className="w-16 h-16 text-muted-foreground mb-4" />
-            <p className="text-lg font-semibold mb-1">No staff members</p>
-            <p className="text-sm text-muted-foreground text-center max-w-md mb-4">
-              Add staff members to assign them to domains and scopes
-            </p>
-            <Button onClick={() => handleOpenDialog()}>
-              <Plus className="w-4 h-4 mr-2" />
-              Add First Staff Member
-            </Button>
-          </CardContent>
-        </Card>
-      )}
+      {/* Staff Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Staff Members ({filteredStaff.length})</CardTitle>
+          <CardDescription>
+            All admin and super admin profiles managed by the system
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead>Domain</TableHead>
+                  <TableHead>Scope</TableHead>
+                  <TableHead>Slack ID</TableHead>
+                  <TableHead>WhatsApp</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  Array.from({ length: 5 }).map((_, i) => (
+                    <TableRow key={i}>
+                      {Array.from({ length: 8 }).map((_, j) => (
+                        <TableCell key={j}>
+                          <Skeleton className="h-4 w-full" />
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))
+                ) : filteredStaff.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center py-8">
+                      {staff.length === 0 ? (
+                        <>
+                          <Users className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-50" />
+                          <p className="text-lg font-semibold mb-1">No staff members</p>
+                          <p className="text-sm text-muted-foreground mb-4">
+                            Add staff members to assign them to domains and scopes
+                          </p>
+                          <Button onClick={() => handleOpenDialog()}>
+                            <Plus className="w-4 h-4 mr-2" />
+                            Add First Staff Member
+                          </Button>
+                        </>
+                      ) : (
+                        <p className="text-muted-foreground">No staff members match your filters</p>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredStaff.map((member) => {
+                    const DomainIcon = getDomainIcon(member.domain);
+                    return (
+                      <TableRow key={member.id} className="hover:bg-muted/50">
+                        <TableCell className="font-medium">
+                          <div className="flex items-center gap-2">
+                            <div className={`p-1.5 rounded bg-primary/10`}>
+                              <DomainIcon className={`w-4 h-4 ${getDomainColor(member.domain)}`} />
+                            </div>
+                            {member.fullName}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Mail className="w-3 h-3 text-muted-foreground" />
+                            <span className="text-sm text-muted-foreground">
+                              {member.email || "—"}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={member.role === "super_admin" ? "destructive" : "default"}>
+                            {member.role === "super_admin" ? "Super Admin" : "Admin"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={getDomainColor(member.domain)}>
+                            {member.domain || "—"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {member.scope ? (
+                            <Badge variant="secondary" className="flex items-center gap-1 w-fit">
+                              <MapPin className="w-3 h-3" />
+                              {member.scope}
+                            </Badge>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {member.slackUserId ? (
+                            <div className="flex items-center gap-1.5">
+                              <MessageSquare className="w-3 h-3 text-muted-foreground" />
+                              <span className="text-xs font-mono text-muted-foreground">
+                                {member.slackUserId}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {member.whatsappNumber ? (
+                            <div className="flex items-center gap-1.5">
+                              <Phone className="w-3 h-3 text-muted-foreground" />
+                              <span className="text-sm text-muted-foreground">
+                                {member.whatsappNumber}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleOpenDialog(member)}
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setDeletingStaffId(member.id);
+                                setIsDeleteDialogOpen(true);
+                              }}
+                              className="text-destructive hover:text-destructive"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
 
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>

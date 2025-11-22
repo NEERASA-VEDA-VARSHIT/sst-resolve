@@ -5,35 +5,83 @@ import { IntegratedUserManagement } from "@/components/admin/IntegratedUserManag
 import { ArrowLeft, Users as UsersIcon } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { db, users, roles } from "@/db";
+import { eq } from "drizzle-orm";
+import { getUserRoleFromDB } from "@/lib/db-roles";
 
 export default async function SuperAdminUsersPage() {
-  const { userId, sessionClaims } = await auth();
+  const { userId } = await auth();
 
   if (!userId) {
     redirect("/");
   }
 
-  const role = sessionClaims?.metadata?.role || 'student';
+  // Get role from database (single source of truth)
+  const role = await getUserRoleFromDB(userId);
 
   if (role !== 'super_admin') {
     redirect('/student/dashboard');
   }
 
+  // Fetch all users from database with their roles
+  const dbUsers = await db
+    .select({
+      id: users.id,
+      clerkId: users.clerk_id,
+      firstName: users.first_name,
+      lastName: users.last_name,
+      email: users.email,
+      roleName: roles.name,
+    })
+    .from(users)
+    .leftJoin(roles, eq(users.role_id, roles.id));
+
+  // Get Clerk user details for email addresses
   const client = await clerkClient();
-  const userList = await client.users.getUserList();
+  const clerkUserMap = new Map<string, { emailAddresses: Array<{ emailAddress: string }>; firstName: string | null; lastName: string | null }>();
 
-  const users = userList.data.map(user => {
-    const emailAddresses = Array.isArray(user.emailAddresses)
-      ? user.emailAddresses.map((email: { emailAddress?: string | null }) => ({
-        emailAddress: typeof email?.emailAddress === 'string' ? email.emailAddress : String(email?.emailAddress || ''),
-      }))
-      : [];
+  // Fetch Clerk details for users that have clerk_id
+  await Promise.all(
+    dbUsers
+      .filter(u => u.clerkId)
+      .map(async (dbUser) => {
+        try {
+          const clerkUser = await client.users.getUser(dbUser.clerkId!);
+          const emailAddresses = Array.isArray(clerkUser.emailAddresses)
+            ? clerkUser.emailAddresses.map((email: { emailAddress?: string | null }) => ({
+                emailAddress: typeof email?.emailAddress === 'string' ? email.emailAddress : String(email?.emailAddress || ''),
+              }))
+            : dbUser.email ? [{ emailAddress: dbUser.email }] : [];
 
+          clerkUserMap.set(dbUser.clerkId!, {
+            emailAddresses,
+            firstName: clerkUser.firstName,
+            lastName: clerkUser.lastName,
+          });
+        } catch {
+          // Fallback to database email if Clerk fetch fails
+          clerkUserMap.set(dbUser.clerkId!, {
+            emailAddresses: dbUser.email ? [{ emailAddress: dbUser.email }] : [],
+            firstName: dbUser.firstName,
+            lastName: dbUser.lastName,
+          });
+        }
+      })
+  );
+
+  // Map database users to the format expected by IntegratedUserManagement
+  const mappedUsers = dbUsers.map(dbUser => {
+    const clerkData = dbUser.clerkId ? clerkUserMap.get(dbUser.clerkId) : null;
+    
     return {
-      id: user.id,
-      name: [user.firstName, user.lastName].filter(Boolean).join(' ').trim() || null,
-      emailAddresses,
-      publicMetadata: user.publicMetadata || {},
+      id: dbUser.clerkId || String(dbUser.id),
+      name: clerkData
+        ? [clerkData.firstName, clerkData.lastName].filter(Boolean).join(' ').trim() || null
+        : [dbUser.firstName, dbUser.lastName].filter(Boolean).join(' ').trim() || null,
+      emailAddresses: clerkData?.emailAddresses || (dbUser.email ? [{ emailAddress: dbUser.email }] : []),
+      publicMetadata: {
+        role: (dbUser.roleName as "admin" | "student" | "super_admin" | "committee" | undefined) || undefined,
+      },
     };
   });
 
@@ -57,7 +105,7 @@ export default async function SuperAdminUsersPage() {
         </div>
       </div>
 
-      <IntegratedUserManagement users={users} />
+      <IntegratedUserManagement users={mappedUsers} />
     </div>
   );
 }

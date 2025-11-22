@@ -136,11 +136,13 @@ export function ProfileFieldsRenderer({
               <SelectValue placeholder={FIELD_PLACEHOLDERS[key] ?? "Select hostel"} />
             </SelectTrigger>
             <SelectContent>
-              {hostels.map((h) => (
-                <SelectItem key={h.id} value={h.name}>
-                  {h.name}
-                </SelectItem>
-              ))}
+              {hostels
+                .filter(h => h.name && h.name.trim() !== "")
+                .map((h) => (
+                  <SelectItem key={h.id} value={h.name}>
+                    {h.name}
+                  </SelectItem>
+                ))}
             </SelectContent>
           </Select>
 

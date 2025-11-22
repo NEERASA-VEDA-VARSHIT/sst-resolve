@@ -96,15 +96,17 @@ export function DynamicFieldRenderer({
               <SelectValue placeholder={placeholder || "Select"} />
             </SelectTrigger>
             <SelectContent>
-              {(field.options ?? []).map((option, idx) => {
-                // Use id if available, otherwise create a stable key from field.id + index
-                const uniqueKey = option.id ? `opt-${option.id}` : `${field.id}-opt-${idx}`;
-                return (
-                  <SelectItem key={uniqueKey} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                );
-              })}
+              {(field.options ?? [])
+                .filter(option => option.value && option.value.trim() !== "")
+                .map((option, idx) => {
+                  // Use id if available, otherwise create a stable key from field.id + index
+                  const uniqueKey = option.id ? `opt-${option.id}` : `${field.id}-opt-${idx}`;
+                  return (
+                    <SelectItem key={uniqueKey} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  );
+                })}
             </SelectContent>
           </Select>
         );

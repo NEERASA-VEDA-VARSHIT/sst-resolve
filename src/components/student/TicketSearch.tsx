@@ -182,11 +182,13 @@ export default function TicketSearch({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Statuses</SelectItem>
-            {statuses.map((status) => (
-              <SelectItem key={status.value} value={status.value}>
-                {status.label}
-              </SelectItem>
-            ))}
+            {statuses
+              .filter(status => status.value && status.value.trim() !== "")
+              .map((status) => (
+                <SelectItem key={status.value} value={status.value}>
+                  {status.label}
+                </SelectItem>
+              ))}
           </SelectContent>
         </Select>
 
@@ -203,11 +205,13 @@ export default function TicketSearch({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Categories</SelectItem>
-            {!loadingFilters && categories.map((cat) => (
-              <SelectItem key={cat.id} value={cat.value}>
-                {cat.label}
-              </SelectItem>
-            ))}
+            {!loadingFilters && categories
+              .filter(cat => cat.value && cat.value.trim() !== "")
+              .map((cat) => (
+                <SelectItem key={cat.id} value={cat.value}>
+                  {cat.label}
+                </SelectItem>
+              ))}
           </SelectContent>
         </Select>
 
@@ -224,11 +228,13 @@ export default function TicketSearch({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Subcategories</SelectItem>
-              {subcategoriesList.map((sub) => (
-                <SelectItem key={sub.id} value={sub.value}>
-                  {sub.label}
-                </SelectItem>
-              ))}
+              {subcategoriesList
+                .filter(sub => sub.value && sub.value.trim() !== "")
+                .map((sub) => (
+                  <SelectItem key={sub.id} value={sub.value}>
+                    {sub.label}
+                  </SelectItem>
+                ))}
             </SelectContent>
           </Select>
         )}
@@ -244,11 +250,13 @@ export default function TicketSearch({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Types</SelectItem>
-              {subSubcategoriesList.map((sub) => (
-                <SelectItem key={sub.id} value={sub.value}>
-                  {sub.label}
-                </SelectItem>
-              ))}
+              {subSubcategoriesList
+                .filter(sub => sub.value && sub.value.trim() !== "")
+                .map((sub) => (
+                  <SelectItem key={sub.id} value={sub.value}>
+                    {sub.label}
+                  </SelectItem>
+                ))}
             </SelectContent>
           </Select>
         )}
@@ -273,11 +281,13 @@ export default function TicketSearch({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All {field.name}s</SelectItem>
-                {field.options.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
+                {field.options
+                  .filter(opt => opt.value && opt.value.trim() !== "")
+                  .map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
               </SelectContent>
             </Select>
           );

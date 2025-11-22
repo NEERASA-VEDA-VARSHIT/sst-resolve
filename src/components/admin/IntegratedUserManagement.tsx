@@ -15,9 +15,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Search, User, Users, Mail, Shield, UserCheck, UserX, Loader2, Building2, GraduationCap, MapPin, Settings } from "lucide-react";
+import { Search, User, Users, Mail, Shield, UserCheck, UserX, Loader2, Building2, GraduationCap, MapPin, Settings, MessageSquare, Phone } from "lucide-react";
 import { toast } from "sonner";
 import type { Roles } from "@/types/globals";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 type User = {
   id: string;
@@ -36,6 +44,8 @@ interface StaffMember {
   role: string;
   domain: string;
   scope: string | null;
+  slackUserId: string | null;
+  whatsappNumber: string | null;
 }
 
 interface MasterData {
@@ -76,19 +86,31 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
       if (response.ok) {
         const data = await response.json();
         // Map API response (snake_case) to component format (camelCase)
-        type StaffMember = {
+        type StaffMemberApiResponse = {
           id: string;
+          clerkUserId?: string | null;
           clerk_user_id?: string | null;
-          [key: string]: unknown;
+          fullName?: string;
+          full_name?: string;
+          email?: string | null;
+          role?: string;
+          domain?: string;
+          scope?: string | null;
+          slackUserId?: string | null;
+          slack_user_id?: string | null;
+          whatsappNumber?: string | null;
+          whatsapp_number?: string | null;
         };
-        const mappedStaff = (data.staff || []).map((s: StaffMember) => ({
+        const mappedStaff = (data.staff || []).map((s: StaffMemberApiResponse) => ({
           id: s.id,
-          clerkUserId: s.clerk_user_id || null, // Map snake_case to camelCase
-          fullName: s.full_name || "",
+          clerkUserId: s.clerkUserId || s.clerk_user_id || null,
+          fullName: s.fullName || s.full_name || "",
           email: s.email || null,
           role: s.role || "",
           domain: s.domain || "",
           scope: s.scope || null,
+          slackUserId: s.slackUserId || s.slack_user_id || null,
+          whatsappNumber: s.whatsappNumber || s.whatsapp_number || null,
         }));
         setStaff(mappedStaff);
       }
@@ -225,8 +247,8 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
         domain: existingStaff.domain,
         scope: existingStaff.scope || "",
         role: existingStaff.role,
-        slackUserId: "",
-        whatsappNumber: "",
+        slackUserId: existingStaff.slackUserId || "",
+        whatsappNumber: existingStaff.whatsappNumber || "",
       });
     } else {
       const userRole = user.publicMetadata?.role || "student";
@@ -332,11 +354,27 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
     return domain === "Hostel" ? "text-blue-600 dark:text-blue-400" : "text-purple-600 dark:text-purple-400";
   };
 
+  const handleRoleFilterClick = (role: string) => {
+    if (roleFilter === role) {
+      // If already selected, deselect (show all)
+      setRoleFilter("all");
+    } else {
+      setRoleFilter(role);
+    }
+  };
+
   return (
     <div className="space-y-6">
-      {/* Statistics Cards */}
+      {/* Statistics Cards - Clickable Filters */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        <Card className="border-2 hover:shadow-lg transition-all duration-300 hover:border-primary/50">
+        <Card 
+          className={`border-2 hover:shadow-lg transition-all duration-300 cursor-pointer ${
+            roleFilter === "all" 
+              ? "border-primary shadow-md bg-primary/5 dark:bg-primary/10" 
+              : "hover:border-primary/50"
+          }`}
+          onClick={() => handleRoleFilterClick("all")}
+        >
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
@@ -349,7 +387,14 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
             </div>
           </CardContent>
         </Card>
-        <Card className="border-2 border-blue-200 dark:border-blue-900 bg-blue-50/50 dark:bg-blue-950/20 hover:shadow-lg transition-all duration-300 hover:border-blue-300 dark:hover:border-blue-700">
+        <Card 
+          className={`border-2 transition-all duration-300 cursor-pointer ${
+            roleFilter === "student"
+              ? "border-blue-400 dark:border-blue-600 bg-blue-100 dark:bg-blue-900/40 shadow-md"
+              : "border-blue-200 dark:border-blue-900 bg-blue-50/50 dark:bg-blue-950/20 hover:shadow-lg hover:border-blue-300 dark:hover:border-blue-700"
+          }`}
+          onClick={() => handleRoleFilterClick("student")}
+        >
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
@@ -362,7 +407,14 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
             </div>
           </CardContent>
         </Card>
-        <Card className="border-2 border-amber-200 dark:border-amber-900 bg-amber-50/50 dark:bg-amber-950/20 hover:shadow-lg transition-all duration-300 hover:border-amber-300 dark:hover:border-amber-700">
+        <Card 
+          className={`border-2 transition-all duration-300 cursor-pointer ${
+            roleFilter === "admin"
+              ? "border-amber-400 dark:border-amber-600 bg-amber-100 dark:bg-amber-900/40 shadow-md"
+              : "border-amber-200 dark:border-amber-900 bg-amber-50/50 dark:bg-amber-950/20 hover:shadow-lg hover:border-amber-300 dark:hover:border-amber-700"
+          }`}
+          onClick={() => handleRoleFilterClick("admin")}
+        >
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
@@ -375,7 +427,14 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
             </div>
           </CardContent>
         </Card>
-        <Card className="border-2 border-red-200 dark:border-red-900 bg-red-50/50 dark:bg-red-950/20 hover:shadow-lg transition-all duration-300 hover:border-red-300 dark:hover:border-red-700">
+        <Card 
+          className={`border-2 transition-all duration-300 cursor-pointer ${
+            roleFilter === "super_admin"
+              ? "border-red-400 dark:border-red-600 bg-red-100 dark:bg-red-900/40 shadow-md"
+              : "border-red-200 dark:border-red-900 bg-red-50/50 dark:bg-red-950/20 hover:shadow-lg hover:border-red-300 dark:hover:border-red-700"
+          }`}
+          onClick={() => handleRoleFilterClick("super_admin")}
+        >
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
@@ -388,7 +447,14 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
             </div>
           </CardContent>
         </Card>
-        <Card className="border-2 border-purple-200 dark:border-purple-900 bg-purple-50/50 dark:bg-purple-950/20 hover:shadow-lg transition-all duration-300 hover:border-purple-300 dark:hover:border-purple-700">
+        <Card 
+          className={`border-2 transition-all duration-300 cursor-pointer ${
+            roleFilter === "committee"
+              ? "border-purple-400 dark:border-purple-600 bg-purple-100 dark:bg-purple-900/40 shadow-md"
+              : "border-purple-200 dark:border-purple-900 bg-purple-50/50 dark:bg-purple-950/20 hover:shadow-lg hover:border-purple-300 dark:hover:border-purple-700"
+          }`}
+          onClick={() => handleRoleFilterClick("committee")}
+        >
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
@@ -435,157 +501,196 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
             </Select>
           </div>
 
-          {filteredUsers.length === 0 ? (
-            <div className="text-center py-12 text-muted-foreground">
-              <UserX className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p className="text-lg font-semibold">No users found</p>
-              <p className="text-sm">Try adjusting your search or filters</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {filteredUsers.map((user) => {
-                const currentRole = user.publicMetadata?.role || "student";
-                const fullName = user.name || "No name";
-                const email = user.emailAddresses[0]?.emailAddress || "No email";
-                const staffAssignment = getStaffAssignment(user.id);
-                const DomainIcon = staffAssignment ? getDomainIcon(staffAssignment.domain) : null;
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead>Domain</TableHead>
+                  <TableHead>Scope</TableHead>
+                  <TableHead>Slack ID</TableHead>
+                  <TableHead>WhatsApp</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredUsers.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center py-12">
+                      <UserX className="w-12 h-12 mx-auto mb-4 opacity-50 text-muted-foreground" />
+                      <p className="text-lg font-semibold text-muted-foreground">No users found</p>
+                      <p className="text-sm text-muted-foreground">Try adjusting your search or filters</p>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredUsers.map((user) => {
+                    const currentRole = user.publicMetadata?.role || "student";
+                    const fullName = user.name || "No name";
+                    const email = user.emailAddresses[0]?.emailAddress || "No email";
+                    const staffAssignment = getStaffAssignment(user.id);
+                    const DomainIcon = staffAssignment ? getDomainIcon(staffAssignment.domain) : null;
 
-                return (
-                  <Card key={user.id} className="border-2 hover:shadow-lg hover:border-primary/50 transition-all duration-300 bg-card">
-                    <CardContent className="p-5">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                        <div className="flex-1 space-y-3">
-                          <div className="flex items-center gap-3">
-                            <div className="p-3 rounded-lg bg-primary/10 hover:bg-primary/20 transition-colors">
-                              <User className="w-5 h-5 text-primary" />
+                    return (
+                      <TableRow key={user.id} className="hover:bg-muted/50">
+                        <TableCell className="font-medium">
+                          <div className="flex items-center gap-2">
+                            <div className="p-1.5 rounded bg-primary/10">
+                              <User className="w-4 h-4 text-primary" />
                             </div>
-                            <div className="flex-1">
-                              <p className="font-semibold text-lg text-foreground">{fullName}</p>
-                              <div className="flex items-center gap-2 mt-1.5">
-                                <Mail className="w-4 h-4 text-muted-foreground" />
-                                <p className="text-sm text-muted-foreground">{email}</p>
-                              </div>
-                            </div>
+                            {fullName}
                           </div>
-                          <div className="flex items-center gap-2 ml-14 flex-wrap">
-                            <Badge variant={getRoleBadgeVariant(currentRole)} className={getRoleBadgeClass(currentRole)}>
-                              {currentRole.replace("_", " ").replace(/\b\w/g, l => l.toUpperCase())}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Mail className="w-3 h-3 text-muted-foreground" />
+                            <span className="text-sm text-muted-foreground">{email}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={getRoleBadgeVariant(currentRole)} className={getRoleBadgeClass(currentRole)}>
+                            {currentRole.replace("_", " ").replace(/\b\w/g, l => l.toUpperCase())}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {staffAssignment ? (
+                            <Badge variant="outline" className={getDomainColor(staffAssignment.domain)}>
+                              {DomainIcon && <DomainIcon className="w-3 h-3 mr-1" />}
+                              {staffAssignment.domain}
                             </Badge>
-                            {staffAssignment && (
-                              <>
-                                <Badge variant="outline" className={getDomainColor(staffAssignment.domain)}>
-                                  {DomainIcon && <DomainIcon className="w-3 h-3 mr-1" />}
-                                  {staffAssignment.domain}
-                                </Badge>
-                                {staffAssignment.scope && (
-                                  <Badge variant="secondary" className="flex items-center gap-1">
-                                    <MapPin className="w-3 h-3" />
-                                    {staffAssignment.scope}
-                                  </Badge>
-                                )}
-                              </>
-                            )}
-                            {(currentRole === "admin" || currentRole === "super_admin") && !staffAssignment && (
-                              <Badge variant="outline" className="border-orange-300 text-orange-600 dark:text-orange-400">
-                                No Staff Assignment
-                              </Badge>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Role Assignment Buttons */}
-                        {currentRole === "student" && (
-                          <p className="text-xs text-muted-foreground mb-2 italic">
-                            💡 Tip: Assigning an elevated role (Admin, Super Admin, Committee) will automatically remove the Student role.
-                          </p>
-                        )}
-
-                        <div className="flex flex-wrap gap-2 sm:flex-nowrap">
-                          <Button
-                            variant={currentRole === "student" ? "default" : "outline"}
-                            size="sm"
-                            onClick={() => handleSetRole(user.id, "student")}
-                            disabled={loading === `${user.id}-student` || currentRole === "student"}
-                            className={currentRole === "student" ? "bg-blue-600 hover:bg-blue-700 text-white" : ""}
-                          >
-                            {loading === `${user.id}-student` ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              "Student"
-                            )}
-                          </Button>
-                          <Button
-                            variant={currentRole === "admin" ? "default" : "outline"}
-                            size="sm"
-                            onClick={() => handleSetRole(user.id, "admin")}
-                            disabled={loading === `${user.id}-admin` || currentRole === "admin"}
-                            className={currentRole === "admin" ? "bg-amber-600 hover:bg-amber-700 text-white" : ""}
-                          >
-                            {loading === `${user.id}-admin` ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              "Admin"
-                            )}
-                          </Button>
-                          <Button
-                            variant={currentRole === "super_admin" ? "default" : "outline"}
-                            size="sm"
-                            onClick={() => handleSetRole(user.id, "super_admin")}
-                            disabled={loading === `${user.id}-super_admin` || currentRole === "super_admin"}
-                            className={currentRole === "super_admin" ? "bg-red-600 hover:bg-red-700 text-white" : ""}
-                          >
-                            {loading === `${user.id}-super_admin` ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              "Super Admin"
-                            )}
-                          </Button>
-                          <Button
-                            variant={currentRole === "committee" ? "default" : "outline"}
-                            size="sm"
-                            onClick={() => handleSetRole(user.id, "committee")}
-                            disabled={loading === `${user.id}-committee` || currentRole === "committee"}
-                            className={currentRole === "committee" ? "bg-purple-600 hover:bg-purple-700 text-white" : ""}
-                          >
-                            {loading === `${user.id}-committee` ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              "Committee"
-                            )}
-                          </Button>
-                          {(currentRole === "admin" || currentRole === "super_admin") && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleOpenStaffDialog(user)}
-                              className="border-primary text-primary hover:bg-primary/10"
-                            >
-                              <Settings className="w-4 h-4 mr-1" />
-                              Staff
-                            </Button>
+                          ) : (currentRole === "admin" || currentRole === "super_admin") ? (
+                            <Badge variant="outline" className="border-orange-300 text-orange-600 dark:text-orange-400">
+                              No Assignment
+                            </Badge>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
                           )}
-                          {currentRole !== "student" && (
+                        </TableCell>
+                        <TableCell>
+                          {staffAssignment?.scope ? (
+                            <Badge variant="secondary" className="flex items-center gap-1 w-fit">
+                              <MapPin className="w-3 h-3" />
+                              {staffAssignment.scope}
+                            </Badge>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {staffAssignment?.slackUserId ? (
+                            <div className="flex items-center gap-1.5">
+                              <MessageSquare className="w-3 h-3 text-muted-foreground" />
+                              <span className="text-xs font-mono text-muted-foreground">
+                                {staffAssignment.slackUserId}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {staffAssignment?.whatsappNumber ? (
+                            <div className="flex items-center gap-1.5">
+                              <Phone className="w-3 h-3 text-muted-foreground" />
+                              <span className="text-sm text-muted-foreground">
+                                {staffAssignment.whatsappNumber}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-1">
                             <Button
-                              variant="destructive"
+                              variant={currentRole === "student" ? "default" : "ghost"}
                               size="sm"
-                              onClick={() => handleRemoveRole(user.id)}
-                              disabled={loading === `${user.id}-remove`}
+                              onClick={() => handleSetRole(user.id, "student")}
+                              disabled={loading === `${user.id}-student` || currentRole === "student"}
+                              className={currentRole === "student" ? "bg-blue-600 hover:bg-blue-700 text-white" : ""}
                             >
-                              {loading === `${user.id}-remove` ? (
-                                <Loader2 className="w-4 h-4 animate-spin" />
+                              {loading === `${user.id}-student` ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
                               ) : (
-                                <UserX className="w-4 h-4" />
+                                "S"
                               )}
                             </Button>
-                          )}
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          )}
+                            <Button
+                              variant={currentRole === "admin" ? "default" : "ghost"}
+                              size="sm"
+                              onClick={() => handleSetRole(user.id, "admin")}
+                              disabled={loading === `${user.id}-admin` || currentRole === "admin"}
+                              className={currentRole === "admin" ? "bg-amber-600 hover:bg-amber-700 text-white" : ""}
+                            >
+                              {loading === `${user.id}-admin` ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                "A"
+                              )}
+                            </Button>
+                            <Button
+                              variant={currentRole === "super_admin" ? "default" : "ghost"}
+                              size="sm"
+                              onClick={() => handleSetRole(user.id, "super_admin")}
+                              disabled={loading === `${user.id}-super_admin` || currentRole === "super_admin"}
+                              className={currentRole === "super_admin" ? "bg-red-600 hover:bg-red-700 text-white" : ""}
+                            >
+                              {loading === `${user.id}-super_admin` ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                "SA"
+                              )}
+                            </Button>
+                            <Button
+                              variant={currentRole === "committee" ? "default" : "ghost"}
+                              size="sm"
+                              onClick={() => handleSetRole(user.id, "committee")}
+                              disabled={loading === `${user.id}-committee` || currentRole === "committee"}
+                              className={currentRole === "committee" ? "bg-purple-600 hover:bg-purple-700 text-white" : ""}
+                            >
+                              {loading === `${user.id}-committee` ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                "C"
+                              )}
+                            </Button>
+                            {(currentRole === "admin" || currentRole === "super_admin") && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleOpenStaffDialog(user)}
+                                className="text-primary hover:bg-primary/10"
+                                title="Configure Staff Assignment"
+                              >
+                                <Settings className="w-3 h-3" />
+                              </Button>
+                            )}
+                            {currentRole !== "student" && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleRemoveRole(user.id)}
+                                disabled={loading === `${user.id}-remove`}
+                                className="text-destructive hover:text-destructive"
+                                title="Remove Role"
+                              >
+                                {loading === `${user.id}-remove` ? (
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                ) : (
+                                  <UserX className="w-3 h-3" />
+                                )}
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
 
@@ -603,12 +708,12 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
               <div className="space-y-2">
                 <Label htmlFor="domain">Domain *</Label>
                 <Select
-                  value={staffFormData.domain}
+                  value={staffFormData.domain || undefined}
                   onValueChange={(value) => {
                     setStaffFormData({
                       ...staffFormData,
                       domain: value,
-                      scope: value === "College" ? "" : staffFormData.scope,
+                      scope: value === "College" ? "" : (staffFormData.scope || ""),
                     });
                   }}
                   required
@@ -622,11 +727,13 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
                     ) : masterData.domains.length === 0 ? (
                       <SelectItem value="empty" disabled>No domains available</SelectItem>
                     ) : (
-                      masterData.domains.map((domain) => (
-                        <SelectItem key={domain.value} value={domain.value}>
-                          {domain.label}
-                        </SelectItem>
-                      ))
+                      masterData.domains
+                        .filter(domain => domain.value && domain.value.trim() !== "")
+                        .map((domain) => (
+                          <SelectItem key={domain.value} value={domain.value}>
+                            {domain.label}
+                          </SelectItem>
+                        ))
                     )}
                   </SelectContent>
                 </Select>
@@ -635,7 +742,7 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
                 <div className="space-y-2">
                   <Label htmlFor="scope">Scope (Hostel/Location) *</Label>
                   <Select
-                    value={staffFormData.scope}
+                    value={staffFormData.scope || undefined}
                     onValueChange={(value) => setStaffFormData({ ...staffFormData, scope: value })}
                     required
                     disabled={!masterData || (masterData.scopes.length === 0 && masterData.hostels.length === 0)}
@@ -653,11 +760,13 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
                           {/* Show existing scopes from staff data (dynamic) */}
                           {masterData.scopes.length > 0 && (
                             <>
-                              {masterData.scopes.map((scope) => (
-                                <SelectItem key={`scope-${scope.value}`} value={scope.value}>
-                                  {scope.label}
-                                </SelectItem>
-                              ))}
+                              {masterData.scopes
+                                .filter(scope => scope.value && scope.value.trim() !== "")
+                                .map((scope) => (
+                                  <SelectItem key={`scope-${scope.value}`} value={scope.value}>
+                                    {scope.label}
+                                  </SelectItem>
+                                ))}
                               {masterData.hostels.length > 0 && (
                                 <SelectItem value="divider" disabled>
                                   ──── From Hostels Table ────
@@ -667,7 +776,7 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
                           )}
                           {/* Also show hostels from hostels table, but only if not already in scopes */}
                           {masterData.hostels
-                            .filter(hostel => !masterData.scopes.some(scope => scope.value === hostel.name))
+                            .filter(hostel => hostel.name && hostel.name.trim() !== "" && !masterData.scopes.some(scope => scope.value === hostel.name))
                             .map((hostel) => (
                               <SelectItem key={`hostel-${hostel.id}`} value={hostel.name}>
                                 {hostel.name} {hostel.code ? `(${hostel.code})` : ''}
@@ -695,7 +804,7 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
             <div className="space-y-2">
               <Label htmlFor="role">Staff Role *</Label>
               <Select
-                value={staffFormData.role}
+                value={staffFormData.role || undefined}
                 onValueChange={(value) => setStaffFormData({ ...staffFormData, role: value })}
                 required
                 disabled={!masterData || masterData.roles.length === 0}
@@ -709,11 +818,13 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
                   ) : masterData.roles.length === 0 ? (
                     <SelectItem value="empty" disabled>No roles available</SelectItem>
                   ) : (
-                    masterData.roles.map((role) => (
-                      <SelectItem key={role.value} value={role.value}>
-                        {role.label}
-                      </SelectItem>
-                    ))
+                    masterData.roles
+                      .filter(role => role.value && role.value.trim() !== "")
+                      .map((role) => (
+                        <SelectItem key={role.value} value={role.value}>
+                          {role.label}
+                        </SelectItem>
+                      ))
                   )}
                 </SelectContent>
               </Select>

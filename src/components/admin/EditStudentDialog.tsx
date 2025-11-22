@@ -33,7 +33,9 @@ interface StudentData {
     student_id: number;
     user_id: string;
     roll_no: string;
-    full_name: string;
+    full_name?: string; // Constructed from first_name + last_name
+    first_name: string | null;
+    last_name: string | null;
     email: string;
     phone: string | null;
     room_no: string | null;
@@ -93,26 +95,56 @@ export function EditStudentDialog({
         setFetching(true);
         try {
             const response = await fetch(`/api/superadmin/students/${studentId}`);
-            if (!response.ok) throw new Error("Failed to fetch student");
+            if (!response.ok) {
+                const contentType = response.headers.get("content-type");
+                if (contentType?.includes("application/json")) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || "Failed to fetch student");
+                } else {
+                    throw new Error(`Failed to fetch student: ${response.status} ${response.statusText}`);
+                }
+            }
+
+            const contentType = response.headers.get("content-type");
+            if (!contentType?.includes("application/json")) {
+                throw new Error("Invalid response format from server");
+            }
 
             const data = await response.json();
-            setStudent(data.student);
+            const student = data.student;
+            
+            if (!student) {
+                throw new Error("Student data not found in response");
+            }
+            
+            // Construct full_name from first_name and last_name
+            const fullName = [student.first_name, student.last_name]
+                .filter(Boolean)
+                .join(" ")
+                .trim() || "";
+
+            // Set student data with full_name constructed
+            setStudent({
+                ...student,
+                full_name: fullName,
+            });
 
             // Populate form
             setFormData({
-                full_name: data.student.full_name || "",
-                phone: data.student.phone || "",
-                roll_no: data.student.roll_no || "",
-                room_no: data.student.room_no || "",
-                hostel_id: data.student.hostel_id,
-                batch_id: data.student.batch_id,
-                class_section_id: data.student.class_section_id,
-                batch_year: data.student.batch_year,
-                department: data.student.department || "",
+                full_name: fullName,
+                phone: student.phone || "",
+                roll_no: student.roll_no || "",
+                room_no: student.room_no || "",
+                hostel_id: student.hostel_id,
+                batch_id: student.batch_id,
+                class_section_id: student.class_section_id,
+                batch_year: student.batch_year,
+                department: student.department || "",
             });
         } catch (error) {
             console.error("Error fetching student:", error);
-            toast.error("Failed to load student data");
+            const errorMessage = error instanceof Error ? error.message : "Failed to load student data";
+            toast.error(errorMessage);
         } finally {
             setFetching(false);
         }
@@ -123,22 +155,43 @@ export function EditStudentDialog({
             // Fetch hostels
             const hostelsRes = await fetch("/api/master/hostels");
             if (hostelsRes.ok) {
-                const hostelsData = await hostelsRes.json();
-                setMasterData((prev) => ({ ...prev, hostels: hostelsData.hostels || [] }));
+                const contentType = hostelsRes.headers.get("content-type");
+                if (contentType?.includes("application/json")) {
+                    const hostelsData = await hostelsRes.json();
+                    setMasterData((prev) => ({ ...prev, hostels: hostelsData.hostels || [] }));
+                } else {
+                    console.warn("Hostels API returned non-JSON response");
+                }
+            } else {
+                console.warn(`Failed to fetch hostels: ${hostelsRes.status}`);
             }
 
             // Fetch batches
             const batchesRes = await fetch("/api/master/batches");
             if (batchesRes.ok) {
-                const batchesData = await batchesRes.json();
-                setMasterData((prev) => ({ ...prev, batches: batchesData.batches || [] }));
+                const contentType = batchesRes.headers.get("content-type");
+                if (contentType?.includes("application/json")) {
+                    const batchesData = await batchesRes.json();
+                    setMasterData((prev) => ({ ...prev, batches: batchesData.batches || [] }));
+                } else {
+                    console.warn("Batches API returned non-JSON response");
+                }
+            } else {
+                console.warn(`Failed to fetch batches: ${batchesRes.status}`);
             }
 
             // Fetch sections
             const sectionsRes = await fetch("/api/master/class-sections");
             if (sectionsRes.ok) {
-                const sectionsData = await sectionsRes.json();
-                setMasterData((prev) => ({ ...prev, sections: sectionsData.sections || [] }));
+                const contentType = sectionsRes.headers.get("content-type");
+                if (contentType?.includes("application/json")) {
+                    const sectionsData = await sectionsRes.json();
+                    setMasterData((prev) => ({ ...prev, sections: sectionsData.sections || [] }));
+                } else {
+                    console.warn("Class sections API returned non-JSON response");
+                }
+            } else {
+                console.warn(`Failed to fetch class sections: ${sectionsRes.status}`);
             }
         } catch (error) {
             console.error("Error fetching master data:", error);
@@ -157,8 +210,18 @@ export function EditStudentDialog({
             });
 
             if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.error || "Failed to update student");
+                const contentType = response.headers.get("content-type");
+                if (contentType?.includes("application/json")) {
+                    const error = await response.json();
+                    throw new Error(error.error || "Failed to update student");
+                } else {
+                    throw new Error(`Failed to update student: ${response.status} ${response.statusText}`);
+                }
+            }
+
+            const contentType = response.headers.get("content-type");
+            if (!contentType?.includes("application/json")) {
+                throw new Error("Invalid response format from server");
             }
 
             toast.success("Student updated successfully");
@@ -246,16 +309,16 @@ export function EditStudentDialog({
                                 <div>
                                     <Label htmlFor="hostel">Hostel</Label>
                                     <Select
-                                        value={formData.hostel_id?.toString() || ""}
+                                        value={formData.hostel_id?.toString() || "none"}
                                         onValueChange={(value) =>
-                                            setFormData({ ...formData, hostel_id: value ? parseInt(value) : null })
+                                            setFormData({ ...formData, hostel_id: value === "none" ? null : parseInt(value) })
                                         }
                                     >
                                         <SelectTrigger>
                                             <SelectValue placeholder="Select hostel" />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            <SelectItem value="">None</SelectItem>
+                                            <SelectItem value="none">None</SelectItem>
                                             {masterData.hostels.map((hostel) => (
                                                 <SelectItem key={hostel.id} value={hostel.id.toString()}>
                                                     {hostel.name}
@@ -285,16 +348,16 @@ export function EditStudentDialog({
                                 <div>
                                     <Label htmlFor="batch">Batch</Label>
                                     <Select
-                                        value={formData.batch_id?.toString() || ""}
+                                        value={formData.batch_id?.toString() || "none"}
                                         onValueChange={(value) =>
-                                            setFormData({ ...formData, batch_id: value ? parseInt(value) : null })
+                                            setFormData({ ...formData, batch_id: value === "none" ? null : parseInt(value) })
                                         }
                                     >
                                         <SelectTrigger>
                                             <SelectValue placeholder="Select batch" />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            <SelectItem value="">None</SelectItem>
+                                            <SelectItem value="none">None</SelectItem>
                                             {masterData.batches.map((batch) => (
                                                 <SelectItem key={batch.id} value={batch.id.toString()}>
                                                     {batch.display_name || batch.batch_year}
@@ -307,16 +370,16 @@ export function EditStudentDialog({
                                 <div>
                                     <Label htmlFor="section">Class Section</Label>
                                     <Select
-                                        value={formData.class_section_id?.toString() || ""}
+                                        value={formData.class_section_id?.toString() || "none"}
                                         onValueChange={(value) =>
-                                            setFormData({ ...formData, class_section_id: value ? parseInt(value) : null })
+                                            setFormData({ ...formData, class_section_id: value === "none" ? null : parseInt(value) })
                                         }
                                     >
                                         <SelectTrigger>
                                             <SelectValue placeholder="Select section" />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            <SelectItem value="">None</SelectItem>
+                                            <SelectItem value="none">None</SelectItem>
                                             {masterData.sections.map((section) => (
                                                 <SelectItem key={section.id} value={section.id.toString()}>
                                                     {section.name}

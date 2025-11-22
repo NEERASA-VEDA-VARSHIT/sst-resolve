@@ -219,11 +219,13 @@ export function UserManagementTable({ users, roles }: UserManagementTableProps) 
                     </SelectTrigger>
                     <SelectContent>
                         <SelectItem value="all">All Roles</SelectItem>
-                        {roles.map((role) => (
+                        {roles
+                          .filter(role => role.name && role.name.trim() !== "")
+                          .map((role) => (
                             <SelectItem key={role.id} value={role.name}>
-                                {role.name.replace("_", " ").replace(/\b\w/g, l => l.toUpperCase())}
+                              {role.name.replace("_", " ").replace(/\b\w/g, l => l.toUpperCase())}
                             </SelectItem>
-                        ))}
+                          ))}
                     </SelectContent>
                 </Select>
             </div>

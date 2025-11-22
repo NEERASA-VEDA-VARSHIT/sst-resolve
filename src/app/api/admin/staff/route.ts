@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { db, users, domains, scopes, roles } from "@/db";
+import { db, users, domains, scopes, roles, students } from "@/db";
 import { eq, inArray } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
@@ -21,7 +21,7 @@ export async function GET() {
             return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }
 
-        // Fetch users with admin or super_admin role
+        // Fetch users with admin, super_admin, or committee role
         const staffMembers = await db
             .select({
                 id: users.id,
@@ -30,6 +30,7 @@ export async function GET() {
                 lastName: users.last_name,
                 email: users.email,
                 slackUserId: users.slack_user_id,
+                phone: users.phone,
                 role: roles.name,
                 domain: domains.name,
                 scope: scopes.name,
@@ -40,7 +41,7 @@ export async function GET() {
             .innerJoin(roles, eq(users.role_id, roles.id))
             .leftJoin(domains, eq(users.primary_domain_id, domains.id))
             .leftJoin(scopes, eq(users.primary_scope_id, scopes.id))
-            .where(inArray(roles.name, ["admin", "super_admin"]));
+            .where(inArray(roles.name, ["admin", "super_admin", "committee"]));
 
         const formattedStaff = staffMembers.map((staff) => ({
             id: staff.id,
@@ -48,6 +49,7 @@ export async function GET() {
             fullName: [staff.firstName, staff.lastName].filter(Boolean).join(" ") || "Unknown",
             email: staff.email,
             slackUserId: staff.slackUserId,
+            whatsappNumber: staff.phone, // Map phone to whatsappNumber
             role: staff.role,
             domain: staff.domain,
             scope: staff.scope,
@@ -78,46 +80,106 @@ export async function POST(request: NextRequest) {
         }
 
         const body = await request.json();
-        const { clerkUserId, domain, scope, role, slackUserId, whatsappNumber } = body;
+        const { clerkUserId, domain, scope, role, slackUserId, whatsappNumber, newUser } = body;
 
-        if (!clerkUserId || !domain || !role) {
+        if ((!clerkUserId && !newUser) || !role) {
             return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
         }
 
-        // Find the user by clerk_id (clerkUserId from frontend is clerk_id)
-        const [targetUser] = await db.select().from(users).where(eq(users.clerk_id, clerkUserId));
-
-        if (!targetUser) {
-            return NextResponse.json({ error: "User not found" }, { status: 404 });
+        // Domain is required for admin and committee, optional for super_admin
+        if (role !== "super_admin" && !domain) {
+            return NextResponse.json({ error: "Domain is required for admin and committee roles" }, { status: 400 });
         }
 
-        // Resolve domain and scope IDs
-        const [domainRecord] = await db.select().from(domains).where(eq(domains.name, domain));
-        if (!domainRecord) {
-            return NextResponse.json({ error: "Invalid domain" }, { status: 400 });
+        let targetUser;
+
+        if (newUser) {
+            // Create new user
+            const { email, firstName, lastName, phone } = newUser;
+
+            if (!email || !firstName || !lastName) {
+                return NextResponse.json({ error: "Missing required user fields (email, firstName, lastName)" }, { status: 400 });
+            }
+
+            // Check if user with this email already exists
+            const [existingUser] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+            
+            if (existingUser) {
+                // User exists - use existing user
+                targetUser = existingUser;
+            } else {
+                // Create new user with pending clerk_id (will be updated when they sign up)
+                const [studentRole] = await db.select().from(roles).where(eq(roles.name, "student")).limit(1);
+                if (!studentRole) {
+                    return NextResponse.json({ error: "Student role not found" }, { status: 500 });
+                }
+
+                // Generate a temporary clerk_id (will be updated when user signs up)
+                const tempClerkId = `pending_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+
+                const [createdUser] = await db.insert(users).values({
+                    clerk_id: tempClerkId,
+                    email: email,
+                    first_name: firstName,
+                    last_name: lastName,
+                    phone: phone || null,
+                    role_id: studentRole.id, // Will be updated below
+                    created_at: new Date(),
+                    updated_at: new Date(),
+                }).returning();
+
+                targetUser = createdUser;
+            }
+        } else {
+            // Find the user by clerk_id
+            [targetUser] = await db.select().from(users).where(eq(users.clerk_id, clerkUserId)).limit(1);
+
+            if (!targetUser) {
+                return NextResponse.json({ error: "User not found" }, { status: 404 });
+            }
         }
 
+        // Resolve domain and scope IDs (optional for super_admin)
+        let domainRecord = null;
         let scopeRecord = null;
-        if (scope) {
-            [scopeRecord] = await db.select().from(scopes).where(eq(scopes.name, scope));
-            if (!scopeRecord) {
-                return NextResponse.json({ error: "Invalid scope" }, { status: 400 });
+
+        if (domain) {
+            [domainRecord] = await db.select().from(domains).where(eq(domains.name, domain)).limit(1);
+            if (!domainRecord) {
+                return NextResponse.json({ error: "Invalid domain" }, { status: 400 });
+            }
+
+            if (scope) {
+                [scopeRecord] = await db.select().from(scopes).where(eq(scopes.name, scope)).limit(1);
+                if (!scopeRecord) {
+                    return NextResponse.json({ error: "Invalid scope" }, { status: 400 });
+                }
             }
         }
 
         // Resolve role ID
-        const [roleRecord] = await db.select().from(roles).where(eq(roles.name, role));
+        const [roleRecord] = await db.select().from(roles).where(eq(roles.name, role)).limit(1);
         if (!roleRecord) {
             return NextResponse.json({ error: "Invalid role" }, { status: 400 });
         }
 
-        // Update user
+        // If promoting from student, delete student record
+        const elevatedRoles: string[] = ["admin", "super_admin", "committee"];
+        if (elevatedRoles.includes(role)) {
+            const [studentRecord] = await db.select().from(students).where(eq(students.user_id, targetUser.id)).limit(1);
+            if (studentRecord) {
+                await db.delete(students).where(eq(students.user_id, targetUser.id));
+                console.log(`[Staff API] Deleted student record for user ${targetUser.id} after promotion to ${role}`);
+            }
+        }
+
+        // Update user with role, domain, scope, and contact info
         await db.update(users).set({
             role_id: roleRecord.id,
-            primary_domain_id: domainRecord.id,
+            primary_domain_id: domainRecord ? domainRecord.id : null,
             primary_scope_id: scopeRecord ? scopeRecord.id : null,
             slack_user_id: slackUserId || null,
-            phone: whatsappNumber || targetUser.phone, // Assuming whatsappNumber maps to phone
+            phone: whatsappNumber || targetUser.phone || null,
             updated_at: new Date(),
         }).where(eq(users.id, targetUser.id));
 
@@ -212,13 +274,24 @@ export async function DELETE(request: NextRequest) {
             return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }
 
-        // Instead of deleting the user, we revert them to 'student' role and clear assignments
-        const [studentRole] = await db.select().from(roles).where(eq(roles.name, "student"));
+        // Find the user
+        const [targetUser] = await db.select().from(users).where(eq(users.id, id)).limit(1);
+
+        if (!targetUser) {
+            return NextResponse.json({ error: "User not found" }, { status: 404 });
+        }
+
+        // Check if user has any tickets assigned or created
+        // For now, we'll revert to student role instead of deleting
+        // If you want to actually delete, uncomment the delete code below
+        
+        const [studentRole] = await db.select().from(roles).where(eq(roles.name, "student")).limit(1);
 
         if (!studentRole) {
             return NextResponse.json({ error: "Student role not found" }, { status: 500 });
         }
 
+        // Revert to student role and clear staff assignments
         await db.update(users).set({
             role_id: studentRole.id,
             primary_domain_id: null,
@@ -227,7 +300,10 @@ export async function DELETE(request: NextRequest) {
             updated_at: new Date(),
         }).where(eq(users.id, id));
 
-        return NextResponse.json({ success: true });
+        // If you want to actually delete the user (use with caution):
+        // await db.delete(users).where(eq(users.id, id));
+
+        return NextResponse.json({ success: true, message: "Staff member reverted to student role" });
     } catch (error) {
         console.error("Error deleting staff:", error);
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

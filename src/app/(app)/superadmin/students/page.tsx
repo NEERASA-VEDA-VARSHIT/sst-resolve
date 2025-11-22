@@ -8,7 +8,8 @@ import { StudentBulkUpload } from "@/components/admin/StudentBulkUpload";
 import { AddSingleStudentDialog } from "@/components/admin/AddSingleStudentDialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { BulkEditDialog } from "@/components/admin/BulkEditDialog";
-import { Edit2, Users, Upload, Search, ChevronLeft, ChevronRight, UserPlus } from "lucide-react";
+import { Edit2, Users, Upload, Search, ChevronLeft, ChevronRight, UserPlus, Pencil } from "lucide-react";
+import { EditStudentDialog } from "@/components/admin/EditStudentDialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -52,7 +53,7 @@ interface PaginationInfo {
 
 export default function SuperAdminStudentsPage() {
 	const [students, setStudents] = useState<Student[]>([]);
-	const [loading, setLoading] = useState(true);
+	const [loading, setLoading] = useState(false);
 	const [search, setSearch] = useState("");
 	const [hostelFilter, setHostelFilter] = useState<string>("all");
 	const [batchYearFilter, setBatchYearFilter] = useState<string>("all");
@@ -66,6 +67,8 @@ export default function SuperAdminStudentsPage() {
 	const [showAddStudentDialog, setShowAddStudentDialog] = useState(false);
 	const [selectedStudents, setSelectedStudents] = useState<number[]>([]);
 	const [showBulkEditDialog, setShowBulkEditDialog] = useState(false);
+	const [editingStudentId, setEditingStudentId] = useState<number | null>(null);
+	const [showEditDialog, setShowEditDialog] = useState(false);
 
 	const toggleStudent = (studentId: number) => {
 		setSelectedStudents((prev) =>
@@ -246,6 +249,7 @@ export default function SuperAdminStudentsPage() {
 									<TableHead>Section</TableHead>
 									<TableHead>Batch</TableHead>
 									<TableHead>Phone</TableHead>
+									<TableHead>Actions</TableHead>
 								</TableRow>
 							</TableHeader>
 							<TableBody>
@@ -261,7 +265,7 @@ export default function SuperAdminStudentsPage() {
 									))
 								) : students.length === 0 ? (
 									<TableRow>
-										<TableCell colSpan={9} className="text-center py-8">
+										<TableCell colSpan={10} className="text-center py-8">
 											No students found
 										</TableCell>
 									</TableRow>
@@ -309,6 +313,18 @@ export default function SuperAdminStudentsPage() {
 												{student.phone || (
 													<span className="text-muted-foreground">—</span>
 												)}
+											</TableCell>
+											<TableCell>
+												<Button
+													variant="ghost"
+													size="sm"
+													onClick={() => {
+														setEditingStudentId(student.student_id);
+														setShowEditDialog(true);
+													}}
+												>
+													<Pencil className="w-4 h-4" />
+												</Button>
 											</TableCell>
 										</TableRow>
 									))
@@ -407,6 +423,20 @@ export default function SuperAdminStudentsPage() {
 					setShowBulkEditDialog(false);
 				}}
 			/>
+
+			{/* Edit Student Dialog */}
+			{showEditDialog && editingStudentId && (
+				<EditStudentDialog
+					open={showEditDialog}
+					onOpenChange={setShowEditDialog}
+					studentId={editingStudentId}
+					onSuccess={() => {
+						fetchStudents();
+						setShowEditDialog(false);
+						setEditingStudentId(null);
+					}}
+				/>
+			)}
 		</div>
 	);
 }

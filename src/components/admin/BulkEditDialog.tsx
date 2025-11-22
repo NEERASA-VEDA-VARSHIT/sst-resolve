@@ -50,10 +50,10 @@ export function BulkEditDialog({
     });
 
     const [formData, setFormData] = useState({
-        hostel_id: "" as string,
-        batch_id: "" as string,
-        class_section_id: "" as string,
-        batch_year: "" as string,
+        hostel_id: "no-change" as string,
+        batch_id: "no-change" as string,
+        class_section_id: "no-change" as string,
+        batch_year: "no-change" as string,
         department: "" as string,
     });
 
@@ -63,10 +63,10 @@ export function BulkEditDialog({
             fetchMasterData();
             // Reset form
             setFormData({
-                hostel_id: "",
-                batch_id: "",
-                class_section_id: "",
-                batch_year: "",
+                hostel_id: "no-change",
+                batch_id: "no-change",
+                class_section_id: "no-change",
+                batch_year: "no-change",
                 department: "",
             });
         }
@@ -105,16 +105,16 @@ export function BulkEditDialog({
         // Build updates object with only changed fields
         const updates: Record<string, unknown> = {};
 
-        if (formData.hostel_id) {
+        if (formData.hostel_id && formData.hostel_id !== "no-change") {
             updates.hostel_id = formData.hostel_id === "null" ? null : parseInt(formData.hostel_id);
         }
-        if (formData.batch_id) {
+        if (formData.batch_id && formData.batch_id !== "no-change") {
             updates.batch_id = formData.batch_id === "null" ? null : parseInt(formData.batch_id);
         }
-        if (formData.class_section_id) {
+        if (formData.class_section_id && formData.class_section_id !== "no-change") {
             updates.class_section_id = formData.class_section_id === "null" ? null : parseInt(formData.class_section_id);
         }
-        if (formData.batch_year) {
+        if (formData.batch_year && formData.batch_year !== "no-change") {
             updates.batch_year = formData.batch_year === "null" ? null : parseInt(formData.batch_year);
         }
         if (formData.department) {
@@ -190,7 +190,7 @@ export function BulkEditDialog({
                                     <SelectValue placeholder="No change" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="">No change</SelectItem>
+                                    <SelectItem value="no-change">No change</SelectItem>
                                     <SelectItem value="null">Clear (set to none)</SelectItem>
                                     {masterData.hostels.map((hostel) => (
                                         <SelectItem key={hostel.id} value={hostel.id.toString()}>
@@ -211,7 +211,7 @@ export function BulkEditDialog({
                                     <SelectValue placeholder="No change" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="">No change</SelectItem>
+                                    <SelectItem value="no-change">No change</SelectItem>
                                     <SelectItem value="null">Clear (set to none)</SelectItem>
                                     {masterData.batches.map((batch) => (
                                         <SelectItem key={batch.id} value={batch.id.toString()}>
@@ -232,7 +232,7 @@ export function BulkEditDialog({
                                     <SelectValue placeholder="No change" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="">No change</SelectItem>
+                                    <SelectItem value="no-change">No change</SelectItem>
                                     <SelectItem value="null">Clear (set to none)</SelectItem>
                                     {masterData.sections.map((section) => (
                                         <SelectItem key={section.id} value={section.id.toString()}>
@@ -253,7 +253,7 @@ export function BulkEditDialog({
                                     <SelectValue placeholder="No change" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="">No change</SelectItem>
+                                    <SelectItem value="no-change">No change</SelectItem>
                                     <SelectItem value="null">Clear (set to none)</SelectItem>
                                     <SelectItem value="2027">2027</SelectItem>
                                     <SelectItem value="2026">2026</SelectItem>

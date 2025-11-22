@@ -1,9 +1,26 @@
 import nodemailer from "nodemailer";
 import { db } from "@/db";
-import { students } from "@/db";
+import { students, notification_settings } from "@/db";
 import { eq } from "drizzle-orm";
 
 import { escapeHtml } from "@/utils";
+
+// Helper function to check if email notifications are enabled
+export async function isEmailNotificationsEnabled(): Promise<boolean> {
+	try {
+		const [settings] = await db
+			.select({ email_enabled: notification_settings.email_enabled })
+			.from(notification_settings)
+			.limit(1);
+		
+		// Default to enabled if no settings exist (fail safe)
+		return settings?.email_enabled ?? true;
+	} catch (error) {
+		console.error("[isEmailNotificationsEnabled] Error checking notification settings:", error);
+		// Default to enabled on error (fail safe)
+		return true;
+	}
+}
 
 // Helper function to get student email by roll number or user_id
 export async function getStudentEmail(rollNoOrUserId: string): Promise<string | null> {
@@ -95,6 +112,13 @@ function getTicketMessageId(_ticketId: number): string {
 
 export async function sendEmail({ to, subject, html, ticketId, threadMessageId, originalSubject }: EmailOptions) {
 	console.log(`[sendEmail] Attempting to send email to ${to}${ticketId ? ` for ticket #${ticketId}` : ''}`);
+	
+	// Check if email notifications are enabled
+	const emailEnabled = await isEmailNotificationsEnabled();
+	if (!emailEnabled) {
+		console.log(`[sendEmail] Email notifications are disabled in settings; skipping email send to ${to}`);
+		return null;
+	}
 	
 	if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
 		console.error("❌ [sendEmail] SMTP credentials not configured; skipping email send.");

@@ -33,24 +33,33 @@ export async function GET() {
         ]);
 
         // Format domains for dropdown (value/label format)
-        const formattedDomains = domainsList.map(d => ({
-            value: d.name,
-            label: d.name,
-        }));
+        // Filter out any empty string values to prevent Select.Item errors
+        const formattedDomains = domainsList
+            .filter(d => d.name && d.name.trim() !== "")
+            .map(d => ({
+                value: d.name,
+                label: d.name,
+            }));
 
         // Format roles for dropdown (value/label format)
-        const formattedRoles = rolesList.map(r => ({
-            value: r.name,
-            label: r.name,
-            description: r.description,
-        }));
+        // Filter out any empty string values to prevent Select.Item errors
+        const formattedRoles = rolesList
+            .filter(r => r.name && r.name.trim() !== "")
+            .map(r => ({
+                value: r.name,
+                label: r.name,
+                description: r.description,
+            }));
 
         // Format scopes for dropdown (value/label format)
         // Also extract unique scopes from staff data if needed
-        const formattedScopes = scopesList.map(s => ({
-            value: s.name,
-            label: s.name,
-        }));
+        // Filter out any empty string values to prevent Select.Item errors
+        const formattedScopes = scopesList
+            .filter(s => s.name && s.name.trim() !== "")
+            .map(s => ({
+                value: s.name,
+                label: s.name,
+            }));
 
         return NextResponse.json({
             domains: formattedDomains,

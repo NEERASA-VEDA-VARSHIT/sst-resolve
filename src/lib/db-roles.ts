@@ -347,6 +347,41 @@ export async function setUserRole(
       })
       .where(eq(users.id, user.id));
 
+    // If promoting to admin or super_admin, delete student record if it exists
+    // Admins and super_admins are not students, so their student record should be removed
+    // Note: Student records are only created when explicitly needed (via admin form/bulk upload),
+    // so a new staff member who logs in won't have a student record - that's fine!
+    if (roleName === "admin" || roleName === "super_admin") {
+      try {
+        const { students } = await import("@/db/schema");
+        const { eq } = await import("drizzle-orm");
+        
+        // Check if student record exists before deleting
+        const [existingStudent] = await db
+          .select({ id: students.id })
+          .from(students)
+          .where(eq(students.user_id, user.id))
+          .limit(1);
+        
+        if (existingStudent) {
+          await db.delete(students)
+            .where(eq(students.user_id, user.id));
+          
+          if (process.env.NODE_ENV !== "production") {
+            console.log(`[DB Roles] Deleted student record for user ${clerkUserId} after promoting to ${roleName}`);
+          }
+        } else {
+          // No student record exists - this is fine for new staff members
+          if (process.env.NODE_ENV !== "production") {
+            console.log(`[DB Roles] No student record found for user ${clerkUserId} - skipping deletion (user is new staff member)`);
+          }
+        }
+      } catch (error) {
+        // Don't fail the role update if student deletion fails
+        console.warn(`[DB Roles] Failed to delete student record for user ${clerkUserId}:`, error);
+      }
+    }
+
     userRoleCache.delete(clerkUserId);
 
     if (process.env.NODE_ENV !== "production") {
