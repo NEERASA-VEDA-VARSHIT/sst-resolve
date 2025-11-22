@@ -10,7 +10,6 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { getCachedAdminUser, getCachedAdminAssignment, getCachedTicketStatuses } from "@/lib/admin/cached-queries";
 import { ticketMatchesAdminAssignment } from "@/lib/admin-assignment";
-import { AdminTicketFilters } from "@/components/admin/AdminTicketFilters";
 
 // Revalidate every 30 seconds for fresh data
 export const revalidate = 30;
@@ -36,16 +35,8 @@ export default async function AdminTodayPendingPage({ searchParams }: { searchPa
   // Get admin's domain/scope assignment (cached)
   const adminAssignment = await getCachedAdminAssignment(userId);
 
-  // Await searchParams (Next.js 15)
-  const resolvedSearchParams = searchParams ? await searchParams : {};
-  const params = resolvedSearchParams || {};
-  const searchQuery = (typeof params["search"] === "string" ? params["search"] : params["search"]?.[0]) || "";
-  const category = (typeof params["category"] === "string" ? params["category"] : params["category"]?.[0]) || "";
-  const subcategory = (typeof params["subcategory"] === "string" ? params["subcategory"] : params["subcategory"]?.[0]) || "";
-  const location = (typeof params["location"] === "string" ? params["location"] : params["location"]?.[0]) || "";
-  const status = (typeof params["status"] === "string" ? params["status"] : params["status"]?.[0]) || "";
-  const user = (typeof params["user"] === "string" ? params["user"] : params["user"]?.[0]) || "";
-  const sort = (typeof params["sort"] === "string" ? params["sort"] : params["sort"]?.[0]) || "newest";
+  // No filters on today page - just show all tickets due today
+  const now = new Date();
 
   // Fetch tickets: assigned to this admin OR unassigned tickets that match admin's domain/scope
   const allTicketRows = await db
@@ -133,7 +124,6 @@ export default async function AdminTodayPendingPage({ searchParams }: { searchPa
     allTickets = allTickets.filter(t => t.assigned_to === adminUserDbId);
   }
 
-  const now = new Date();
   // Get today's date in local timezone (year, month, day only)
   const todayYear = now.getFullYear();
   const todayMonth = now.getMonth();
@@ -202,118 +192,12 @@ export default async function AdminTodayPendingPage({ searchParams }: { searchPa
     }
   });
 
-  // Note: Overdue calculation moved to after filtering for better performance
-
-  // Apply filters to todayPending tickets
-  let filteredTodayPending = [...todayPending];
-
-  // Search filter (searches across ID, description, and subcategory)
-  if (searchQuery) {
-    const query = searchQuery.toLowerCase();
-    filteredTodayPending = filteredTodayPending.filter(t => {
-      const idMatch = t.id.toString().includes(query);
-      const descMatch = (t.description || "").toLowerCase().includes(query);
-      const metadata = (t.metadata as TicketMetadata & { subcategory?: string }) || {};
-      const subcatName = metadata.subcategory || "";
-      const subcatMatch = subcatName.toLowerCase().includes(query);
-      return idMatch || descMatch || subcatMatch;
-    });
-  }
-
-  // Category filter
-  if (category) {
-    filteredTodayPending = filteredTodayPending.filter(t => {
-      const categoryName = t.category_name || "";
-      return categoryName.toLowerCase() === category.toLowerCase();
-    });
-  }
-
-  // Subcategory filter
-  if (subcategory) {
-    filteredTodayPending = filteredTodayPending.filter(t => {
-      const metadata = (t.metadata as TicketMetadata & { subcategory?: string }) || {};
-      const subcatName = metadata.subcategory || "";
-      return subcatName.toLowerCase().includes(subcategory.toLowerCase());
-    });
-  }
-
-  // Location filter
-  if (location) {
-    filteredTodayPending = filteredTodayPending.filter(t => (t.location || "").toLowerCase().includes(location.toLowerCase()));
-  }
-
-  // Status filter
-  if (status) {
-    const normalizedStatus = status.toUpperCase();
-    filteredTodayPending = filteredTodayPending.filter(t => {
-      const ticketStatus = (t.status || "").toUpperCase();
-      if (normalizedStatus === "RESOLVED") {
-        return ticketStatus === "RESOLVED";
-      } else if (normalizedStatus === "OPEN") {
-        return ticketStatus === "OPEN";
-      } else if (normalizedStatus === "IN_PROGRESS" || normalizedStatus === "IN PROGRESS") {
-        return ticketStatus === "IN_PROGRESS";
-      } else if (normalizedStatus === "AWAITING_STUDENT" || normalizedStatus === "AWAITING STUDENT" || normalizedStatus === "AWAITING_STUDENT_RESPONSE") {
-        return ticketStatus === "AWAITING_STUDENT_RESPONSE" || ticketStatus === "AWAITING_STUDENT";
-      } else if (normalizedStatus === "REOPENED") {
-        return ticketStatus === "REOPENED";
-      }
-      return ticketStatus === normalizedStatus;
-    });
-  }
-
-  // User filter
-  if (user) {
-    filteredTodayPending = filteredTodayPending.filter(t => {
-      const metadata = (t.metadata as TicketMetadata & { userEmail?: string; userName?: string }) || {};
-      const userInfo = metadata.userEmail || metadata.userName || "";
-      return userInfo.toLowerCase().includes(user.toLowerCase());
-    });
-  }
-
-  // Sort tickets
-  const sortedTodayPending = [...filteredTodayPending];
-  
-  if (sort === "oldest") {
-    // Sort by creation date (oldest first)
-    sortedTodayPending.sort((a, b) => {
-      const aDate = a.created_at ? new Date(a.created_at).getTime() : 0;
-      const bDate = b.created_at ? new Date(b.created_at).getTime() : 0;
-      return aDate - bDate;
-    });
-  } else if (sort === "status") {
-    // Sort by status
-    sortedTodayPending.sort((a, b) => {
-      const aStatus = (a.status || "").toUpperCase();
-      const bStatus = (b.status || "").toUpperCase();
-      return aStatus.localeCompare(bStatus);
-    });
-  } else if (sort === "due-date") {
-    // Sort by due date
-    sortedTodayPending.sort((a, b) => {
-      const getTatDate = (t: typeof a): number => {
-        if (t.resolution_due_at) {
-          const date = new Date(t.resolution_due_at);
-          return !isNaN(date.getTime()) ? date.getTime() : 0;
-        }
-        if (t.metadata && typeof t.metadata === "object") {
-          const metadata = t.metadata as TicketMetadata;
-          if (metadata?.tatDate && typeof metadata.tatDate === 'string') {
-            const date = new Date(metadata.tatDate);
-            return !isNaN(date.getTime()) ? date.getTime() : 0;
-          }
-        }
-        return 0;
-      };
-      return getTatDate(a) - getTatDate(b);
-    });
-  } else {
-    // Default: Sort by urgency (overdue first, then by TAT time)
-    sortedTodayPending.sort((a, b) => {
+  // Sort tickets by urgency (overdue first, then by TAT time)
+  const sortedTodayPending = [...todayPending].sort((a, b) => {
     try {
       const getTatDate = (t: typeof a): Date | null => {
-          if (t.resolution_due_at) {
-            const date = new Date(t.resolution_due_at);
+        if (t.resolution_due_at) {
+          const date = new Date(t.resolution_due_at);
           return !isNaN(date.getTime()) ? date : null;
         }
         if (t.metadata && typeof t.metadata === "object") {
@@ -343,12 +227,11 @@ export default async function AdminTodayPendingPage({ searchParams }: { searchPa
     } catch {
       return 0;
     }
-    });
-  }
+  });
 
-  // Update overdue count based on filtered tickets
-  const filteredOverdueIds = new Set(
-    filteredTodayPending
+  // Calculate overdue count
+  const overdueIds = new Set(
+    todayPending
       .filter(t => {
         try {
           const status = (t.status || "").toUpperCase();
@@ -395,9 +278,6 @@ export default async function AdminTodayPendingPage({ searchParams }: { searchPa
         </Button>
       </div>
 
-      {/* Filters */}
-      <AdminTicketFilters />
-
       {/* Simple Stats */}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -409,11 +289,9 @@ export default async function AdminTodayPendingPage({ searchParams }: { searchPa
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">{filteredTodayPending.length}</div>
+            <div className="text-3xl font-bold">{todayPending.length}</div>
             <div className="text-sm text-muted-foreground mt-1">
-              {filteredTodayPending.length === todayPending.length 
-                ? "TAT due today" 
-                : `Showing ${filteredTodayPending.length} of ${todayPending.length}`}
+              TAT due today
             </div>
           </CardContent>
         </Card>
@@ -426,13 +304,13 @@ export default async function AdminTodayPendingPage({ searchParams }: { searchPa
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-orange-600 dark:text-orange-400">{filteredOverdueIds.size}</div>
+            <div className="text-3xl font-bold text-orange-600 dark:text-orange-400">{overdueIds.size}</div>
             <div className="text-sm text-muted-foreground mt-1">Past TAT deadline</div>
           </CardContent>
         </Card>
       </div>
 
-      {filteredTodayPending.length === 0 ? (
+      {todayPending.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12">
             <CheckCircle2 className="w-12 h-12 text-muted-foreground mb-3" />
@@ -449,11 +327,11 @@ export default async function AdminTodayPendingPage({ searchParams }: { searchPa
       ) : (
         <div>
           <h2 className="text-xl font-semibold mb-4">
-            Tickets ({filteredTodayPending.length})
+            Tickets ({todayPending.length})
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {sortedTodayPending.map((t) => {
-              const isOverdue = filteredOverdueIds.has(t.id);
+              const isOverdue = overdueIds.has(t.id);
               return (
                 <div key={t.id} className={isOverdue ? "ring-2 ring-orange-400 dark:ring-orange-500 rounded-lg" : ""}>
                   <TicketCard ticket={{

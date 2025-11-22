@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Filter, Search, X, ChevronDown, ChevronUp, Clock, RotateCcw, AlertTriangle, Building2, GraduationCap, ArrowUpDown } from "lucide-react";
+import { Filter, Search, X, ChevronDown, ChevronUp, Clock, RotateCcw, AlertTriangle, Building2, GraduationCap, ArrowUpDown, Loader2 } from "lucide-react";
 // Removed static LOCATIONS import - now fetching from database
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
@@ -36,6 +36,7 @@ export function AdminTicketFilters() {
   const [categoryOptions, setCategoryOptions] = useState<CategoryOption[]>([]);
   const [locationOptions, setLocationOptions] = useState<string[]>([]);
   const [loadingFilters, setLoadingFilters] = useState(true);
+  const [isApplying, setIsApplying] = useState(false);
   
   const [searchQuery, setSearchQuery] = useState<string>(searchParams.get("search") || "");
   const [category, setCategory] = useState<string>(searchParams.get("category") || "");
@@ -187,6 +188,7 @@ export function AdminTicketFilters() {
   }, [searchQuery, category, subcategory, location, tat, status, createdFrom, createdTo, userNumber, sort, pathname, router]);
 
   const apply = useCallback(() => {
+    setIsApplying(true);
     const params = new URLSearchParams();
     if (searchQuery) params.set("search", searchQuery);
     if (category) params.set("category", category);
@@ -199,6 +201,8 @@ export function AdminTicketFilters() {
     if (userNumber) params.set("user", userNumber);
     if (sort && sort !== "newest") params.set("sort", sort);
     router.push(`${pathname}${params.toString() ? `?${params.toString()}` : ""}`);
+    // Reset loading state after navigation
+    setTimeout(() => setIsApplying(false), 500);
   }, [searchQuery, category, subcategory, location, tat, status, createdFrom, createdTo, userNumber, sort, pathname, router]);
 
   const reset = useCallback(() => {
@@ -280,25 +284,46 @@ export function AdminTicketFilters() {
       
       {/* Collapsed View - Always Visible */}
       <CardContent className={isExpanded ? "space-y-4" : "pb-3"}>
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-          <Input
-            placeholder="Search by ticket ID, description, user number, or subcategory..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && apply()}
-            className="pl-9 pr-9 h-9 text-sm"
-          />
-          {searchQuery && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="absolute right-1 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0"
-              onClick={() => setSearchQuery("")}
-            >
-              <X className="w-3 h-3" />
-            </Button>
-          )}
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+            <Input
+              placeholder="Search by ticket ID, description, user number, or subcategory..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && apply()}
+              className="pl-9 pr-9 h-9 text-sm"
+              disabled={isApplying}
+            />
+            {searchQuery && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="absolute right-1 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0"
+                onClick={() => setSearchQuery("")}
+                disabled={isApplying}
+              >
+                <X className="w-3 h-3" />
+              </Button>
+            )}
+          </div>
+          <Button
+            onClick={apply}
+            disabled={isApplying}
+            className="h-9 px-4 min-w-[100px]"
+          >
+            {isApplying ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Applying...
+              </>
+            ) : (
+              <>
+                <Search className="w-4 h-4 mr-2" />
+                Apply
+              </>
+            )}
+          </Button>
         </div>
 
         {/* Active Filters and Quick Actions - Always Visible */}
@@ -489,6 +514,7 @@ export function AdminTicketFilters() {
                 size="sm"
                 onClick={() => setShowAdvanced(v => !v)}
                 className="text-xs h-7 text-primary hover:text-primary hover:bg-primary/10"
+                disabled={isApplying}
               >
                 {showAdvanced ? (
                   <>
@@ -502,12 +528,24 @@ export function AdminTicketFilters() {
                   </>
                 )}
               </Button>
-              <div className="flex gap-2">
-                <Button onClick={apply} size="sm" className="h-7 text-xs">
-                  <Search className="w-3 h-3 mr-1" />
-                  Apply
-                </Button>
-              </div>
+              <Button 
+                onClick={apply} 
+                size="sm" 
+                className="h-7 text-xs min-w-[100px]"
+                disabled={isApplying}
+              >
+                {isApplying ? (
+                  <>
+                    <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                    Applying...
+                  </>
+                ) : (
+                  <>
+                    <Search className="w-3 h-3 mr-1" />
+                    Apply
+                  </>
+                )}
+              </Button>
             </div>
 
             {/* Advanced Filters */}

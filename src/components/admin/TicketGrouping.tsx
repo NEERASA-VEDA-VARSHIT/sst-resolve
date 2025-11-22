@@ -70,13 +70,16 @@ export function TicketGrouping({ selectedTicketIds, onGroupCreated }: TicketGrou
   const fetchGroups = async () => {
     try {
       setLoading(true);
-      const response = await fetch("/api/tickets/groups");
+      const response = await fetch("/api/tickets/groups", { cache: "no-store" });
       if (response.ok) {
         const data = await response.json();
         setGroups(data.groups || []);
+      } else {
+        toast.error("Failed to load groups. Please try again.");
       }
     } catch (error) {
       console.error("Error fetching groups:", error);
+      toast.error("An error occurred while loading groups.");
     } finally {
       setLoading(false);
     }
