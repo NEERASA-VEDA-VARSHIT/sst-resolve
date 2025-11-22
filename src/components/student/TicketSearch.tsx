@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -52,6 +52,7 @@ export default function TicketSearch({
 }: TicketSearchProps = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const [, startTransition] = useTransition();
 
   const [searchQuery, setSearchQuery] = useState(searchParams.get("search") || "");
   const [statusFilter, setStatusFilter] = useState(searchParams.get("status") || "");
@@ -76,7 +77,9 @@ export default function TicketSearch({
   // Update local state when URL params change (for back/forward navigation)
   useEffect(() => {
     setSearchQuery(searchParams.get("search") || "");
-    setStatusFilter(searchParams.get("status") || "");
+    // Normalize status filter to lowercase to match stats cards
+    const urlStatus = searchParams.get("status") || "";
+    setStatusFilter(urlStatus.toLowerCase());
     setCategoryFilter(searchParams.get("category") || "");
     setSubcategoryFilter(searchParams.get("subcategory") || "");
     setSubSubcategoryFilter(searchParams.get("sub_subcategory") || "");
@@ -110,7 +113,9 @@ export default function TicketSearch({
       }
     });
 
-    router.push(`/student/dashboard${params.toString() ? `?${params.toString()}` : ""}`);
+    startTransition(() => {
+      router.push(`/student/dashboard${params.toString() ? `?${params.toString()}` : ""}`);
+    });
     if (onSearch) onSearch(search);
   };
 
@@ -175,12 +180,15 @@ export default function TicketSearch({
 
       {/* Filters */}
       <div className="flex flex-wrap gap-4">
-        <Select value={statusFilter || "all"} onValueChange={(value) => {
-          const newValue = value === "all" ? "" : value;
-          setStatusFilter(newValue);
-          // Apply filters which will update URL and sync with stats cards
-          applyFilters(searchQuery, newValue, categoryFilter, subcategoryFilter, subSubcategoryFilter, sortBy, dynamicFilters);
-        }}>
+        <Select 
+          value={statusFilter || "all"} 
+          onValueChange={(value) => {
+            const newValue = value === "all" ? "" : value.toLowerCase();
+            setStatusFilter(newValue);
+            // Apply filters which will update URL and sync with stats cards
+            applyFilters(searchQuery, newValue, categoryFilter, subcategoryFilter, subSubcategoryFilter, sortBy, dynamicFilters);
+          }}
+        >
           <SelectTrigger className="w-full sm:w-[180px] h-10">
             <SelectValue placeholder="All Statuses" />
           </SelectTrigger>
@@ -188,11 +196,20 @@ export default function TicketSearch({
             <SelectItem value="all">All Statuses</SelectItem>
             {statuses
               .filter(status => status.value && status.value.trim() !== "")
-              .map((status) => (
-                <SelectItem key={status.value} value={status.value}>
-                  {status.label}
-                </SelectItem>
-              ))}
+              .map((status) => {
+                // Normalize status value to lowercase to match stats cards URL format
+                // Database stores "OPEN", "IN_PROGRESS" but URL uses "open", "in_progress"
+                const normalizedValue = status.value.toLowerCase();
+                // Map AWAITING_STUDENT to awaiting_student_response for consistency
+                const urlValue = normalizedValue === "awaiting_student" 
+                  ? "awaiting_student_response" 
+                  : normalizedValue;
+                return (
+                  <SelectItem key={status.value} value={urlValue}>
+                    {status.label}
+                  </SelectItem>
+                );
+              })}
           </SelectContent>
         </Select>
 

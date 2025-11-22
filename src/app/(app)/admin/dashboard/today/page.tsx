@@ -8,37 +8,44 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Calendar, AlertTriangle, CheckCircle2, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { getUserRoleFromDB } from "@/lib/db-roles";
-import { getOrCreateUser } from "@/lib/user-sync";
-import { getTicketStatuses } from "@/lib/status/getTicketStatuses";
+import { getCachedAdminUser, getCachedAdminAssignment, getCachedTicketStatuses } from "@/lib/admin/cached-queries";
+import { ticketMatchesAdminAssignment } from "@/lib/admin-assignment";
+import { AdminTicketFilters } from "@/components/admin/AdminTicketFilters";
 
-export default async function AdminTodayPendingPage() {
+// Revalidate every 30 seconds for fresh data
+export const revalidate = 30;
+
+export default async function AdminTodayPendingPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   const { userId } = await auth();
   if (!userId) redirect("/");
 
-  // Ensure user exists in database
-  await getOrCreateUser(userId);
-
-  // Get role from database (single source of truth)
-  const role = await getUserRoleFromDB(userId);
+  // Use cached functions for better performance
+  const { dbUser, role } = await getCachedAdminUser(userId);
   const isSuperAdmin = role === "super_admin";
+  
   if (role === "student") redirect("/student/dashboard");
   if (isSuperAdmin) redirect("/superadmin/dashboard");
 
-  const adminUserId = userId;
-
-  // Get admin's domain/scope assignment
-  const { getAdminAssignment, ticketMatchesAdminAssignment } = await import("@/lib/admin-assignment");
-  const adminAssignment = await getAdminAssignment(adminUserId);
-
-  // Get admin's user record
-  const dbUser = await getOrCreateUser(adminUserId);
   if (!dbUser) {
     console.error("[AdminTodayPendingPage] Failed to create/fetch user");
     redirect("/");
   }
 
   const adminUserDbId = dbUser.id;
+
+  // Get admin's domain/scope assignment (cached)
+  const adminAssignment = await getCachedAdminAssignment(userId);
+
+  // Await searchParams (Next.js 15)
+  const resolvedSearchParams = searchParams ? await searchParams : {};
+  const params = resolvedSearchParams || {};
+  const searchQuery = (typeof params["search"] === "string" ? params["search"] : params["search"]?.[0]) || "";
+  const category = (typeof params["category"] === "string" ? params["category"] : params["category"]?.[0]) || "";
+  const subcategory = (typeof params["subcategory"] === "string" ? params["subcategory"] : params["subcategory"]?.[0]) || "";
+  const location = (typeof params["location"] === "string" ? params["location"] : params["location"]?.[0]) || "";
+  const status = (typeof params["status"] === "string" ? params["status"] : params["status"]?.[0]) || "";
+  const user = (typeof params["user"] === "string" ? params["user"] : params["user"]?.[0]) || "";
+  const sort = (typeof params["sort"] === "string" ? params["sort"] : params["sort"]?.[0]) || "newest";
 
   // Fetch tickets: assigned to this admin OR unassigned tickets that match admin's domain/scope
   const allTicketRows = await db
@@ -136,8 +143,8 @@ export default async function AdminTodayPendingPage() {
   // const endOfToday = new Date(todayYear, todayMonth, todayDate, 23, 59, 59, 999);
 
   // "Pending today": tickets with TAT date falling today (should be resolved today)
-  // Fetch dynamic ticket statuses
-  const ticketStatuses = await getTicketStatuses();
+  // Fetch dynamic ticket statuses (cached)
+  const ticketStatuses = await getCachedTicketStatuses();
   const pendingStatuses = new Set(ticketStatuses.filter(s => !s.is_final).map(s => s.value));
 
   const todayPending = allTickets.filter(t => {
@@ -195,47 +202,114 @@ export default async function AdminTodayPendingPage() {
     }
   });
 
-  // Calculate additional metrics - create a Set of overdue ticket IDs for efficient lookup
-  // Exclude tickets in AWAITING_STUDENT status from overdue calculation
-  const overdueTodayIds = new Set(
-    todayPending
-      .filter(t => {
-        try {
-          // Exclude tickets awaiting student response from overdue
-          const status = (t.status || "").toUpperCase();
-          if (status === "AWAITING_STUDENT" || status === "AWAITING_STUDENT_RESPONSE") {
-            return false;
-          }
+  // Note: Overdue calculation moved to after filtering for better performance
 
-          // Check due_at first
-          if (t.due_at) {
-            const dueDate = new Date(t.due_at);
-            if (!isNaN(dueDate.getTime())) {
-              return dueDate.getTime() < now.getTime();
-            }
-          }
+  // Apply filters to todayPending tickets
+  let filteredTodayPending = [...todayPending];
 
-          // Fallback to metadata
-          if (t.metadata && typeof t.metadata === "object") {
-            const metadata = t.metadata as TicketMetadata;
-            if (metadata?.tatDate && typeof metadata.tatDate === 'string') {
-              const tatDate = new Date(metadata.tatDate);
-              if (!isNaN(tatDate.getTime())) {
-                return tatDate.getTime() < now.getTime();
-              }
-            }
-          }
+  // Search filter (searches across ID, description, and subcategory)
+  if (searchQuery) {
+    const query = searchQuery.toLowerCase();
+    filteredTodayPending = filteredTodayPending.filter(t => {
+      const idMatch = t.id.toString().includes(query);
+      const descMatch = (t.description || "").toLowerCase().includes(query);
+      const metadata = (t.metadata as TicketMetadata & { subcategory?: string }) || {};
+      const subcatName = metadata.subcategory || "";
+      const subcatMatch = subcatName.toLowerCase().includes(query);
+      return idMatch || descMatch || subcatMatch;
+    });
+  }
 
-          return false;
-        } catch {
-          return false;
+  // Category filter
+  if (category) {
+    filteredTodayPending = filteredTodayPending.filter(t => {
+      const categoryName = t.category_name || "";
+      return categoryName.toLowerCase() === category.toLowerCase();
+    });
+  }
+
+  // Subcategory filter
+  if (subcategory) {
+    filteredTodayPending = filteredTodayPending.filter(t => {
+      const metadata = (t.metadata as TicketMetadata & { subcategory?: string }) || {};
+      const subcatName = metadata.subcategory || "";
+      return subcatName.toLowerCase().includes(subcategory.toLowerCase());
+    });
+  }
+
+  // Location filter
+  if (location) {
+    filteredTodayPending = filteredTodayPending.filter(t => (t.location || "").toLowerCase().includes(location.toLowerCase()));
+  }
+
+  // Status filter
+  if (status) {
+    const normalizedStatus = status.toUpperCase();
+    filteredTodayPending = filteredTodayPending.filter(t => {
+      const ticketStatus = (t.status || "").toUpperCase();
+      if (normalizedStatus === "RESOLVED") {
+        return ticketStatus === "RESOLVED";
+      } else if (normalizedStatus === "OPEN") {
+        return ticketStatus === "OPEN";
+      } else if (normalizedStatus === "IN_PROGRESS" || normalizedStatus === "IN PROGRESS") {
+        return ticketStatus === "IN_PROGRESS";
+      } else if (normalizedStatus === "AWAITING_STUDENT" || normalizedStatus === "AWAITING STUDENT" || normalizedStatus === "AWAITING_STUDENT_RESPONSE") {
+        return ticketStatus === "AWAITING_STUDENT_RESPONSE" || ticketStatus === "AWAITING_STUDENT";
+      } else if (normalizedStatus === "REOPENED") {
+        return ticketStatus === "REOPENED";
+      }
+      return ticketStatus === normalizedStatus;
+    });
+  }
+
+  // User filter
+  if (user) {
+    filteredTodayPending = filteredTodayPending.filter(t => {
+      const metadata = (t.metadata as TicketMetadata & { userEmail?: string; userName?: string }) || {};
+      const userInfo = metadata.userEmail || metadata.userName || "";
+      return userInfo.toLowerCase().includes(user.toLowerCase());
+    });
+  }
+
+  // Sort tickets
+  const sortedTodayPending = [...filteredTodayPending];
+  
+  if (sort === "oldest") {
+    // Sort by creation date (oldest first)
+    sortedTodayPending.sort((a, b) => {
+      const aDate = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const bDate = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return aDate - bDate;
+    });
+  } else if (sort === "status") {
+    // Sort by status
+    sortedTodayPending.sort((a, b) => {
+      const aStatus = (a.status || "").toUpperCase();
+      const bStatus = (b.status || "").toUpperCase();
+      return aStatus.localeCompare(bStatus);
+    });
+  } else if (sort === "due-date") {
+    // Sort by due date
+    sortedTodayPending.sort((a, b) => {
+      const getTatDate = (t: typeof a): number => {
+        if (t.resolution_due_at) {
+          const date = new Date(t.resolution_due_at);
+          return !isNaN(date.getTime()) ? date.getTime() : 0;
         }
-      })
-      .map(t => t.id)
-  );
-
-  // Sort by urgency (overdue first, then by TAT time)
-  const sortedTodayPending = [...todayPending].sort((a, b) => {
+        if (t.metadata && typeof t.metadata === "object") {
+          const metadata = t.metadata as TicketMetadata;
+          if (metadata?.tatDate && typeof metadata.tatDate === 'string') {
+            const date = new Date(metadata.tatDate);
+            return !isNaN(date.getTime()) ? date.getTime() : 0;
+          }
+        }
+        return 0;
+      };
+      return getTatDate(a) - getTatDate(b);
+    });
+  } else {
+    // Default: Sort by urgency (overdue first, then by TAT time)
+    sortedTodayPending.sort((a, b) => {
     try {
       const getTatDate = (t: typeof a): Date | null => {
           if (t.resolution_due_at) {
@@ -269,7 +343,40 @@ export default async function AdminTodayPendingPage() {
     } catch {
       return 0;
     }
-  });
+    });
+  }
+
+  // Update overdue count based on filtered tickets
+  const filteredOverdueIds = new Set(
+    filteredTodayPending
+      .filter(t => {
+        try {
+          const status = (t.status || "").toUpperCase();
+          if (status === "AWAITING_STUDENT" || status === "AWAITING_STUDENT_RESPONSE") {
+            return false;
+          }
+          if (t.due_at) {
+            const dueDate = new Date(t.due_at);
+            if (!isNaN(dueDate.getTime())) {
+              return dueDate.getTime() < now.getTime();
+            }
+          }
+          if (t.metadata && typeof t.metadata === "object") {
+            const metadata = t.metadata as TicketMetadata;
+            if (metadata?.tatDate && typeof metadata.tatDate === 'string') {
+              const tatDate = new Date(metadata.tatDate);
+              if (!isNaN(tatDate.getTime())) {
+                return tatDate.getTime() < now.getTime();
+              }
+            }
+          }
+          return false;
+        } catch {
+          return false;
+        }
+      })
+      .map(t => t.id)
+  );
 
   return (
     <div className="space-y-8">
@@ -288,7 +395,11 @@ export default async function AdminTodayPendingPage() {
         </Button>
       </div>
 
+      {/* Filters */}
+      <AdminTicketFilters />
+
       {/* Simple Stats */}
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card>
           <CardHeader>
@@ -298,8 +409,12 @@ export default async function AdminTodayPendingPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">{todayPending.length}</div>
-            <div className="text-sm text-muted-foreground mt-1">TAT due today</div>
+            <div className="text-3xl font-bold">{filteredTodayPending.length}</div>
+            <div className="text-sm text-muted-foreground mt-1">
+              {filteredTodayPending.length === todayPending.length 
+                ? "TAT due today" 
+                : `Showing ${filteredTodayPending.length} of ${todayPending.length}`}
+            </div>
           </CardContent>
         </Card>
 
@@ -311,30 +426,34 @@ export default async function AdminTodayPendingPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-orange-600 dark:text-orange-400">{overdueTodayIds.size}</div>
+            <div className="text-3xl font-bold text-orange-600 dark:text-orange-400">{filteredOverdueIds.size}</div>
             <div className="text-sm text-muted-foreground mt-1">Past TAT deadline</div>
           </CardContent>
         </Card>
       </div>
 
-      {todayPending.length === 0 ? (
+      {filteredTodayPending.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12">
             <CheckCircle2 className="w-12 h-12 text-muted-foreground mb-3" />
-            <p className="font-medium mb-1">All clear!</p>
+            <p className="font-medium mb-1">
+              {todayPending.length === 0 ? "All clear!" : "No tickets match your filters"}
+            </p>
             <p className="text-sm text-muted-foreground text-center">
-              No tickets with TAT due today.
+              {todayPending.length === 0 
+                ? "No tickets with TAT due today."
+                : `Try adjusting your filters to see more results.`}
             </p>
           </CardContent>
         </Card>
       ) : (
         <div>
           <h2 className="text-xl font-semibold mb-4">
-            Tickets ({todayPending.length})
+            Tickets ({filteredTodayPending.length})
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {sortedTodayPending.map((t) => {
-              const isOverdue = overdueTodayIds.has(t.id);
+              const isOverdue = filteredOverdueIds.has(t.id);
               return (
                 <div key={t.id} className={isOverdue ? "ring-2 ring-orange-400 dark:ring-orange-500 rounded-lg" : ""}>
                   <TicketCard ticket={{

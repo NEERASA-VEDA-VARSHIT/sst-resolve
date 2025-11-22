@@ -34,6 +34,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { NavLoadingShimmer } from "./NavLoadingShimmer";
 
 type UserRole = "student" | "admin" | "super_admin" | "committee";
 
@@ -42,30 +43,66 @@ export function UnifiedNav() {
   const { user } = useUser();
   const [mounted, setMounted] = useState(false);
   const [role, setRole] = useState<UserRole>("student");
+  const [roleLoading, setRoleLoading] = useState(true);
   
   useEffect(() => {
     setMounted(true);
     
     // Fetch role from database API (single source of truth)
     if (user?.id) {
-      fetch(`/api/auth/role?userId=${user.id}`, { cache: "no-store" })
-        .then(res => res.json())
+      setRoleLoading(true);
+      // Use AbortController for cleanup
+      const controller = new AbortController();
+      
+      fetch(`/api/auth/role?userId=${user.id}`, { 
+        cache: "no-store",
+        signal: controller.signal
+      })
+        .then(res => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.json();
+        })
         .then(data => {
           if (data?.role) {
             setRole(data.role as UserRole);
           }
         })
         .catch(err => {
-          console.error("[UnifiedNav] Error fetching role:", err);
-          // Default to student on error
-          setRole("student");
+          if (err.name !== 'AbortError') {
+            console.error("[UnifiedNav] Error fetching role:", err);
+            // Default to student on error
+            setRole("student");
+          }
+        })
+        .finally(() => {
+          setRoleLoading(false);
         });
+      
+      // Cleanup function
+      return () => {
+        controller.abort();
+      };
+    } else {
+      setRoleLoading(false);
     }
   }, [user?.id]);
   
   const isSuperAdmin = role === "super_admin";
   const isCommittee = role === "committee";
   const isRegularAdmin = role === "admin";
+  
+  // Show loading shimmer while fetching role
+  if (!mounted || roleLoading) {
+    return <NavLoadingShimmer />;
+  }
+  
+  // Get profile link based on role
+  const getProfileLink = () => {
+    if (isCommittee) return "/committee/profile";
+    // For now, admin and superadmin use student profile page
+    // TODO: Create dedicated profile pages for admin/superadmin if needed
+    return "/student/profile";
+  };
 
   // Build navigation items based on role
   const navItems = mounted
@@ -235,7 +272,7 @@ export function UnifiedNav() {
             </Link>
 
             {/* Navigation Items - Center */}
-            <nav className="flex items-center gap-1 flex-1">
+            <nav className="flex items-center gap-1 flex-1 overflow-x-auto scrollbar-hide">
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const active = isActive(item.href);
@@ -245,13 +282,13 @@ export function UnifiedNav() {
                     key={item.href}
                     href={item.href}
                     className={cn(
-                      "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all relative",
+                      "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all relative whitespace-nowrap",
                       active
-                        ? "text-primary bg-primary/10"
+                        ? "text-primary bg-primary/10 font-semibold"
                         : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                     )}
                   >
-                    <Icon className="w-4 h-4" />
+                    <Icon className="w-4 h-4 flex-shrink-0" />
                     <span>{item.title}</span>
                     {active && (
                       <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />
@@ -308,14 +345,12 @@ export function UnifiedNav() {
                           </DropdownMenuLabel>
                           <>
                             <DropdownMenuSeparator />
-                            {(role === "student" || role === "committee") && (
-                              <DropdownMenuItem asChild>
-                                <Link href={isCommittee ? "/committee/profile" : "/student/profile"} className="cursor-pointer">
-                                  <User className="mr-2 h-4 w-4" />
-                                  <span>Profile</span>
-                                </Link>
-                              </DropdownMenuItem>
-                            )}
+                            <DropdownMenuItem asChild>
+                              <Link href={getProfileLink()} className="cursor-pointer">
+                                <User className="mr-2 h-4 w-4" />
+                                <span>Profile</span>
+                              </Link>
+                            </DropdownMenuItem>
                           </>
                           <DropdownMenuSeparator />
                           <SignOutButton>
@@ -345,8 +380,8 @@ export function UnifiedNav() {
 
       {/* Mobile Bottom Navigation */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 safe-area-inset-bottom">
-        <div className="flex items-center justify-around h-16 px-2 max-w-screen">
-          {navItems.map((item) => {
+        <div className="flex items-center justify-around h-16 px-1 max-w-screen overflow-x-auto scrollbar-hide">
+          {navItems.slice(0, 5).map((item) => {
             const Icon = item.icon;
             const active = isActive(item.href);
             
@@ -355,20 +390,56 @@ export function UnifiedNav() {
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "flex flex-col items-center justify-center gap-1 flex-1 h-full rounded-lg transition-colors min-w-0 relative",
+                  "flex flex-col items-center justify-center gap-1 flex-1 h-full rounded-lg transition-colors min-w-[60px] max-w-[80px] relative",
                   active
                     ? "text-primary"
                     : "text-muted-foreground"
                 )}
               >
                 <Icon className={cn("w-5 h-5 flex-shrink-0", active && "scale-110")} />
-                <span className="text-xs font-medium truncate w-full text-center">{item.title}</span>
+                <span className="text-[10px] font-medium truncate w-full text-center leading-tight">{item.title}</span>
                 {active && (
                   <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-primary rounded-full" />
                 )}
               </Link>
             );
           })}
+          {/* Show "More" if there are more than 5 items */}
+          {navItems.length > 5 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  className="flex flex-col items-center justify-center gap-1 h-full min-w-[60px] max-w-[80px]"
+                >
+                  <div className="w-5 h-5 rounded-full border-2 border-muted-foreground flex items-center justify-center">
+                    <span className="text-[10px] font-bold">+{navItems.length - 5}</span>
+                  </div>
+                  <span className="text-[10px] font-medium">More</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" side="top" className="mb-2">
+                {navItems.slice(5).map((item) => {
+                  const Icon = item.icon;
+                  const active = isActive(item.href);
+                  return (
+                    <DropdownMenuItem key={item.href} asChild>
+                      <Link
+                        href={item.href}
+                        className={cn(
+                          "flex items-center gap-2 cursor-pointer",
+                          active && "text-primary font-semibold"
+                        )}
+                      >
+                        <Icon className="w-4 h-4" />
+                        <span>{item.title}</span>
+                      </Link>
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </nav>
 
@@ -413,14 +484,12 @@ export function UnifiedNav() {
                   </DropdownMenuLabel>
                   <>
                     <DropdownMenuSeparator />
-                    {(role === "student" || role === "committee") && (
-                      <DropdownMenuItem asChild>
-                        <Link href={isCommittee ? "/committee/profile" : "/profile"} className="cursor-pointer">
-                          <User className="mr-2 h-4 w-4" />
-                          <span>Profile</span>
-                        </Link>
-                      </DropdownMenuItem>
-                    )}
+                    <DropdownMenuItem asChild>
+                      <Link href={getProfileLink()} className="cursor-pointer">
+                        <User className="mr-2 h-4 w-4" />
+                        <span>Profile</span>
+                      </Link>
+                    </DropdownMenuItem>
                   </>
                   <DropdownMenuSeparator />
                   <SignOutButton>

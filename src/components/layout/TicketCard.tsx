@@ -1,3 +1,6 @@
+"use client";
+
+import { memo, useMemo } from "react";
 import Link from "next/link";
 import {
   Calendar,
@@ -86,18 +89,45 @@ function computeTatInfo(date?: Date | null) {
    Component
 ---------------------------------------------------- */
 
-export function TicketCard({ ticket, basePath = "/student/dashboard", disableLink = false }: TicketCardProps) {
-  const metadata = (ticket.metadata as TicketMetadata) ?? {};
+function TicketCardComponent({ ticket, basePath = "/student/dashboard", disableLink = false }: TicketCardProps) {
+  // Memoize metadata parsing
+  const metadata = useMemo(() => (ticket.metadata as TicketMetadata) ?? {}, [ticket.metadata]);
 
-  // TAT calculation - use resolution_due_at or metadata
-  const ticketWithExtras = ticket as typeof ticket & { due_at?: Date | null };
-  const tatDate = ticketWithExtras.due_at || ticket.resolution_due_at || (metadata?.tatDate ? new Date(metadata.tatDate) : null);
-  const { overdue, label: tatLabel } = computeTatInfo(tatDate);
+  // Memoize TAT calculation
+  const { tatDate, overdue, tatLabel } = useMemo(() => {
+    const ticketWithExtras = ticket as typeof ticket & { due_at?: Date | null };
+    const date = ticketWithExtras.due_at || ticket.resolution_due_at || (metadata?.tatDate ? new Date(metadata.tatDate) : null);
+    const info = computeTatInfo(date);
+    return { tatDate: date, overdue: info.overdue, tatLabel: info.label };
+  }, [ticket, metadata?.tatDate]);
 
-  // Comment count (if present in metadata)
-  const commentCount = Array.isArray(metadata?.comments) ? metadata.comments.length : 0;
+  // Memoize comment count
+  const commentCount = useMemo(() => {
+    return Array.isArray(metadata?.comments) ? metadata.comments.length : 0;
+  }, [metadata?.comments]);
 
-  const isEscalated = (ticket.escalation_level ?? 0) > 0;
+  // Memoize escalation status
+  const isEscalated = useMemo(() => (ticket.escalation_level ?? 0) > 0, [ticket.escalation_level]);
+
+  // Memoize status value
+  const statusValue = useMemo(() => getStatusValue(ticket.status), [ticket.status]);
+  
+  // Memoize formatted status
+  const formattedStatus = useMemo(() => formatStatus(ticket.status), [ticket.status]);
+
+  // Memoize created date string
+  const createdDateStr = useMemo(() => {
+    return ticket.created_at?.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  }, [ticket.created_at]);
+
+  // Memoize creator name
+  const creatorDisplayName = useMemo(() => {
+    return ticket.creator_name || ticket.creator_email || "Unknown";
+  }, [ticket.creator_name, ticket.creator_email]);
 
   const card = (
     <Card
@@ -145,11 +175,11 @@ export function TicketCard({ ticket, basePath = "/student/dashboard", disableLin
                     variant="outline"
                     className={cn(
                       "text-xs font-semibold border transition-all",
-                      STATUS_STYLES[getStatusValue(ticket.status)] || "bg-muted text-foreground",
+                      STATUS_STYLES[statusValue] || "bg-muted text-foreground",
                       "group-hover:scale-105 group-hover:shadow-sm"
                     )}
                   >
-                    {formatStatus(ticket.status)}
+                    {formattedStatus}
                   </Badge>
                 )}
 
@@ -203,7 +233,7 @@ export function TicketCard({ ticket, basePath = "/student/dashboard", disableLin
                   <User className="w-3 h-3" />
                 </div>
                 <span className="font-semibold">
-                  {ticket.creator_name || ticket.creator_email || "Unknown"}
+                  {creatorDisplayName}
                 </span>
               </div>
 
@@ -224,11 +254,7 @@ export function TicketCard({ ticket, basePath = "/student/dashboard", disableLin
                   <Calendar className="w-3 h-3" />
                 </div>
                 <span className="font-medium">
-                  {ticket.created_at?.toLocaleDateString("en-US", {
-                    month: "short",
-                    day: "numeric",
-                    year: "numeric",
-                  })}
+                  {createdDateStr}
                 </span>
               </div>
 
@@ -268,5 +294,21 @@ export function TicketCard({ ticket, basePath = "/student/dashboard", disableLin
 
   return <Link href={`${basePath}/ticket/${ticket.id}`}>{card}</Link>;
 }
+
+// Memoize the component to prevent unnecessary re-renders
+export const TicketCard = memo(TicketCardComponent, (prevProps, nextProps) => {
+  // Custom comparison function for better performance
+  return (
+    prevProps.ticket.id === nextProps.ticket.id &&
+    prevProps.ticket.status === nextProps.ticket.status &&
+    prevProps.ticket.escalation_level === nextProps.ticket.escalation_level &&
+    prevProps.ticket.resolution_due_at?.getTime() === nextProps.ticket.resolution_due_at?.getTime() &&
+    prevProps.ticket.updated_at?.getTime() === nextProps.ticket.updated_at?.getTime() &&
+    prevProps.basePath === nextProps.basePath &&
+    prevProps.disableLink === nextProps.disableLink
+  );
+});
+
+TicketCard.displayName = "TicketCard";
 
 export default TicketCard;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -153,7 +153,7 @@ export function AdminTicketFilters() {
     return filters;
   }, [searchQuery, category, subcategory, location, tat, status, createdFrom, createdTo, userNumber, sort]);
 
-  const removeFilter = (key: string) => {
+  const removeFilter = useCallback((key: string) => {
     const params = new URLSearchParams();
     
     // Build params from current state, excluding the removed filter
@@ -184,9 +184,9 @@ export function AdminTicketFilters() {
     
     // Apply filters immediately
     router.push(`${pathname}${params.toString() ? `?${params.toString()}` : ""}`);
-  };
+  }, [searchQuery, category, subcategory, location, tat, status, createdFrom, createdTo, userNumber, sort, pathname, router]);
 
-  const apply = () => {
+  const apply = useCallback(() => {
     const params = new URLSearchParams();
     if (searchQuery) params.set("search", searchQuery);
     if (category) params.set("category", category);
@@ -199,9 +199,9 @@ export function AdminTicketFilters() {
     if (userNumber) params.set("user", userNumber);
     if (sort && sort !== "newest") params.set("sort", sort);
     router.push(`${pathname}${params.toString() ? `?${params.toString()}` : ""}`);
-  };
+  }, [searchQuery, category, subcategory, location, tat, status, createdFrom, createdTo, userNumber, sort, pathname, router]);
 
-  const reset = () => {
+  const reset = useCallback(() => {
     setSearchQuery("");
     setCategory("");
     setSubcategory("");
@@ -213,7 +213,28 @@ export function AdminTicketFilters() {
     setUserNumber("");
     setSort("newest");
     router.push(pathname);
-  };
+  }, [pathname, router]);
+
+  // Quick action handlers
+  const handleTatToday = useCallback(() => {
+    setTat(tat === "today" ? "" : "today");
+    apply();
+  }, [tat, apply]);
+
+  const handleTatDue = useCallback(() => {
+    setTat(tat === "due" ? "" : "due");
+    apply();
+  }, [tat, apply]);
+
+  const handleCategoryHostel = useCallback(() => {
+    setCategory(category === "Hostel" ? "" : "Hostel");
+    apply();
+  }, [category, apply]);
+
+  const handleCategoryCollege = useCallback(() => {
+    setCategory(category === "College" ? "" : "College");
+    apply();
+  }, [category, apply]);
 
   return (
     <Card className="border shadow-sm">
@@ -303,10 +324,7 @@ export function AdminTicketFilters() {
           
           {/* Quick Actions - Always Visible */}
           <button
-            onClick={() => {
-              setTat(tat === "today" ? "" : "today");
-              apply();
-            }}
+            onClick={handleTatToday}
             className={cn(
               "px-2.5 py-1 text-xs font-medium rounded-md transition-all flex items-center gap-1.5",
               tat === "today"
@@ -318,10 +336,7 @@ export function AdminTicketFilters() {
             TAT Today
           </button>
           <button
-            onClick={() => {
-              setTat(tat === "due" ? "" : "due");
-              apply();
-            }}
+            onClick={handleTatDue}
             className={cn(
               "px-2.5 py-1 text-xs font-medium rounded-md transition-all flex items-center gap-1.5",
               tat === "due"
@@ -333,10 +348,7 @@ export function AdminTicketFilters() {
             Overdue
           </button>
           <button
-            onClick={() => {
-              setCategory(category === "Hostel" ? "" : "Hostel");
-              apply();
-            }}
+            onClick={handleCategoryHostel}
             className={cn(
               "px-2.5 py-1 text-xs font-medium rounded-md transition-all flex items-center gap-1.5",
               category === "Hostel"
@@ -348,10 +360,7 @@ export function AdminTicketFilters() {
             Hostel
           </button>
           <button
-            onClick={() => {
-              setCategory(category === "College" ? "" : "College");
-              apply();
-            }}
+            onClick={handleCategoryCollege}
             className={cn(
               "px-2.5 py-1 text-xs font-medium rounded-md transition-all flex items-center gap-1.5",
               category === "College"

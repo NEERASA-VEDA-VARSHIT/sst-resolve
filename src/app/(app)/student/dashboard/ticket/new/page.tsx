@@ -13,26 +13,84 @@ export default async function NewTicketPage() {
   const dbUser = await getOrCreateUser(userId);
   if (!dbUser) redirect("/");
 
-  // Fetch student row from DB with class section name
-  const [studentData] = await db
-    .select({
-      student: students,
-      class_section_name: class_sections.name,
-    })
-    .from(students)
-    .leftJoin(class_sections, eq(students.class_section_id, class_sections.id))
-    .where(eq(students.user_id, dbUser.id))
-    .limit(1);
+  // Parallelize all database queries for better performance
+  const [
+    studentDataResult,
+    hostelsList,
+    categoryList,
+    subcategoryList,
+    subSubcategoryList,
+    categoryProfileFieldsRaw,
+    categoryFields,
+    optionsList,
+  ] = await Promise.all([
+    // Fetch student row from DB with class section name
+    db
+      .select({
+        student: students,
+        class_section_name: class_sections.name,
+      })
+      .from(students)
+      .leftJoin(class_sections, eq(students.class_section_id, class_sections.id))
+      .where(eq(students.user_id, dbUser.id))
+      .limit(1),
+    
+    // Fetch hostels to map ID to name
+    db
+      .select()
+      .from(hostels)
+      .orderBy(asc(hostels.name)),
+    
+    // Fetch categories
+    db
+      .select()
+      .from(categories)
+      .where(eq(categories.active, true))
+      .orderBy(asc(categories.display_order)),
+    
+    // Fetch subcategories
+    db
+      .select()
+      .from(subcategories)
+      .where(eq(subcategories.active, true))
+      .orderBy(asc(subcategories.display_order)),
+    
+    // Fetch sub-subcategories
+    db
+      .select()
+      .from(sub_subcategories)
+      .where(eq(sub_subcategories.active, true))
+      .orderBy(asc(sub_subcategories.display_order)),
+    
+    // Fetch profile fields
+    db
+      .select()
+      .from(category_profile_fields)
+      .orderBy(asc(category_profile_fields.display_order)),
+    
+    // Dynamic fields - no active filtering (hard delete approach)
+    db
+      .select()
+      .from(category_fields)
+      .orderBy(asc(category_fields.display_order)),
+    
+    // Field options - no active filtering (hard delete approach)
+    db
+      .select({
+        id: field_options.id,
+        field_id: field_options.field_id,
+        option_label: field_options.label,
+        option_value: field_options.value,
+        display_order: field_options.display_order,
+      })
+      .from(field_options)
+      .orderBy(asc(field_options.display_order)),
+  ]);
 
+  const [studentData] = studentDataResult;
   if (!studentData?.student) redirect("/student/profile");
 
   const student = studentData.student;
-
-  // Fetch hostels to map ID to name
-  const hostelsList = await db
-    .select()
-    .from(hostels)
-    .orderBy(asc(hostels.name));
 
   // Find the student's hostel name from ID
   const studentHostel = hostelsList.find(h => h.id === student.hostel_id);
@@ -55,27 +113,6 @@ export default async function NewTicketPage() {
     classSection: studentData.class_section_name || null,  // Use class section name instead of ID
   };
 
-  // Fetch categories
-  const categoryList = await db
-    .select()
-    .from(categories)
-    .where(eq(categories.active, true))
-    .orderBy(asc(categories.display_order));
-
-  // Fetch subcategories
-  const subcategoryList = await db
-    .select()
-    .from(subcategories)
-    .where(eq(subcategories.active, true))
-    .orderBy(asc(subcategories.display_order));
-
-  // Fetch sub-subcategories
-  const subSubcategoryList = await db
-    .select()
-    .from(sub_subcategories)
-    .where(eq(sub_subcategories.active, true))
-    .orderBy(asc(sub_subcategories.display_order));
-
   // Nest sub-subcategories within their parent subcategories
   const subcategoriesWithSubs = subcategoryList.map(sub => ({
     ...sub,
@@ -84,35 +121,11 @@ export default async function NewTicketPage() {
     ),
   }));
 
-  // Fetch profile fields
-  const categoryProfileFieldsRaw = await db
-    .select()
-    .from(category_profile_fields)
-    .orderBy(asc(category_profile_fields.display_order));
-  
   // Map to ProfileFieldConfig format (add storage_key from field_name)
   const categoryProfileFields = categoryProfileFieldsRaw.map(field => ({
     ...field,
     storage_key: field.field_name.toLowerCase().replace(/\s+/g, '_'),
   }));
-
-  // Dynamic fields - no active filtering (hard delete approach)
-  const categoryFields = await db
-    .select()
-    .from(category_fields)
-    .orderBy(asc(category_fields.display_order));
-
-  // Field options - no active filtering (hard delete approach)  
-  const optionsList = await db
-    .select({
-      id: field_options.id,
-      field_id: field_options.field_id,
-      option_label: field_options.label,
-      option_value: field_options.value,
-      display_order: field_options.display_order,
-    })
-    .from(field_options)
-    .orderBy(asc(field_options.display_order));
 
   // Map categoryFields to match DynamicField type
   const mappedCategoryFields = categoryFields.map(field => ({

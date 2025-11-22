@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { useTransition } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   FileText,
@@ -74,6 +75,7 @@ export function StatsCards({ stats }: StatsCardsProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const [, startTransition] = useTransition();
 
   /* -----------------------------------------------
       FILTER HANDLER (clean, easy to extend)
@@ -92,7 +94,9 @@ export function StatsCards({ stats }: StatsCardsProps) {
     });
 
     if (type === "clear") {
-      router.push(pathname);
+      startTransition(() => {
+        router.push(pathname);
+      });
       return;
     }
 
@@ -108,7 +112,9 @@ export function StatsCards({ stats }: StatsCardsProps) {
     }
 
     const query = params.toString();
-    router.push(query ? `${pathname}?${query}` : pathname);
+    startTransition(() => {
+      router.push(query ? `${pathname}?${query}` : pathname);
+    });
   };
 
   /* -----------------------------------------------

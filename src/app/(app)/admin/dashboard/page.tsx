@@ -7,14 +7,16 @@ import { TicketCard } from "@/components/layout/TicketCard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import Link from "next/link";
-import { clerkClient } from "@clerk/nextjs/server";
 import { AdminTicketFilters } from "@/components/admin/AdminTicketFilters";
 import { StatsCards } from "@/components/dashboard/StatsCards";
 import { Button } from "@/components/ui/button";
 import { FileText, AlertCircle, TrendingUp, Calendar } from "lucide-react";
-import { getUserRoleFromDB } from "@/lib/db-roles";
-import { getOrCreateUser } from "@/lib/user-sync";
 import { isAdminLevel } from "@/conf/constants";
+import { getCachedAdminUser, getCachedAdminAssignment, getCachedAdminTickets } from "@/lib/admin/cached-queries";
+import { ticketMatchesAdminAssignment } from "@/lib/admin-assignment";
+
+// Revalidate every 30 seconds for fresh data
+export const revalidate = 30;
 
 export default async function AdminDashboardPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   const { userId } = await auth();
@@ -23,11 +25,8 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
     redirect("/");
   }
 
-  // Ensure user exists in database
-  await getOrCreateUser(userId);
-
-  // Get role from database (single source of truth)
-  const role = await getUserRoleFromDB(userId);
+  // Use cached functions for better performance (request-scoped deduplication)
+  const { dbUser: adminDbUser, role } = await getCachedAdminUser(userId);
 
   // Redirect super_admin to superadmin dashboard
   if (role === 'super_admin') {
@@ -39,21 +38,12 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
     redirect('/student/dashboard');
   }
 
-  // Get admin's user ID for ticket assignment
-  let adminUserId: string | null = null;
-  try {
-    const dbUser = await getOrCreateUser(userId);
-
-    if (!dbUser) {
-      console.error('[Admin Dashboard] Failed to create/fetch user');
-      throw new Error('Failed to load user profile');
-    }
-
-    adminUserId = dbUser.id;
-  } catch (error) {
-    console.error('[Admin Dashboard] Error fetching user info:', error);
-    throw new Error('Failed to load admin profile');
+  if (!adminDbUser) {
+    console.error('[Admin Dashboard] Failed to create/fetch user');
+    redirect("/");
   }
+
+  const adminUserId = adminDbUser.id;
 
   // Await searchParams (Next.js 15)
   const resolvedSearchParams = searchParams ? await searchParams : {};
@@ -71,45 +61,15 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
   const sort = (typeof params["sort"] === "string" ? params["sort"] : params["sort"]?.[0]) || "newest";
   const escalated = (typeof params["escalated"] === "string" ? params["escalated"] : params["escalated"]?.[0]) || "";
 
-  // Get admin's domain/scope assignment
-  const { getAdminAssignment, ticketMatchesAdminAssignment } = await import("@/lib/admin-assignment");
-  const adminAssignment = await getAdminAssignment(userId);
+  // Get admin's domain/scope assignment (cached)
+  const adminAssignment = await getCachedAdminAssignment(userId);
   const hasAssignment = !!adminAssignment.domain;
 
-  // Fetch all tickets with joins for status and category
-  const ticketRows = await db
-    .select({
-      // Ticket fields
-      id: tickets.id,
-      status_id: tickets.status_id,
-      status_value: ticket_statuses.value,
-      status_label: ticket_statuses.label,
-      status_badge_color: ticket_statuses.badge_color,
-      category_id: tickets.category_id,
-      category_name: categories.name,
-      description: tickets.description,
-      location: tickets.location,
-      assigned_to: tickets.assigned_to,
-      escalation_level: tickets.escalation_level,
-      metadata: tickets.metadata,
-      created_at: tickets.created_at,
-      updated_at: tickets.updated_at,
-      resolution_due_at: tickets.resolution_due_at,
-      // Creator fields
-      creator_id: users.id,
-      creator_first_name: users.first_name,
-      creator_last_name: users.last_name,
-      creator_email: users.email,
-    })
-    .from(tickets)
-    .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
-    .leftJoin(categories, eq(tickets.category_id, categories.id))
-    .leftJoin(users, eq(tickets.created_by, users.id))
-    .orderBy(desc(tickets.created_at));
+  // Fetch tickets using cached function (optimized query with request-scoped caching)
+  const ticketRows = await getCachedAdminTickets(adminUserId, adminAssignment);
 
   // Transform to match TicketCard expected format
-  // We need to fetch the full ticket data to satisfy TicketCard type requirements
-  const ticketIds = ticketRows.map(t => t.id);
+  // The cached query already includes all ticket fields, just add computed fields
   type TicketWithExtras = typeof tickets.$inferSelect & {
     status_value?: string | null;
     status_label?: string | null;
@@ -122,46 +82,14 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
     creator_name?: string | null;
     due_at?: Date | null;
   };
-  let allTickets: TicketWithExtras[] = [];
-  
-  if (ticketIds.length > 0) {
-    const fullTicketRows = await db
-      .select()
-      .from(tickets)
-      .where(inArray(tickets.id, ticketIds));
-    
-    // Create a map of full tickets by ID
-    const fullTicketMap = new Map(fullTicketRows.map(t => [t.id, t]));
-    
-    // Merge the full ticket data with the joined data
-    const mappedTickets = ticketRows
-      .map(ticket => {
-        const fullTicket = fullTicketMap.get(ticket.id);
-        if (!fullTicket) {
-          // If full ticket not found, skip this ticket
-          return null;
-        }
-        return {
-          ...fullTicket, // This includes all required Ticket fields
-          // Override with joined data
-          status_id: ticket.status_id,
-          status_value: ticket.status_value,
-          status_label: ticket.status_label,
-          status_badge_color: ticket.status_badge_color,
-          category_name: ticket.category_name,
-          creator_first_name: ticket.creator_first_name,
-          creator_last_name: ticket.creator_last_name,
-          creator_email: ticket.creator_email,
-          // Additional fields for TicketCard
-          status: ticket.status_value || null,
-          creator_name: [ticket.creator_first_name, ticket.creator_last_name].filter(Boolean).join(' ').trim() || null,
-          due_at: ticket.resolution_due_at,
-        } as TicketWithExtras;
-      })
-      .filter((t): t is TicketWithExtras => t !== null);
-    
-    allTickets = mappedTickets;
-  }
+
+  let allTickets: TicketWithExtras[] = ticketRows.map(ticket => ({
+    ...ticket, // Includes all ticket fields from cached query
+    // Additional computed fields for TicketCard
+    status: ticket.status_value || null,
+    creator_name: [ticket.creator_first_name, ticket.creator_last_name].filter(Boolean).join(' ').trim() || null,
+    due_at: ticket.resolution_due_at,
+  }));
 
   // Get category names and domains for all tickets (for filtering logic)
   const categoryMap = new Map<number, { name: string; domain: string | null }>();
@@ -348,21 +276,6 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
   if (sort === "oldest") {
     allTickets = [...allTickets].reverse();
   }
-
-  const client = await clerkClient();
-  const userList = await client.users.getUserList();
-  // Clerk users list for future use
-  userList.data.map(user => ({
-    id: String(user.id || ''),
-    firstName: user.firstName || null,
-    lastName: user.lastName || null,
-    emailAddresses: Array.isArray(user.emailAddresses)
-      ? user.emailAddresses.map((email: { emailAddress?: string }) => ({ emailAddress: typeof email?.emailAddress === 'string' ? email.emailAddress : '' }))
-      : [],
-    publicMetadata: user.publicMetadata && typeof user.publicMetadata === 'object'
-      ? { role: (user.publicMetadata as Record<string, unknown>)?.role as string | undefined || undefined }
-      : { role: undefined },
-  }));
 
   const stats = {
     total: allTickets.length,

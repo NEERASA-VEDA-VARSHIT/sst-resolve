@@ -73,20 +73,27 @@ export async function createTicket(args: {
         studentUpdates.room_no = String(payload.profile.roomNumber).trim();
         profileUpdateNeeded = true;
       }
+      // Parallelize hostel and class section lookups if both are needed
+      const profileLookups = [];
+      
       if (payload.profile.hostel) {
-        // Resolve hostel name to hostel_id
         const { hostels } = await import("@/db/schema");
         const hostelName = String(payload.profile.hostel).trim();
-        const [hostelRecord] = await db
-          .select({ id: hostels.id })
-          .from(hostels)
-          .where(eq(hostels.name, hostelName))
-          .limit(1);
-        if (hostelRecord) {
-          studentUpdates.hostel_id = hostelRecord.id;
-          profileUpdateNeeded = true;
-        }
+        profileLookups.push(
+          db
+            .select({ id: hostels.id })
+            .from(hostels)
+            .where(eq(hostels.name, hostelName))
+            .limit(1)
+            .then(([record]) => {
+              if (record) {
+                studentUpdates.hostel_id = record.id;
+                profileUpdateNeeded = true;
+              }
+            })
+        );
       }
+      
       if (payload.profile.batchYear) {
         const year = parseInt(String(payload.profile.batchYear));
         if (!isNaN(year)) {
@@ -94,38 +101,53 @@ export async function createTicket(args: {
           profileUpdateNeeded = true;
         }
       }
+      
       if (payload.profile.classSection) {
-        // Resolve class section name to class_section_id
         const { class_sections } = await import("@/db/schema");
         const sectionName = String(payload.profile.classSection).trim();
-        const [sectionRecord] = await db
-          .select({ id: class_sections.id })
-          .from(class_sections)
-          .where(eq(class_sections.name, sectionName))
-          .limit(1);
-        if (sectionRecord) {
-          studentUpdates.class_section_id = sectionRecord.id;
-          profileUpdateNeeded = true;
-        }
+        profileLookups.push(
+          db
+            .select({ id: class_sections.id })
+            .from(class_sections)
+            .where(eq(class_sections.name, sectionName))
+            .limit(1)
+            .then(([record]) => {
+              if (record) {
+                studentUpdates.class_section_id = record.id;
+                profileUpdateNeeded = true;
+              }
+            })
+        );
+      }
+      
+      // Wait for all profile lookups in parallel
+      if (profileLookups.length > 0) {
+        await Promise.all(profileLookups);
       }
     }
   }
 
-  // Resolve category (prefer ID)
+  // Resolve category and subcategory in parallel where possible
   let categoryRecord;
+  let categoryQuery;
+  
   if (payload.categoryId) {
-    const [c] = await db
+    categoryQuery = db
       .select({ id: categories.id, name: categories.name })
       .from(categories)
       .where(eq(categories.id, payload.categoryId))
       .limit(1);
-    categoryRecord = c;
   } else if (payload.category) {
-    const [c] = await db
+    categoryQuery = db
       .select({ id: categories.id, name: categories.name })
       .from(categories)
       .where(eq(categories.name, payload.category))
       .limit(1);
+  }
+
+  // Execute category query
+  if (categoryQuery) {
+    const [c] = await categoryQuery;
     categoryRecord = c;
   }
 
@@ -133,7 +155,7 @@ export async function createTicket(args: {
     throw new Error("Category not found");
   }
 
-  // Subcategory resolution (optional)
+  // Subcategory resolution (optional) - can't parallelize as it depends on categoryRecord
   let subcategoryRecord;
   if (payload.subcategoryId) {
     const [s] = await db
@@ -218,18 +240,22 @@ export async function createTicket(args: {
   };
 
   // Determine assignment (SPOC or super admin)
+  // Pre-fetch super admin user ID in parallel with SPOC lookup for faster fallback
   let assignedUserId: string | null = null;
-
-  if (categoryRecord.name === "Committee" || categoryRecord.name === "Others") {
-    // find super admin user id
-    const { findSuperAdminClerkId } = await import("@/lib/db-helpers");
-    const superClerk = await findSuperAdminClerkId();
+  const { findSuperAdminClerkId } = await import("@/lib/db-helpers");
+  
+  // Start fetching super admin in parallel (we'll need it either way)
+  const superAdminPromise = findSuperAdminClerkId().then(async (superClerk) => {
     if (superClerk) {
       const [u] = await db.select({ id: users.id }).from(users).where(eq(users.clerk_id, superClerk)).limit(1);
-      if (u) {
-        assignedUserId = u.id;
-      }
+      return u?.id || null;
     }
+    return null;
+  });
+
+  if (categoryRecord.name === "Committee" || categoryRecord.name === "Others") {
+    // Use super admin directly
+    assignedUserId = await superAdminPromise;
   } else {
     // find SPOC via helper (uses the full assignment hierarchy)
     const { findSPOCForTicket } = await import("@/lib/spoc-assignment");
@@ -237,13 +263,19 @@ export async function createTicket(args: {
     const fieldSlugs = detailsObj && typeof detailsObj === 'object' && !Array.isArray(detailsObj)
       ? Object.keys(detailsObj)
       : [];
-    const clerkAssigned = await findSPOCForTicket(
-      categoryRecord.name,
-      payload.location || null,
-      categoryRecord.id,
-      (typeof metadata.subcategoryId === 'number' ? metadata.subcategoryId : null),
-      fieldSlugs
-    );
+    
+    // Run SPOC lookup and super admin lookup in parallel
+    const [clerkAssigned, superAdminId] = await Promise.all([
+      findSPOCForTicket(
+        categoryRecord.name,
+        payload.location || null,
+        categoryRecord.id,
+        (typeof metadata.subcategoryId === 'number' ? metadata.subcategoryId : null),
+        fieldSlugs
+      ),
+      superAdminPromise,
+    ]);
+    
     if (clerkAssigned) {
       // map clerkId to local users.id
       const [u] = await db.select({ id: users.id }).from(users).where(eq(users.clerk_id, clerkAssigned)).limit(1);
@@ -251,19 +283,17 @@ export async function createTicket(args: {
         assignedUserId = u.id;
       }
     }
+    
+    // Fallback: If no assignment found, assign to superadmin
+    if (!assignedUserId && superAdminId) {
+      assignedUserId = superAdminId;
+      console.log(`[createTicket] No assignment found, defaulting to superadmin for ticket in category: ${categoryRecord.name}`);
+    }
   }
 
-  // Fallback: If no assignment found, assign to superadmin
+  // Final fallback if still no assignment
   if (!assignedUserId) {
-    const { findSuperAdminClerkId } = await import("@/lib/db-helpers");
-    const superClerk = await findSuperAdminClerkId();
-    if (superClerk) {
-      const [u] = await db.select({ id: users.id }).from(users).where(eq(users.clerk_id, superClerk)).limit(1);
-      if (u) {
-        assignedUserId = u.id;
-        console.log(`[createTicket] No assignment found, defaulting to superadmin for ticket in category: ${categoryRecord.name}`);
-      }
-    }
+    assignedUserId = await superAdminPromise;
   }
 
   // Sanitize description

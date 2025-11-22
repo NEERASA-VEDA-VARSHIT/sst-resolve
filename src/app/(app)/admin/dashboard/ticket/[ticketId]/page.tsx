@@ -12,14 +12,13 @@ import { CommitteeTagging } from "@/components/admin/CommitteeTagging";
 import { SlackThreadView } from "@/components/tickets/SlackThreadView";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { getUserRoleFromDB } from "@/lib/db-roles";
-import { getOrCreateUser } from "@/lib/user-sync";
 import { TicketStatusBadge } from "@/components/tickets/TicketStatusBadge";
 import { slackConfig } from "@/conf/config";
-import { getAdminAssignment, ticketMatchesAdminAssignment } from "@/lib/admin-assignment";
+import { ticketMatchesAdminAssignment } from "@/lib/admin-assignment";
+import { getCachedAdminUser, getCachedAdminAssignment } from "@/lib/admin/cached-queries";
 
-// Force dynamic rendering for real-time ticket data
-export const dynamic = "force-dynamic";
+// Revalidate every 10 seconds for ticket detail page (more frequent for real-time updates)
+export const revalidate = 10;
 
 export default async function AdminTicketPage({ params }: { params: Promise<{ ticketId: string }> }) {
   const { userId } = await auth();
@@ -29,15 +28,12 @@ export default async function AdminTicketPage({ params }: { params: Promise<{ ti
   const id = Number(ticketId);
   if (!Number.isFinite(id)) notFound();
 
-  // Ensure user exists in database and get role (do this first for auth check)
-  await getOrCreateUser(userId);
-  const role = await getUserRoleFromDB(userId);
-  if (role !== "admin" && role !== "super_admin") redirect("/student/dashboard");
-
-  // Parallelize ticket fetch and forward targets query for better performance
+  // Parallelize queries with cached functions
   const assignedUser = aliasedTable(users, "assigned_user");
 
-  const [ticketRowsResult, forwardTargetsResult] = await Promise.all([
+  const [{ dbUser: dbUserResult, role }, ticketRowsResult, forwardTargetsResult] = await Promise.all([
+    // Use cached function for user and role (request-scoped deduplication)
+    getCachedAdminUser(userId),
     // Fetch ticket with joins
     db
       .select({
@@ -85,20 +81,22 @@ export default async function AdminTicketPage({ params }: { params: Promise<{ ti
   ]);
 
   const ticketRows = ticketRowsResult;
+  const dbUser = dbUserResult;
 
   if (ticketRows.length === 0) notFound();
+  if (!dbUser) redirect("/");
+  
+  // Role check
+  if (role !== "admin" && role !== "super_admin") redirect("/student/dashboard");
   
   // Security check: Ensure admin has access to this ticket (if not super_admin)
   if (role === "admin") {
-    const dbUser = await getOrCreateUser(userId);
-    if (!dbUser) redirect("/");
-    
     const ticketRow = ticketRows[0];
     const isAssigned = ticketRow.assigned_to === dbUser.id;
     
     if (!isAssigned) {
-      // Check domain/scope access
-      const adminAssignment = await getAdminAssignment(userId);
+      // Check domain/scope access (use cached assignment)
+      const adminAssignment = await getCachedAdminAssignment(userId);
       const hasAccess = ticketMatchesAdminAssignment(
         { category: ticketRow.category_name || null, location: ticketRow.location || null },
         adminAssignment

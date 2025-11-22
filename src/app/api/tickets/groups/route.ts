@@ -104,10 +104,11 @@ export async function GET() {
       return NextResponse.json({ error: "Only admins and super admins can view ticket groups" }, { status: 403 });
     }
 
+    // Fetch groups, prioritizing non-archived ones
     const groups = await db
       .select()
       .from(ticket_groups)
-      .orderBy(desc(ticket_groups.created_at));
+      .orderBy(desc(ticket_groups.is_archived), desc(ticket_groups.created_at));
 
     // Fetch tickets for each group
     const groupsWithTickets = await Promise.all(
