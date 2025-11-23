@@ -5,7 +5,8 @@ import { and, gte, lt, ne, eq, aliasedTable } from "drizzle-orm";
 import { sendEmail } from "@/lib/integration/email";
 import { postToSlackChannel } from "@/lib/integration/slack";
 import { getStatusIdByValue } from "@/lib/status/status-helpers";
-import { cronConfig } from "@/conf/config";
+import { verifyCronAuth } from "@/lib/cron-auth";
+import { logger } from "@/lib/logger";
 
 /**
  * TAT Reminder Cron Job
@@ -21,14 +22,13 @@ import { cronConfig } from "@/conf/config";
  */
 export async function GET(request: NextRequest) {
   try {
-    // Verify cron secret
-    const authHeader = request.headers.get("authorization");
-    if (cronConfig.secret && authHeader !== `Bearer ${cronConfig.secret}`) {
-      console.error("[TAT Cron] Unauthorized access attempt");
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    // Verify cron authentication (mandatory in production)
+    const authError = verifyCronAuth(request);
+    if (authError) {
+      return authError;
     }
 
-    console.log("[TAT Cron] Starting TAT reminder job");
+    logger.info("[TAT Cron] Starting TAT reminder job");
 
     // Fetch notification settings
     const [settings] = await db.select().from(notification_settings).limit(1);
@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
     const emailEnabled = settings ? settings.email_enabled : true;
 
     if (!tatEnabled) {
-      console.log("[TAT Cron] TAT reminders are disabled in settings. Skipping.");
+      logger.info("[TAT Cron] TAT reminders are disabled in settings. Skipping.");
       return NextResponse.json({ message: "TAT reminders disabled" });
     }
 

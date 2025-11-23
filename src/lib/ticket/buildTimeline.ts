@@ -16,6 +16,7 @@ type TicketData = {
   acknowledged_at: Date | string | null;
   updated_at: Date | null;
   resolved_at: Date | string | null;
+  reopened_at: Date | string | null;
   escalation_level: number | null;
   status: string | { value: string; label: string; badge_color: string | null } | null;
 };
@@ -59,6 +60,17 @@ export function buildTimeline(ticket: TicketData, normalizedStatus: string): Tim
     });
   }
 
+  // Add awaiting student response entry if applicable
+  if ((normalizedStatus === "awaiting_student_response" || normalizedStatus === "awaiting_student" || normalizedStatus.includes("awaiting")) && ticket.updated_at) {
+    entries.push({
+      title: "Awaiting Student Response",
+      icon: "MessageSquare",
+      date: normalizeDate(ticket.updated_at),
+      color: "bg-purple-100 dark:bg-purple-900/30",
+      textColor: "text-purple-600 dark:text-purple-400",
+    });
+  }
+
   // Add resolved entry if exists
   if (ticket.resolved_at) {
     entries.push({
@@ -68,6 +80,21 @@ export function buildTimeline(ticket: TicketData, normalizedStatus: string): Tim
       color: "bg-emerald-100 dark:bg-emerald-900/30",
       textColor: "text-emerald-600 dark:text-emerald-400",
     });
+  }
+
+  // Add reopened entry if status is reopened
+  // Use reopened_at if available, otherwise use updated_at when status changed to reopened
+  if (normalizedStatus === "reopened" || normalizedStatus.includes("reopened")) {
+    const reopenedDate = ticket.reopened_at || ticket.updated_at;
+    if (reopenedDate) {
+      entries.push({
+        title: "Reopened",
+        icon: "RotateCw",
+        date: normalizeDate(reopenedDate),
+        color: "bg-indigo-100 dark:bg-indigo-900/30",
+        textColor: "text-indigo-600 dark:text-indigo-400",
+      });
+    }
   }
 
   // Add escalation entry if escalated

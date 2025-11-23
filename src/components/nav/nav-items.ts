@@ -1,5 +1,4 @@
 import {
-  LayoutDashboard,
   FileText,
   Settings,
   Calendar,
@@ -10,7 +9,6 @@ import {
   Shield,
   BarChart3,
   UserCheck,
-  Plus,
   User,
   Bell,
   ListChecks,
@@ -39,7 +37,6 @@ export function getNavItemsForRole(role: UserRole, mounted: boolean): NavItem[] 
   const isSuperAdmin = role === "super_admin";
   const isCommittee = role === "committee";
   const isRegularAdmin = role === "admin";
-  const isStudent = role === "student";
 
   const items: NavItem[] = [
     // ============================================

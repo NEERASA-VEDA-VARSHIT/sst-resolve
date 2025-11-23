@@ -131,10 +131,16 @@ export const env = {
 
 /**
  * Validate required configuration
+ * Returns errors (critical) and warnings (optional but recommended)
  */
-export function validateConfig(): { valid: boolean; errors: string[] } {
+export function validateConfig(): { valid: boolean; errors: string[]; warnings: string[] } {
   const errors: string[] = [];
+  const warnings: string[] = [];
 
+  // ============================================
+  // CRITICAL VALIDATIONS (Must be present)
+  // ============================================
+  
   if (!dbConfig.url) {
     errors.push("DATABASE_URL is required");
   }
@@ -147,9 +153,52 @@ export function validateConfig(): { valid: boolean; errors: string[] } {
     errors.push("CLERK_SECRET_KEY is required");
   }
 
+  // Production-specific critical validations
+  if (env.isProduction) {
+    if (!cronConfig.secret) {
+      errors.push("CRON_SECRET is required in production");
+    } else if (cronConfig.secret.length < 32) {
+      errors.push("CRON_SECRET must be at least 32 characters long in production");
+    }
+
+    if (!process.env.NEXT_PUBLIC_APP_URL) {
+      errors.push("NEXT_PUBLIC_APP_URL is required in production");
+    }
+
+    // Database SSL should be enabled in production
+    if (!dbConfig.ssl) {
+      warnings.push("⚠️ Database SSL is not enabled in production - this is a security risk!");
+    }
+  }
+
+  // ============================================
+  // WARNINGS (Optional but recommended)
+  // ============================================
+  
+  if (!emailConfig.enabled) {
+    warnings.push("Email notifications disabled (SMTP not configured)");
+  }
+
+  if (!slackConfig.enabled) {
+    warnings.push("Slack notifications disabled");
+  }
+
+  if (!process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME) {
+    warnings.push("Cloudinary not configured - file uploads may fail");
+  }
+
+  if (env.isProduction && !process.env.CLOUDINARY_API_KEY) {
+    warnings.push("Cloudinary API key not set - file uploads will fail");
+  }
+
+  if (env.isProduction && !process.env.CLOUDINARY_API_SECRET) {
+    warnings.push("Cloudinary API secret not set - file uploads will fail");
+  }
+
   return {
     valid: errors.length === 0,
     errors,
+    warnings,
   };
 }
 

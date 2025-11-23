@@ -13,6 +13,7 @@ import { getOrCreateUser } from "@/lib/auth/user-sync";
 import { TicketSearchWrapper } from "@/components/student/TicketSearchWrapper";
 import { getCategoriesHierarchy } from "@/lib/category/getCategoriesHierarchy";
 import { getTicketStatuses } from "@/lib/status/getTicketStatuses";
+import { PaginationControls } from "@/components/dashboard/PaginationControls";
 
 export default async function StudentDashboardPage({
   searchParams,
@@ -155,12 +156,18 @@ export default async function StudentDashboardPage({
   }
 
   // -----------------------------
-  // 5. Parallelize all data fetching for better performance
+  // 5. Pagination setup
   // -----------------------------
-  const TICKET_LIMIT = 100; // Limit to prevent timeouts on large datasets
+  const page = parseInt(params.page || "1", 10);
+  const limit = 12; // Tickets per page
+  const offset = (page - 1) * limit;
+  
+  // -----------------------------
+  // 6. Parallelize all data fetching for better performance
+  // -----------------------------
   
   // Run all queries in parallel for maximum performance
-  const [allTicketsRaw, statsResult, categoryList, ticketStatuses] = await Promise.all([
+  const [allTicketsRaw, countResult, statsResult, categoryList, ticketStatuses] = await Promise.all([
     // Fetch Filtered Tickets
     db
       .select({
@@ -212,7 +219,19 @@ export default async function StudentDashboardPage({
       .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
       .where(and(...conditions))
       .orderBy(orderBy)
-      .limit(TICKET_LIMIT),
+      .limit(limit)
+      .offset(offset),
+    
+    // Count total tickets for pagination
+    db
+      .select({
+        count: sql<number>`COUNT(*)`,
+      })
+      .from(tickets)
+      .leftJoin(categories, eq(tickets.category_id, categories.id))
+      .leftJoin(users, eq(tickets.created_by, users.id))
+      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
+      .where(and(...conditions)),
     
     // Stats Query (Optimized) - using status_id joins
     db
@@ -238,6 +257,14 @@ export default async function StudentDashboardPage({
     ...ticket,
     creator_name: [ticket.creator_first_name, ticket.creator_last_name].filter(Boolean).join(' ').trim() || null,
   }));
+
+  // Pagination calculations
+  const totalCount = Number(countResult[0]?.count || 0);
+  const totalPages = Math.ceil(totalCount / limit);
+  const hasNextPage = page < totalPages;
+  const hasPrevPage = page > 1;
+  const startIndex = totalCount > 0 ? offset + 1 : 0;
+  const endIndex = Math.min(offset + allTickets.length, totalCount);
 
   const stats = statsResult[0];
 
@@ -312,14 +339,29 @@ export default async function StudentDashboardPage({
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
-          {allTickets.map((ticket) => (
-            <TicketCard 
-              key={ticket.id} 
-              ticket={ticket} 
+        <>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
+            {allTickets.map((ticket) => (
+              <TicketCard 
+                key={ticket.id} 
+                ticket={ticket} 
+              />
+            ))}
+          </div>
+          
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <PaginationControls
+              currentPage={page}
+              totalPages={totalPages}
+              hasNext={hasNextPage}
+              hasPrev={hasPrevPage}
+              totalCount={totalCount}
+              startIndex={startIndex}
+              endIndex={endIndex}
             />
-          ))}
-        </div>
+          )}
+        </>
       )}
     </div>
   );

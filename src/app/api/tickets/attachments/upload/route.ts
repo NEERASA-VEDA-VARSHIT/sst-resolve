@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { uploadImage } from "@/lib/integration/cloudinary";
+import { apiErrors } from "@/lib/api-error";
+import { logger } from "@/lib/logger";
 
 /**
  * ============================================
@@ -24,17 +26,19 @@ const UPLOAD_CONFIG = {
 };
 
 export async function POST(request: NextRequest) {
+  let userId: string | null = null;
   try {
-    const { userId } = await auth();
+    const authResult = await auth();
+    userId = authResult.userId;
     if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return apiErrors.unauthorized();
     }
 
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
 
     if (!file) {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 });
+      return apiErrors.badRequest("No file provided");
     }
 
     // -----------------------------
@@ -48,9 +52,9 @@ export async function POST(request: NextRequest) {
     // Validate extension
     // -----------------------------
     if (!ext || !UPLOAD_CONFIG.allowedExtensions.includes(ext)) {
-      return NextResponse.json(
-        { error: "Invalid file extension" },
-        { status: 400 }
+      return apiErrors.validationError(
+        "Invalid file extension",
+        { allowed: UPLOAD_CONFIG.allowedExtensions }
       );
     }
 
@@ -58,9 +62,9 @@ export async function POST(request: NextRequest) {
     // Validate MIME type
     // -----------------------------
     if (!UPLOAD_CONFIG.allowedTypes.includes(file.type)) {
-      return NextResponse.json(
-        { error: "Invalid file type. Allowed: JPG, PNG, WebP" },
-        { status: 400 }
+      return apiErrors.validationError(
+        "Invalid file type. Allowed: JPG, PNG, WebP",
+        { allowed: UPLOAD_CONFIG.allowedTypes }
       );
     }
 
@@ -68,9 +72,9 @@ export async function POST(request: NextRequest) {
     // Validate size
     // -----------------------------
     if (file.size > UPLOAD_CONFIG.maxSize) {
-      return NextResponse.json(
-        { error: "File size exceeds 10MB limit" },
-        { status: 400 }
+      return apiErrors.validationError(
+        "File size exceeds 10MB limit",
+        { maxSize: `${UPLOAD_CONFIG.maxSize / (1024 * 1024)}MB`, actualSize: `${(file.size / (1024 * 1024)).toFixed(2)}MB` }
       );
     }
 
@@ -92,10 +96,7 @@ export async function POST(request: NextRequest) {
       originalName: safeName,
     });
   } catch (error) {
-    console.error("Upload error:", error);
-    return NextResponse.json(
-      { error: "Failed to upload image" },
-      { status: 500 }
-    );
+    logger.error("Image upload failed", error, { userId });
+    return apiErrors.internalError("Failed to upload image", error);
   }
 }

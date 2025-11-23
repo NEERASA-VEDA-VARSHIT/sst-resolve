@@ -4,19 +4,21 @@ import { tickets, users, ticket_statuses, categories } from "@/db/schema";
 import { eq, and, or, isNotNull, aliasedTable } from "drizzle-orm";
 import { postThreadReplyToChannel } from "@/lib/integration/slack";
 import { sendEmail } from "@/lib/integration/email";
+import { verifyCronAuth } from "@/lib/cron-auth";
 
 /**
  * GET /api/cron/remind-spocs
  * Cron job to send reminders to SPOCs for pending tickets
  * Should be called periodically (e.g., every 6 hours)
+ * 
+ * Security: Protected with CRON_SECRET (mandatory in production)
  */
 export async function GET(request: NextRequest) {
   try {
-    // Optional: Add authentication/authorization check for cron endpoint
-    const authHeader = request.headers.get("authorization");
-    const cronSecret = process.env.CRON_SECRET;
-    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    // Verify cron authentication (mandatory in production)
+    const authError = verifyCronAuth(request);
+    if (authError) {
+      return authError;
     }
 
     const now = new Date();

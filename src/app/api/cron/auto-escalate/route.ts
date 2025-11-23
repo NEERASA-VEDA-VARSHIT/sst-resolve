@@ -3,19 +3,20 @@ import { db, tickets } from "@/db";
 import { and, eq, ne } from "drizzle-orm";
 import { postThreadReply } from "@/lib/integration/slack";
 import type { TicketMetadata } from "@/db/types";
-import { appConfig, cronConfig } from "@/conf/config";
+import { appConfig } from "@/conf/config";
 import { TICKET_STATUS, DEFAULTS } from "@/conf/constants";
 import { getStatusIdByValue } from "@/lib/status/status-helpers";
+import { verifyCronAuth } from "@/lib/cron-auth";
 
 // Auto-escalate tickets that haven't been updated in n days
 // This should be called by a cron job (e.g., Vercel Cron, GitHub Actions, etc.)
 
 export async function GET(request: NextRequest) {
 	try {
-		// Verify cron secret (if using Vercel Cron or similar)
-		const authHeader = request.headers.get("authorization");
-		if (cronConfig.secret && authHeader !== `Bearer ${cronConfig.secret}`) {
-			return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+		// Verify cron authentication (mandatory in production)
+		const authError = verifyCronAuth(request);
+		if (authError) {
+			return authError;
 		}
 
 		const daysInactive = parseInt(request.nextUrl.searchParams.get("days") || appConfig.autoEscalationDays.toString(), 10);

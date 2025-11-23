@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { claimNextOutboxRow, markOutboxSuccess, markOutboxFailure } from "@/workers/utils";
 import { processTicketCreated } from "@/workers/handlers/processTicketCreatedWorker";
+import { verifyCronAuth } from "@/lib/cron-auth";
+import { logger } from "@/lib/logger";
 
 type TicketCreatedPayload = {
   ticket_id: number;
@@ -12,17 +14,14 @@ type TicketCreatedPayload = {
  * Cron endpoint to process outbox events
  * Should be called periodically (e.g., every minute) to process pending notifications
  * 
- * Security: Should be protected with a secret token or Vercel Cron configuration
+ * Security: Protected with CRON_SECRET (mandatory in production)
  */
 export async function GET(request: NextRequest) {
   try {
-    // Optional: Verify cron secret for security
-    const authHeader = request.headers.get("authorization");
-    const cronSecret = process.env.CRON_SECRET;
-    
-    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-      // If CRON_SECRET is set, require it
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    // Verify cron authentication (mandatory in production)
+    const authError = verifyCronAuth(request);
+    if (authError) {
+      return authError;
     }
 
     const maxEventsPerRun = 10; // Process up to 10 events per cron run
@@ -58,15 +57,15 @@ export async function GET(request: NextRequest) {
                     category: typeof parsed.category === 'string' ? parsed.category : undefined,
                   };
                 } else {
-                  console.warn(`[Outbox] Missing ticket_id in payload for event ${id}`);
+                  logger.warn(`[Outbox] Missing ticket_id in payload for event ${id}`);
                   throw new Error('Invalid payload: missing ticket_id');
                 }
               } else {
-                console.warn(`[Outbox] Invalid payload type for event ${id}, using empty object:`, typeof payload);
+                logger.warn(`[Outbox] Invalid payload type for event ${id}`, { payloadType: typeof payload });
                 throw new Error('Invalid payload type');
               }
             } catch (error) {
-              console.error(`[Outbox] Error processing payload for event ${id}:`, error);
+              logger.error(`[Outbox] Error processing payload for event ${id}`, error);
               // Skip this event if payload is invalid
               await markOutboxFailure(id, error instanceof Error ? error.message : 'Invalid payload');
               errors++;
@@ -84,13 +83,13 @@ export async function GET(request: NextRequest) {
           //   break;
 
           default:
-            console.warn(`[Outbox] Unknown event type: ${event_type}`);
+            logger.warn(`[Outbox] Unknown event type: ${event_type}`);
             await markOutboxFailure(id, `Unknown event type: ${event_type}`);
             errors++;
             break;
         }
       } catch (error) {
-        console.error(`[Outbox] Error processing event ${outboxRow.id}:`, error);
+        logger.error(`[Outbox] Error processing event ${outboxRow.id}`, error);
         const errorMessage = error instanceof Error ? error.message : "Unknown error";
         await markOutboxFailure(outboxRow.id, errorMessage);
         errors++;
@@ -104,10 +103,9 @@ export async function GET(request: NextRequest) {
       message: `Processed ${processed} events${errors > 0 ? `, ${errors} errors` : ""}`,
     });
   } catch (error) {
-    console.error("[Outbox Cron] Fatal error:", error);
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    logger.error("[Outbox Cron] Fatal error", error);
     return NextResponse.json(
-      { error: "Internal server error", message: errorMessage },
+      { error: "Internal server error" },
       { status: 500 }
     );
   }

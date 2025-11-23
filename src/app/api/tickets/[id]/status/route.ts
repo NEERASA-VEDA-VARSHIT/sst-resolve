@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { tickets, outbox, ticket_statuses } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
 import { z } from "zod";
@@ -95,6 +95,7 @@ export async function PATCH(
         status: ticket_statuses.value,
         status_id: tickets.status_id,
         group_id: tickets.group_id,
+        metadata: tickets.metadata,
       })
       .from(tickets)
       .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
@@ -148,9 +149,21 @@ export async function PATCH(
       return NextResponse.json({ error: "Invalid status value in database" }, { status: 500 });
     }
 
+    // Handle TAT pause when status changes to AWAITING_STUDENT
+    const metadata = (ticket.metadata as Record<string, unknown>) || {};
+    if (newStatus === "AWAITING_STUDENT" && ticket.status !== "AWAITING_STUDENT") {
+      // Pause TAT - record pause start time
+      metadata.tatPauseStart = new Date().toISOString();
+      // Initialize paused duration if not exists
+      if (!metadata.tatPausedDuration) {
+        metadata.tatPausedDuration = 0;
+      }
+    }
+
     const updateData: Record<string, unknown> = {
       status_id: newStatusRow.id,
       updated_at: new Date(),
+      metadata: metadata,
     };
 
     // SET TIMESTAMPS
@@ -159,6 +172,17 @@ export async function PATCH(
     }
     if (newStatus === "REOPENED") {
       updateData.reopened_at = new Date();
+      // Increment reopen_count
+      updateData.reopen_count = sql`${tickets.reopen_count} + 1`;
+      // Reset TAT pause tracking for new TAT cycle
+      metadata.tatPauseStart = undefined;
+      metadata.tatPausedDuration = 0;
+      // Clear TAT for new cycle (admin will set new TAT)
+      metadata.tat = undefined;
+      metadata.tatDate = undefined;
+      metadata.tatSetAt = undefined;
+      metadata.tatSetBy = undefined;
+      updateData.metadata = metadata;
     }
 
     // Admin taking action → assign the ticket to themselves automatically

@@ -153,6 +153,7 @@ export async function POST(
         metadata: tickets.metadata,
         created_by: tickets.created_by,
         status_value: ticket_statuses.value,
+        status_id: tickets.status_id,
         category_id: tickets.category_id,
       })
       .from(tickets)
@@ -212,27 +213,96 @@ export async function POST(
       isInternal,
     };
 
-    // Transaction: append comment to metadata.comments and insert outbox event
+    // Transaction: append comment to metadata.comments, handle TAT resume, and auto status change
     const updated = await db.transaction(async (tx) => {
-      // Reload metadata inside transaction to avoid race
+      // Reload ticket with status inside transaction to avoid race
       const [freshTicket] = await tx
-        .select({ metadata: tickets.metadata })
+        .select({ 
+          metadata: tickets.metadata,
+          status_id: tickets.status_id,
+          status_value: ticket_statuses.value,
+        })
         .from(tickets)
+        .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
         .where(eq(tickets.id, ticketId))
         .limit(1);
 
-      const metadata = (freshTicket?.metadata as TicketMetadata & { comments?: Array<Record<string, unknown>> }) || {};
+      if (!freshTicket) throw new Error("Ticket not found in transaction");
+
+      const metadata = (freshTicket.metadata as TicketMetadata & { comments?: Array<Record<string, unknown>> }) || {};
       if (!Array.isArray(metadata.comments)) metadata.comments = [];
       metadata.comments.push(commentObj);
 
-      // Update ticket metadata (and update_at)
+      const updateData: Record<string, unknown> = {
+        metadata,
+        updated_at: new Date(),
+      };
+
+      // Check if student is replying to AWAITING_STUDENT status
+      const currentStatus = freshTicket.status_value;
+      const isAwaitingStudent = currentStatus === "AWAITING_STUDENT" || currentStatus === "AWAITING_STUDENT_RESPONSE";
+      
+      if (isStudent && isAwaitingStudent) {
+        // 1. Resume TAT - calculate paused duration and update TAT date
+        const tatPauseStart = metadata.tatPauseStart ? new Date(metadata.tatPauseStart as string) : null;
+        const now = new Date();
+        
+        if (tatPauseStart && metadata.tatDate) {
+          // Calculate paused duration
+          const pausedDuration = now.getTime() - tatPauseStart.getTime();
+          const previousPausedDuration = (metadata.tatPausedDuration as number) || 0;
+          metadata.tatPausedDuration = previousPausedDuration + pausedDuration;
+          
+          // Update TAT date by adding paused duration
+          const originalTATDate = new Date(metadata.tatDate as string);
+          const newTATDate = new Date(originalTATDate.getTime() + pausedDuration);
+          metadata.tatDate = newTATDate.toISOString();
+          
+          // Clear pause start
+          metadata.tatPauseStart = undefined;
+          
+          // Create TAT_RESUME event
+          await tx.insert(outbox).values({
+            event_type: "TAT_RESUME",
+            payload: {
+              ticket_id: ticketId,
+              paused_duration_ms: pausedDuration,
+              total_paused_duration_ms: metadata.tatPausedDuration,
+              new_tat_date: metadata.tatDate,
+              resumed_at: now.toISOString(),
+            },
+          });
+        }
+
+        // 2. Automatically change status to IN_PROGRESS
+        const [inProgressStatus] = await tx
+          .select({ id: ticket_statuses.id })
+          .from(ticket_statuses)
+          .where(eq(ticket_statuses.value, "IN_PROGRESS"))
+          .limit(1);
+
+        if (inProgressStatus) {
+          updateData.status_id = inProgressStatus.id;
+          
+          // Create status change event
+          await tx.insert(outbox).values({
+            event_type: "ticket.status.updated",
+            payload: {
+              ticket_id: ticketId,
+              old_status: currentStatus,
+              new_status: "IN_PROGRESS",
+              updated_by_clerk_id: userId,
+              auto_changed: true,
+              reason: "Student replied to awaiting question",
+            },
+          });
+        }
+      }
+
+      // Update ticket
       await tx
         .update(tickets)
-        .set({
-          metadata,
-          updated_at: new Date(),
-          // optionally change status for student replies, e.g. set to IN_PROGRESS – worker or caller may handle
-        })
+        .set(updateData)
         .where(eq(tickets.id, ticketId));
 
       // Enqueue outbox event for worker to send Slack/email/threaded replies

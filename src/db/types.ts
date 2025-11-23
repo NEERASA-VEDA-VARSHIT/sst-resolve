@@ -25,6 +25,10 @@ export interface TicketMetadata {
 		extendedBy: string; // Clerk userId or users.id
 	}>;
 
+	// TAT Pause/Resume tracking
+	tatPauseStart?: string; // ISO timestamp - when TAT was paused (status changed to AWAITING_STUDENT)
+	tatPausedDuration?: number; // Total paused duration in milliseconds (accumulated across multiple pauses)
+
 	// Email threading
 	originalEmailMessageId?: string; // For email threading
 	originalEmailSubject?: string; // Original email subject
