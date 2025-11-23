@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -307,10 +308,13 @@ export default async function CommitteeTicketPage({ params }: { params: Promise<
                               rel="noopener noreferrer"
                               className="relative group aspect-square rounded-lg overflow-hidden border-2 border-border hover:border-primary transition-colors"
                             >
-                              <img
+                              <Image
                                 src={imageUrl}
                                 alt={`Ticket image ${index + 1}`}
-                                className="w-full h-full object-cover"
+                                fill
+                                className="object-cover"
+                                sizes="(max-width: 768px) 50vw, 33vw"
+                                loading="lazy"
                               />
                               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
                             </a>

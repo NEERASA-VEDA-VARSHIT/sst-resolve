@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,7 +24,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Users, Plus, X, MessageSquare, Loader2, Archive } from "lucide-react";
+import { Users, Plus, X, MessageSquare, Loader2, Archive, RotateCcw, Search } from "lucide-react";
 
 interface Ticket {
   id: number;
@@ -62,18 +62,27 @@ export function TicketGrouping({ selectedTicketIds, onGroupCreated }: TicketGrou
   const [groupDescription, setGroupDescription] = useState("");
   const [bulkAction, setBulkAction] = useState<"comment" | "close">("comment");
   const [bulkComment, setBulkComment] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [stats, setStats] = useState<{
+    totalGroups: number;
+    activeGroups: number;
+    archivedGroups: number;
+    totalTicketsInGroups: number;
+  } | null>(null);
 
   useEffect(() => {
     fetchGroups();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const fetchGroups = async () => {
+  const fetchGroups = useCallback(async () => {
     try {
       setLoading(true);
       const response = await fetch("/api/tickets/groups", { cache: "no-store" });
       if (response.ok) {
         const data = await response.json();
         setGroups(data.groups || []);
+        setStats(data.stats || null);
       } else {
         toast.error("Failed to load groups. Please try again.");
       }
@@ -83,9 +92,9 @@ export function TicketGrouping({ selectedTicketIds, onGroupCreated }: TicketGrou
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const handleCreateGroup = async () => {
+  const handleCreateGroup = useCallback(async () => {
     if (!groupName.trim() || selectedTicketIds.length === 0) {
       toast.error("Please provide a group name and select at least one ticket");
       return;
@@ -120,9 +129,9 @@ export function TicketGrouping({ selectedTicketIds, onGroupCreated }: TicketGrou
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedTicketIds, groupName, groupDescription, onGroupCreated, fetchGroups]);
 
-  const handleBulkAction = async () => {
+  const handleBulkAction = useCallback(async () => {
     if (!selectedGroupId) {
       toast.error("Please select a group");
       return;
@@ -165,9 +174,9 @@ export function TicketGrouping({ selectedTicketIds, onGroupCreated }: TicketGrou
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedGroupId, bulkAction, bulkComment, onGroupCreated, fetchGroups]);
 
-  const handleDeleteGroup = async (groupId: number) => {
+  const handleDeleteGroup = useCallback(async (groupId: number) => {
     if (!confirm("Are you sure you want to delete this group? Tickets will be ungrouped.")) {
       return;
     }
@@ -192,16 +201,58 @@ export function TicketGrouping({ selectedTicketIds, onGroupCreated }: TicketGrou
     } finally {
       setLoading(false);
     }
-  };
+  }, [onGroupCreated, fetchGroups]);
+
+  // Filter groups based on search query (memoized for performance)
+  const filteredGroups = useMemo(() => {
+    if (!searchQuery.trim()) return groups;
+    const query = searchQuery.toLowerCase();
+    return groups.filter(group => 
+      group.name.toLowerCase().includes(query) ||
+      group.description?.toLowerCase().includes(query) ||
+      group.tickets.some(t => t.id.toString().includes(query))
+    );
+  }, [groups, searchQuery]);
+
+  // Memoize displayed groups (filtered by archived status)
+  const displayedGroups = useMemo(() => 
+    filteredGroups.filter(group => showArchived || !group.is_archived),
+    [filteredGroups, showArchived]
+  );
+
+  // Memoize stats calculations
+  const activeGroupsCount = useMemo(() => 
+    filteredGroups.filter(g => !g.is_archived).length,
+    [filteredGroups]
+  );
+  
+  const archivedGroupsCount = useMemo(() => 
+    filteredGroups.filter(g => g.is_archived).length,
+    [filteredGroups]
+  );
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold flex items-center gap-2">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="flex items-center gap-2">
           <Users className="w-5 h-5" />
-          Ticket Groups
-        </h3>
+          <h3 className="text-lg font-semibold">Ticket Groups</h3>
+          {stats && (
+            <Badge variant="secondary" className="text-xs">
+              {stats.activeGroups} active
+            </Badge>
+          )}
+        </div>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={fetchGroups}
+            disabled={loading}
+          >
+            <RotateCcw className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
           <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
             <DialogTrigger asChild>
               <Button size="sm" disabled={selectedTicketIds.length === 0}>
@@ -346,6 +397,19 @@ export function TicketGrouping({ selectedTicketIds, onGroupCreated }: TicketGrou
         </div>
       </div>
 
+      {/* Search Bar */}
+      {groups.length > 0 && (
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+          <Input
+            placeholder="Search groups by name, description, or ticket ID..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      )}
+
       {loading && groups.length === 0 ? (
         <Card>
           <CardContent className="py-8 text-center">
@@ -363,18 +427,43 @@ export function TicketGrouping({ selectedTicketIds, onGroupCreated }: TicketGrou
             </p>
           </CardContent>
         </Card>
+      ) : filteredGroups.length === 0 ? (
+        <Card>
+          <CardContent className="py-8 text-center">
+            <Search className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+            <p className="font-medium mb-1">No groups found</p>
+            <p className="text-sm text-muted-foreground">
+              {searchQuery ? "Try adjusting your search query" : "Create a group to get started"}
+            </p>
+            {searchQuery && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSearchQuery("")}
+                className="mt-4"
+              >
+                Clear Search
+              </Button>
+            )}
+          </CardContent>
+        </Card>
       ) : (
         <div>
           <div className="flex items-center justify-between mb-4">
             <div className="text-sm text-muted-foreground">
-              {groups.filter(g => !g.is_archived).length} active group{groups.filter(g => !g.is_archived).length !== 1 ? "s" : ""}
-              {groups.filter(g => g.is_archived).length > 0 && (
+              {activeGroupsCount} active group{activeGroupsCount !== 1 ? "s" : ""}
+              {archivedGroupsCount > 0 && (
                 <span className="ml-2">
-                  • {groups.filter(g => g.is_archived).length} archived
+                  • {archivedGroupsCount} archived
+                </span>
+              )}
+              {searchQuery && (
+                <span className="ml-2 text-primary">
+                  • {filteredGroups.length} result{filteredGroups.length !== 1 ? "s" : ""}
                 </span>
               )}
             </div>
-            {groups.some(g => g.is_archived) && (
+            {filteredGroups.some(g => g.is_archived) && (
               <Button
                 variant="outline"
                 size="sm"
@@ -386,12 +475,10 @@ export function TicketGrouping({ selectedTicketIds, onGroupCreated }: TicketGrou
             )}
           </div>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {groups
-              .filter(group => showArchived || !group.is_archived)
-              .map((group) => (
+            {displayedGroups.map((group) => (
                 <Card 
                   key={group.id} 
-                  className={`relative ${group.is_archived ? "opacity-60 border-dashed" : ""}`}
+                  className={`relative transition-all hover:shadow-md ${group.is_archived ? "opacity-60 border-dashed" : "hover:border-primary/50"}`}
                 >
                   <CardHeader>
                     <div className="flex items-start justify-between">
@@ -431,18 +518,18 @@ export function TicketGrouping({ selectedTicketIds, onGroupCreated }: TicketGrou
                       {new Date(group.created_at).toLocaleDateString()}
                     </span>
                   </div>
-                  <div className="space-y-1">
+                  <div className="space-y-1.5">
                     {group.tickets.slice(0, 3).map((ticket) => (
-                      <div key={ticket.id} className="text-sm flex items-center justify-between">
-                        <span className="text-muted-foreground">#{ticket.id}</span>
+                      <div key={ticket.id} className="text-sm flex items-center justify-between p-1.5 rounded-md hover:bg-accent/50 transition-colors">
+                        <span className="text-muted-foreground font-mono">#{ticket.id}</span>
                         <Badge variant="outline" className="text-xs">
-                          {ticket.status}
+                          {ticket.status || "Unknown"}
                         </Badge>
                       </div>
                     ))}
                     {group.tickets.length > 3 && (
-                      <p className="text-xs text-muted-foreground">
-                        +{group.tickets.length - 3} more
+                      <p className="text-xs text-muted-foreground pl-1.5">
+                        +{group.tickets.length - 3} more ticket{group.tickets.length - 3 !== 1 ? "s" : ""}
                       </p>
                     )}
                   </div>

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo, memo } from "react";
+import Image from "next/image";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,9 +11,15 @@ interface ImageLightboxProps {
   initialIndex?: number;
 }
 
-export function ImageLightbox({ images, initialIndex = 0 }: ImageLightboxProps) {
+function ImageLightboxComponent({ images, initialIndex = 0 }: ImageLightboxProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
+
+  // Memoize filtered images
+  const validImages = useMemo(() => 
+    images.filter((img): img is string => typeof img === 'string' && img.trim().length > 0),
+    [images]
+  );
 
   const openLightbox = (index: number) => {
     setCurrentIndex(index);
@@ -20,27 +27,30 @@ export function ImageLightbox({ images, initialIndex = 0 }: ImageLightboxProps) 
   };
 
   const goToNext = () => {
-    setCurrentIndex((prev) => (prev + 1) % images.length);
+    setCurrentIndex((prev) => (prev + 1) % validImages.length);
   };
 
   const goToPrevious = () => {
-    setCurrentIndex((prev) => (prev - 1 + images.length) % images.length);
+    setCurrentIndex((prev) => (prev - 1 + validImages.length) % validImages.length);
   };
 
   return (
     <>
       {/* Thumbnail Grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        {images.map((imageUrl: string, index: number) => (
+        {validImages.map((imageUrl: string, index: number) => (
           <button
-            key={index}
+            key={`${imageUrl}-${index}`}
             onClick={() => openLightbox(index)}
             className="relative group aspect-square rounded-lg overflow-hidden border-2 border-border hover:border-primary transition-all hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
           >
-            <img
+            <Image
               src={imageUrl}
               alt={`Attachment ${index + 1}`}
-              className="w-full h-full object-cover"
+              fill
+              className="object-cover"
+              sizes="(max-width: 768px) 50vw, 33vw"
+              loading="lazy"
             />
             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
               <span className="opacity-0 group-hover:opacity-100 text-white text-xs font-medium transition-opacity">
@@ -66,7 +76,7 @@ export function ImageLightbox({ images, initialIndex = 0 }: ImageLightboxProps) 
             </Button>
 
             {/* Navigation Buttons */}
-            {images.length > 1 && (
+            {validImages.length > 1 && (
               <>
                 <Button
                   variant="ghost"
@@ -112,16 +122,23 @@ export function ImageLightbox({ images, initialIndex = 0 }: ImageLightboxProps) 
             )}
 
             {/* Image Display */}
-            <img
-              src={images[currentIndex]}
-              alt={`Attachment ${currentIndex + 1}`}
-              className="max-w-full max-h-full object-contain"
-            />
+            {validImages[currentIndex] && (
+              <div className="relative w-full h-full">
+                <Image
+                  src={validImages[currentIndex]}
+                  alt={`Attachment ${currentIndex + 1}`}
+                  fill
+                  className="object-contain"
+                  sizes="90vw"
+                  priority={currentIndex === 0}
+                />
+              </div>
+            )}
 
             {/* Image Counter */}
-            {images.length > 1 && (
+            {validImages.length > 1 && (
               <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black/60 text-white px-4 py-2 rounded-full text-sm">
-                {currentIndex + 1} / {images.length}
+                {currentIndex + 1} / {validImages.length}
               </div>
             )}
           </div>
@@ -130,3 +147,6 @@ export function ImageLightbox({ images, initialIndex = 0 }: ImageLightboxProps) 
     </>
   );
 }
+
+// Memoize component to prevent unnecessary re-renders
+export const ImageLightbox = memo(ImageLightboxComponent);

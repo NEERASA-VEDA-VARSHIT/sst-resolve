@@ -12,6 +12,9 @@ import { getOrCreateUser } from "@/lib/user-sync";
 import type { TicketMetadata } from "@/db/types";
 import type { Ticket } from "@/db/types-only";
 
+// Force dynamic rendering since we use auth headers
+export const dynamic = "force-dynamic";
+
 export default async function SuperAdminAllTicketsPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   const { userId } = await auth();
   if (!userId) redirect("/");

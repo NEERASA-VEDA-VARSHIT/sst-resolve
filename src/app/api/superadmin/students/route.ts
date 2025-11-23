@@ -9,7 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { users, students, hostels, batches, class_sections } from "@/db/schema";
-import { eq, ilike, or, and, sql } from "drizzle-orm";
+import { eq, ilike, or, and, sql, desc } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
 
@@ -113,6 +113,16 @@ export async function GET(request: NextRequest) {
 		const totalCount = Number(countResult.count);
 		const totalPages = Math.ceil(totalCount / limit);
 
+		// Fetch all available batches from database for filter dropdown
+		const availableBatches = await db
+			.select({
+				batch_year: batches.batch_year,
+				display_name: batches.display_name,
+			})
+			.from(batches)
+			.where(eq(batches.is_active, true))
+			.orderBy(desc(batches.batch_year));
+
 		// Map students data to include full_name and resolve batch_year
 		const studentsWithFullName = studentsData.map((student) => {
 			const firstName = student.first_name || "";
@@ -132,6 +142,7 @@ export async function GET(request: NextRequest) {
 		return NextResponse.json(
 			{
 				students: studentsWithFullName,
+				batches: availableBatches, // Include batches for filter dropdown
 				pagination: {
 					page,
 					limit,

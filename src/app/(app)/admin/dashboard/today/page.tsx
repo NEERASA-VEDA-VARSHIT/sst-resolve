@@ -1,14 +1,12 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { db, tickets, ticket_statuses, categories } from "@/db";
-import { desc, eq, isNull, or } from "drizzle-orm";
 import type { TicketMetadata } from "@/db/types";
 import { TicketCard } from "@/components/layout/TicketCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Calendar, AlertTriangle, CheckCircle2, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { getCachedAdminUser, getCachedAdminAssignment, getCachedTicketStatuses } from "@/lib/admin/cached-queries";
+import { getCachedAdminUser, getCachedAdminAssignment, getCachedTicketStatuses, getCachedAdminTickets } from "@/lib/admin/cached-queries";
 import { ticketMatchesAdminAssignment } from "@/lib/admin-assignment";
 
 // Revalidate every 30 seconds for fresh data
@@ -18,8 +16,13 @@ export default async function AdminTodayPendingPage() {
   const { userId } = await auth();
   if (!userId) redirect("/");
 
-  // Use cached functions for better performance
-  const { dbUser, role } = await getCachedAdminUser(userId);
+  // Use cached functions for better performance - parallelize queries
+  const [{ dbUser, role }, adminAssignment, ticketStatuses] = await Promise.all([
+    getCachedAdminUser(userId),
+    getCachedAdminAssignment(userId),
+    getCachedTicketStatuses(),
+  ]);
+
   const isSuperAdmin = role === "super_admin";
   
   if (role === "student") redirect("/student/dashboard");
@@ -32,64 +35,11 @@ export default async function AdminTodayPendingPage() {
 
   const adminUserDbId = dbUser.id;
 
-  // Get admin's domain/scope assignment (cached)
-  const adminAssignment = await getCachedAdminAssignment(userId);
-
   // No filters on today page - just show all tickets due today
   const now = new Date();
 
-  // Fetch tickets: assigned to this admin OR unassigned tickets that match admin's domain/scope
-  const allTicketRows = await db
-    .select({
-      id: tickets.id,
-      title: tickets.title,
-      description: tickets.description,
-      location: tickets.location,
-      status_id: tickets.status_id,
-      category_id: tickets.category_id,
-      subcategory_id: tickets.subcategory_id,
-      sub_subcategory_id: tickets.sub_subcategory_id,
-      created_by: tickets.created_by,
-      assigned_to: tickets.assigned_to,
-      acknowledged_by: tickets.acknowledged_by,
-      group_id: tickets.group_id,
-      escalation_level: tickets.escalation_level,
-      tat_extended_count: tickets.tat_extended_count,
-      last_escalation_at: tickets.last_escalation_at,
-      acknowledgement_tat_hours: tickets.acknowledgement_tat_hours,
-      resolution_tat_hours: tickets.resolution_tat_hours,
-      acknowledgement_due_at: tickets.acknowledgement_due_at,
-      resolution_due_at: tickets.resolution_due_at,
-      acknowledged_at: tickets.acknowledged_at,
-      reopened_at: tickets.reopened_at,
-      sla_breached_at: tickets.sla_breached_at,
-      reopen_count: tickets.reopen_count,
-      rating: tickets.rating,
-      feedback_type: tickets.feedback_type,
-      rating_submitted: tickets.rating_submitted,
-      feedback: tickets.feedback,
-      is_public: tickets.is_public,
-      admin_link: tickets.admin_link,
-      student_link: tickets.student_link,
-      slack_thread_id: tickets.slack_thread_id,
-      external_ref: tickets.external_ref,
-      metadata: tickets.metadata,
-      created_at: tickets.created_at,
-      updated_at: tickets.updated_at,
-      resolved_at: tickets.resolved_at,
-      status_value: ticket_statuses.value,
-      category_name: categories.name,
-    })
-    .from(tickets)
-    .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
-    .leftJoin(categories, eq(tickets.category_id, categories.id))
-    .where(
-      or(
-        eq(tickets.assigned_to, adminUserDbId),
-        isNull(tickets.assigned_to)
-      )
-    )
-    .orderBy(desc(tickets.created_at));
+  // Use cached admin tickets function for better performance
+  const allTicketRows = await getCachedAdminTickets(adminUserDbId, adminAssignment);
 
   // Transform to include status and category fields for compatibility
   let allTickets = allTicketRows.map(t => ({
@@ -103,12 +53,10 @@ export default async function AdminTodayPendingPage() {
   if (adminAssignment.domain) {
     allTickets = allTickets.filter(t => {
       // Priority 1: Always show tickets explicitly assigned to this admin
-      // This includes tickets assigned via category_assignments, default_admin_id, etc.
       if (t.assigned_to === adminUserDbId) {
         return true;
       }
       // Priority 2: Show unassigned tickets that match admin's domain/scope
-      // This allows admins to pick up unassigned tickets in their domain
       if (!t.assigned_to) {
         // Get category name from join or metadata
         const categoryName = t.category_name || (t.metadata && typeof t.metadata === "object" ? (t.metadata as Record<string, unknown>).category as string | null : null);
@@ -128,13 +76,9 @@ export default async function AdminTodayPendingPage() {
   const todayYear = now.getFullYear();
   const todayMonth = now.getMonth();
   const todayDate = now.getDate();
-  // Note: startOfToday and endOfToday are calculated but not used in current logic
-  // const startOfToday = new Date(todayYear, todayMonth, todayDate, 0, 0, 0, 0);
-  // const endOfToday = new Date(todayYear, todayMonth, todayDate, 23, 59, 59, 999);
 
   // "Pending today": tickets with TAT date falling today (should be resolved today)
-  // Fetch dynamic ticket statuses (cached)
-  const ticketStatuses = await getCachedTicketStatuses();
+  // Use already fetched ticket statuses
   const pendingStatuses = new Set(ticketStatuses.filter(s => !s.is_final).map(s => s.value));
 
   const todayPending = allTickets.filter(t => {
@@ -229,17 +173,17 @@ export default async function AdminTodayPendingPage() {
     }
   });
 
-  // Calculate overdue count
+  // Calculate overdue count from sorted tickets for consistency
   const overdueIds = new Set(
-    todayPending
+    sortedTodayPending
       .filter(t => {
         try {
           const status = (t.status || "").toUpperCase();
           if (status === "AWAITING_STUDENT" || status === "AWAITING_STUDENT_RESPONSE") {
             return false;
           }
-          if (t.due_at) {
-            const dueDate = new Date(t.due_at);
+          if (t.resolution_due_at) {
+            const dueDate = new Date(t.resolution_due_at);
             if (!isNaN(dueDate.getTime())) {
               return dueDate.getTime() < now.getTime();
             }
@@ -289,7 +233,7 @@ export default async function AdminTodayPendingPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">{todayPending.length}</div>
+            <div className="text-3xl font-bold">{sortedTodayPending.length}</div>
             <div className="text-sm text-muted-foreground mt-1">
               TAT due today
             </div>
@@ -310,24 +254,20 @@ export default async function AdminTodayPendingPage() {
         </Card>
       </div>
 
-      {todayPending.length === 0 ? (
+      {sortedTodayPending.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12">
             <CheckCircle2 className="w-12 h-12 text-muted-foreground mb-3" />
-            <p className="font-medium mb-1">
-              {todayPending.length === 0 ? "All clear!" : "No tickets match your filters"}
-            </p>
+            <p className="font-medium mb-1">All clear!</p>
             <p className="text-sm text-muted-foreground text-center">
-              {todayPending.length === 0 
-                ? "No tickets with TAT due today."
-                : `Try adjusting your filters to see more results.`}
+              No tickets with TAT due today.
             </p>
           </CardContent>
         </Card>
       ) : (
         <div>
           <h2 className="text-xl font-semibold mb-4">
-            Tickets ({todayPending.length})
+            Tickets ({sortedTodayPending.length})
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {sortedTodayPending.map((t) => {

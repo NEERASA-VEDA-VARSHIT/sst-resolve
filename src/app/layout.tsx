@@ -2,6 +2,7 @@ import { ClerkProvider } from "@clerk/nextjs";
 import { UnifiedNav } from "@/components/layout/UnifiedNav";
 import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/provider/ThemeProvider";
+import { ProgressBar } from "@/components/dashboard/ProgressBar";
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
@@ -53,6 +54,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             enableSystem
             disableTransitionOnChange
           >
+            <ProgressBar />
             <UnifiedNav />
             {children}
             <Toaster

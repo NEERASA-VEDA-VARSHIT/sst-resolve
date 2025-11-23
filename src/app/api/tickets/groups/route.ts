@@ -126,7 +126,21 @@ export async function GET() {
       })
     );
 
-    return NextResponse.json({ groups: groupsWithTickets });
+    // Calculate stats
+    const totalGroups = groups.length;
+    const activeGroups = groups.filter(g => !g.is_archived).length;
+    const archivedGroups = groups.filter(g => g.is_archived).length;
+    const totalTicketsInGroups = groupsWithTickets.reduce((sum, g) => sum + g.ticketCount, 0);
+
+    return NextResponse.json({ 
+      groups: groupsWithTickets,
+      stats: {
+        totalGroups,
+        activeGroups,
+        archivedGroups,
+        totalTicketsInGroups,
+      }
+    });
   } catch (error) {
     console.error("Error fetching ticket groups:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

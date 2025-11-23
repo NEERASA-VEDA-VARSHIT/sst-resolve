@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -143,10 +144,13 @@ export function ImageUploader({
               key={index}
               className="relative group rounded-lg border overflow-hidden bg-muted/30 aspect-video"
             >
-              <img
+              <Image
                 src={imageUrl}
                 alt={`Attachment ${index + 1}`}
-                className="w-full h-full object-cover"
+                fill
+                className="object-cover"
+                sizes="(max-width: 768px) 50vw, 33vw"
+                loading="lazy"
               />
               <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                 <Button

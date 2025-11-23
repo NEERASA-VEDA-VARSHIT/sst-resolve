@@ -16,6 +16,9 @@ import { getAllTicketStatuses } from "@/lib/status/getTicketStatuses";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
+// Force dynamic rendering since we use auth headers
+export const dynamic = "force-dynamic";
+
 export default async function SuperAdminAnalyticsPage() {
     try {
         const { userId } = await auth();

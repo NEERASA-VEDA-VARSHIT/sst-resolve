@@ -8,7 +8,7 @@ import { StudentBulkUpload } from "@/components/admin/StudentBulkUpload";
 import { AddSingleStudentDialog } from "@/components/admin/AddSingleStudentDialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { BulkEditDialog } from "@/components/admin/BulkEditDialog";
-import { Edit2, Users, Upload, Search, ChevronLeft, ChevronRight, UserPlus, Pencil } from "lucide-react";
+import { Edit2, Users, Upload, Search, ChevronLeft, ChevronRight, UserPlus, Pencil, ChevronDown, ChevronUp } from "lucide-react";
 import { EditStudentDialog } from "@/components/admin/EditStudentDialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -44,6 +44,11 @@ interface Student {
 	updated_at: Date;
 }
 
+interface Batch {
+	batch_year: number;
+	display_name: string | null;
+}
+
 interface PaginationInfo {
 	page: number;
 	limit: number;
@@ -53,6 +58,7 @@ interface PaginationInfo {
 
 export default function SuperAdminStudentsPage() {
 	const [students, setStudents] = useState<Student[]>([]);
+	const [batches, setBatches] = useState<Batch[]>([]);
 	const [loading, setLoading] = useState(false);
 	const [search, setSearch] = useState("");
 	const [hostelFilter, setHostelFilter] = useState<string>("all");
@@ -69,6 +75,7 @@ export default function SuperAdminStudentsPage() {
 	const [showBulkEditDialog, setShowBulkEditDialog] = useState(false);
 	const [editingStudentId, setEditingStudentId] = useState<number | null>(null);
 	const [showEditDialog, setShowEditDialog] = useState(false);
+	const [expandedBatches, setExpandedBatches] = useState<Set<number>>(new Set());
 
 	const toggleStudent = (studentId: number) => {
 		setSelectedStudents((prev) =>
@@ -109,9 +116,20 @@ export default function SuperAdminStudentsPage() {
 
 			const data = await response.json();
 			setStudents(data.students);
+			setBatches(data.batches || []); // Set batches from API
 			setPagination(data.pagination);
 			// Clear selection on page change or filter change
 			setSelectedStudents([]);
+			
+			// Auto-expand batches that have students
+			if (batchYearFilter === "all" && data.students.length > 0) {
+				const batchesWithStudents = new Set<number>(
+					data.students
+						.map((s: Student) => s.batch_year)
+						.filter((year: number | null): year is number => year !== null)
+				);
+				setExpandedBatches(batchesWithStudents);
+			}
 		} catch (error) {
 			console.error("Fetch error:", error);
 		} finally {
@@ -134,6 +152,33 @@ export default function SuperAdminStudentsPage() {
 			handleSearch();
 		}
 	};
+
+	const toggleBatch = (batchYear: number) => {
+		setExpandedBatches((prev) => {
+			const newSet = new Set(prev);
+			if (newSet.has(batchYear)) {
+				newSet.delete(batchYear);
+			} else {
+				newSet.add(batchYear);
+			}
+			return newSet;
+		});
+	};
+
+	// Group students by batch year
+	const studentsByBatch = students.reduce((acc, student) => {
+		const batchYear = student.batch_year || 0; // Use 0 for students without batch
+		if (!acc[batchYear]) {
+			acc[batchYear] = [];
+		}
+		acc[batchYear].push(student);
+		return acc;
+	}, {} as Record<number, Student[]>);
+
+	// Get sorted batch years (descending)
+	const sortedBatchYears = Object.keys(studentsByBatch)
+		.map(Number)
+		.sort((a, b) => b - a);
 
 	if (showUploadView) {
 		return (
@@ -212,65 +257,221 @@ export default function SuperAdminStudentsPage() {
 							</SelectTrigger>
 							<SelectContent>
 								<SelectItem value="all">All Batches</SelectItem>
-								<SelectItem value="2027">2027</SelectItem>
-								<SelectItem value="2026">2026</SelectItem>
-								<SelectItem value="2025">2025</SelectItem>
-								<SelectItem value="2024">2024</SelectItem>
+								{batches.map((batch) => (
+									<SelectItem key={batch.batch_year} value={batch.batch_year.toString()}>
+										{batch.display_name || `Batch ${batch.batch_year}`}
+									</SelectItem>
+								))}
 							</SelectContent>
 						</Select>
 					</div>
 				</CardContent>
 			</Card>
 
-			{/* Students Table */}
+			{/* Students Table - Grouped by Batch */}
 			<Card>
 				<CardHeader>
 					<CardTitle>Students ({pagination.total})</CardTitle>
 					<CardDescription>
-						All student profiles managed by the system
+						All student profiles managed by the system, grouped by batch
 					</CardDescription>
 				</CardHeader>
 				<CardContent>
-					<div className="rounded-md border">
-						<Table>
-							<TableHeader>
-								<TableRow>
-									<TableHead className="w-12">
-										<Checkbox
-											checked={selectedStudents.length === students.length && students.length > 0}
-											onCheckedChange={toggleAll}
-										/>
-									</TableHead>
-									<TableHead>Roll No</TableHead>
-									<TableHead>Name</TableHead>
-									<TableHead>Email</TableHead>
-									<TableHead>Hostel</TableHead>
-									<TableHead>Room</TableHead>
-									<TableHead>Section</TableHead>
-									<TableHead>Batch</TableHead>
-									<TableHead>Phone</TableHead>
-									<TableHead>Actions</TableHead>
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{loading ? (
-									Array.from({ length: 10 }).map((_, i) => (
-										<TableRow key={i}>
-											{Array.from({ length: 9 }).map((_, j) => (
-												<TableCell key={j}>
-													<Skeleton className="h-4 w-full" />
-												</TableCell>
-											))}
-										</TableRow>
-									))
-								) : students.length === 0 ? (
+					{loading ? (
+						<div className="space-y-4">
+							{Array.from({ length: 3 }).map((_, i) => (
+								<div key={i} className="space-y-2">
+									<Skeleton className="h-8 w-32" />
+									<div className="rounded-md border">
+										<Table>
+											<TableHeader>
+												<TableRow>
+													{Array.from({ length: 10 }).map((_, j) => (
+														<TableHead key={j}>
+															<Skeleton className="h-4 w-full" />
+														</TableHead>
+													))}
+												</TableRow>
+											</TableHeader>
+											<TableBody>
+												{Array.from({ length: 5 }).map((_, k) => (
+													<TableRow key={k}>
+														{Array.from({ length: 10 }).map((_, l) => (
+															<TableCell key={l}>
+																<Skeleton className="h-4 w-full" />
+															</TableCell>
+														))}
+													</TableRow>
+												))}
+											</TableBody>
+										</Table>
+									</div>
+								</div>
+							))}
+						</div>
+					) : students.length === 0 ? (
+						<div className="text-center py-8">
+							<p className="text-muted-foreground">No students found</p>
+						</div>
+					) : batchYearFilter === "all" ? (
+						// Show grouped by batch when "All Batches" is selected
+						<div className="space-y-4">
+							{sortedBatchYears.map((batchYear) => {
+								const batchStudents = studentsByBatch[batchYear];
+								const isExpanded = expandedBatches.has(batchYear);
+								const batchInfo = batches.find((b) => b.batch_year === batchYear);
+								const batchDisplayName = batchInfo?.display_name || `Batch ${batchYear}`;
+
+								return (
+									<div key={batchYear} className="rounded-md border">
+										<button
+											type="button"
+											onClick={() => toggleBatch(batchYear)}
+											className="w-full flex items-center justify-between p-4 hover:bg-accent transition-colors"
+										>
+											<div className="flex items-center gap-3">
+												{isExpanded ? (
+													<ChevronUp className="w-5 h-5 text-muted-foreground" />
+												) : (
+													<ChevronDown className="w-5 h-5 text-muted-foreground" />
+												)}
+												<h3 className="text-lg font-semibold">{batchDisplayName}</h3>
+												<Badge variant="secondary">{batchStudents.length} students</Badge>
+											</div>
+										</button>
+										{isExpanded && (
+											<div className="border-t">
+												<Table>
+													<TableHeader>
+														<TableRow>
+															<TableHead className="w-12">
+																<Checkbox
+																	checked={
+																		batchStudents.every((s) =>
+																			selectedStudents.includes(s.student_id)
+																		) && batchStudents.length > 0
+																	}
+																	onCheckedChange={() => {
+																		const allSelected = batchStudents.every((s) =>
+																			selectedStudents.includes(s.student_id)
+																		);
+																		if (allSelected) {
+																			setSelectedStudents((prev) =>
+																				prev.filter(
+																					(id) => !batchStudents.some((s) => s.student_id === id)
+																				)
+																			);
+																		} else {
+																			setSelectedStudents((prev) => [
+																				...prev,
+																				...batchStudents
+																					.map((s) => s.student_id)
+																					.filter((id) => !prev.includes(id)),
+																			]);
+																		}
+																	}}
+																/>
+															</TableHead>
+															<TableHead>Roll No</TableHead>
+															<TableHead>Name</TableHead>
+															<TableHead>Email</TableHead>
+															<TableHead>Hostel</TableHead>
+															<TableHead>Room</TableHead>
+															<TableHead>Section</TableHead>
+															<TableHead>Phone</TableHead>
+															<TableHead>Actions</TableHead>
+														</TableRow>
+													</TableHeader>
+													<TableBody>
+														{batchStudents.map((student) => (
+															<TableRow key={student.student_id}>
+																<TableCell>
+																	<Checkbox
+																		checked={selectedStudents.includes(student.student_id)}
+																		onCheckedChange={() => toggleStudent(student.student_id)}
+																	/>
+																</TableCell>
+																<TableCell className="font-mono text-sm">
+																	{student.roll_no}
+																</TableCell>
+																<TableCell className="font-medium">
+																	{student.full_name}
+																</TableCell>
+																<TableCell className="text-sm text-muted-foreground">
+																	{student.email}
+																</TableCell>
+																<TableCell>
+																	{student.hostel ? (
+																		<Badge variant="outline">{student.hostel}</Badge>
+																	) : (
+																		<span className="text-muted-foreground">—</span>
+																	)}
+																</TableCell>
+																<TableCell>
+																	{student.room_no || (
+																		<span className="text-muted-foreground">—</span>
+																	)}
+																</TableCell>
+																<TableCell>
+																	{student.class_section ? (
+																		<Badge variant="secondary">
+																			{student.class_section}
+																		</Badge>
+																	) : (
+																		<span className="text-muted-foreground">—</span>
+																	)}
+																</TableCell>
+																<TableCell className="text-sm">
+																	{student.phone || (
+																		<span className="text-muted-foreground">—</span>
+																	)}
+																</TableCell>
+																<TableCell>
+																	<Button
+																		variant="ghost"
+																		size="sm"
+																		onClick={() => {
+																			setEditingStudentId(student.student_id);
+																			setShowEditDialog(true);
+																		}}
+																	>
+																		<Pencil className="w-4 h-4" />
+																	</Button>
+																</TableCell>
+															</TableRow>
+														))}
+													</TableBody>
+												</Table>
+											</div>
+										)}
+									</div>
+								);
+							})}
+						</div>
+					) : (
+						// Show flat table when a specific batch is selected
+						<div className="rounded-md border">
+							<Table>
+								<TableHeader>
 									<TableRow>
-										<TableCell colSpan={10} className="text-center py-8">
-											No students found
-										</TableCell>
+										<TableHead className="w-12">
+											<Checkbox
+												checked={selectedStudents.length === students.length && students.length > 0}
+												onCheckedChange={toggleAll}
+											/>
+										</TableHead>
+										<TableHead>Roll No</TableHead>
+										<TableHead>Name</TableHead>
+										<TableHead>Email</TableHead>
+										<TableHead>Hostel</TableHead>
+										<TableHead>Room</TableHead>
+										<TableHead>Section</TableHead>
+										<TableHead>Phone</TableHead>
+										<TableHead>Actions</TableHead>
 									</TableRow>
-								) : (
-									students.map((student) => (
+								</TableHeader>
+								<TableBody>
+									{students.map((student) => (
 										<TableRow key={student.student_id}>
 											<TableCell>
 												<Checkbox
@@ -308,7 +509,6 @@ export default function SuperAdminStudentsPage() {
 													<span className="text-muted-foreground">—</span>
 												)}
 											</TableCell>
-											<TableCell>{student.batch_year || "—"}</TableCell>
 											<TableCell className="text-sm">
 												{student.phone || (
 													<span className="text-muted-foreground">—</span>
@@ -327,11 +527,11 @@ export default function SuperAdminStudentsPage() {
 												</Button>
 											</TableCell>
 										</TableRow>
-									))
-								)}
-							</TableBody>
-						</Table>
-					</div>
+									))}
+								</TableBody>
+							</Table>
+						</div>
+					)}
 
 					{/* Pagination */}
 					{pagination.totalPages > 1 && (

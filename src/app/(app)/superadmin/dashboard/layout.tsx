@@ -2,7 +2,6 @@ import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
-import { ProgressBar } from "@/components/dashboard/ProgressBar";
 
 export default async function SuperAdminDashboardLayout({
   children,
@@ -32,7 +31,6 @@ export default async function SuperAdminDashboardLayout({
 
     return (
       <div className="pb-16 lg:pb-0 pt-16 lg:pt-0">
-        <ProgressBar />
         <main className="min-h-screen p-4 md:p-6 lg:p-8">{children}</main>
       </div>
     );

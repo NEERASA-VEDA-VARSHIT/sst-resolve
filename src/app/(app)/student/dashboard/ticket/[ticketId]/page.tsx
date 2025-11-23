@@ -2,6 +2,7 @@ import React from "react";
 import { auth } from "@clerk/nextjs/server";
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -513,11 +514,13 @@ export default async function StudentTicketPage({ params }: { params: Promise<{ 
               </div>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                 {ticket.attachments.map((attachment: { url: string }, index: number) => (
-                  <div key={index} className="relative group">
-                    <img
+                  <div key={index} className="relative group aspect-video">
+                    <Image
                       src={attachment.url}
                       alt={`Attachment ${index + 1}`}
-                      className="w-full h-32 object-cover rounded-lg border cursor-pointer hover:opacity-80 transition-opacity"
+                      fill
+                      className="object-cover rounded-lg border cursor-pointer hover:opacity-80 transition-opacity"
+                      sizes="(max-width: 768px) 50vw, 25vw"
                       onClick={() => window.open(attachment.url, '_blank')}
                     />
                     <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 rounded-lg transition-all duration-200 flex items-center justify-center">

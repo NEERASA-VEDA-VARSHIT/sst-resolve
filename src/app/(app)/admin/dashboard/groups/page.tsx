@@ -8,10 +8,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
-import { ArrowLeft, Users, Package } from "lucide-react";
+import { ArrowLeft, Users, Package, CheckCircle2, TrendingUp } from "lucide-react";
 import { getCachedAdminUser, getCachedAdminAssignment } from "@/lib/admin/cached-queries";
 import { ticketMatchesAdminAssignment } from "@/lib/admin-assignment";
 import type { Ticket } from "@/db/types-only";
+
+// Force dynamic rendering since we use auth headers
+export const dynamic = "force-dynamic";
 
 export default async function AdminGroupsPage() {
   try {
@@ -72,13 +75,13 @@ export default async function AdminGroupsPage() {
       return (
         <div className="space-y-6">
           {/* Header */}
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
-              <h1 className="text-3xl font-bold tracking-tight mb-2">
+              <h1 className="text-3xl font-bold tracking-tight mb-2 bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
                 Ticket Groups
               </h1>
               <p className="text-muted-foreground text-sm">
-                Organize tickets into groups for efficient bulk operations
+                Organize tickets into groups for efficient bulk operations (comment, close, etc.)
               </p>
             </div>
             <Button variant="outline" asChild>
@@ -90,8 +93,8 @@ export default async function AdminGroupsPage() {
           </div>
 
           {/* Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Card>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Card className="border-2 hover:shadow-md transition-shadow">
               <CardContent className="pt-6">
                 <div className="flex items-center justify-between">
                   <div>
@@ -104,25 +107,26 @@ export default async function AdminGroupsPage() {
                 </div>
               </CardContent>
             </Card>
-            <Card>
+            <Card className="border-2 hover:shadow-md transition-shadow">
               <CardContent className="pt-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-muted-foreground">Available for Grouping</p>
+                    <p className="text-sm font-medium text-muted-foreground">Available</p>
                     <p className="text-2xl font-bold mt-1">{allTickets.length}</p>
                   </div>
                   <div className="h-12 w-12 rounded-full bg-blue-500/10 flex items-center justify-center">
-                    <Users className="w-6 h-6 text-blue-500" />
+                    <CheckCircle2 className="w-6 h-6 text-blue-500" />
                   </div>
                 </div>
               </CardContent>
             </Card>
-            <Card>
+            <Card className="border-2 hover:shadow-md transition-shadow">
               <CardContent className="pt-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-muted-foreground">Groups</p>
+                    <p className="text-sm font-medium text-muted-foreground">Active Groups</p>
                     <p className="text-2xl font-bold mt-1">-</p>
+                    <p className="text-xs text-muted-foreground mt-1">See below</p>
                   </div>
                   <div className="h-12 w-12 rounded-full bg-emerald-500/10 flex items-center justify-center">
                     <Users className="w-6 h-6 text-emerald-500" />
@@ -130,15 +134,31 @@ export default async function AdminGroupsPage() {
                 </div>
               </CardContent>
             </Card>
+            <Card className="border-2 hover:shadow-md transition-shadow">
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Grouped Tickets</p>
+                    <p className="text-2xl font-bold mt-1">-</p>
+                    <p className="text-xs text-muted-foreground mt-1">See below</p>
+                  </div>
+                  <div className="h-12 w-12 rounded-full bg-purple-500/10 flex items-center justify-center">
+                    <TrendingUp className="w-6 h-6 text-purple-500" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </div>
 
           {/* Existing Groups */}
-          <Card>
+          <Card className="shadow-sm">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Users className="w-5 h-5" />
-                Existing Groups
-              </CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <Users className="w-5 h-5" />
+                  Existing Groups
+                </CardTitle>
+              </div>
             </CardHeader>
             <CardContent>
               <TicketGrouping selectedTicketIds={[]} />
@@ -146,11 +166,11 @@ export default async function AdminGroupsPage() {
           </Card>
 
           {/* Select Tickets to Group */}
-          <Card>
+          <Card className="shadow-sm">
             <CardHeader>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <CardTitle>Select Tickets to Group</CardTitle>
-                <Badge variant="secondary" className="text-sm">
+                <Badge variant="secondary" className="text-sm w-fit">
                   {allTickets.length} {allTickets.length === 1 ? "ticket" : "tickets"} available
                 </Badge>
               </div>
