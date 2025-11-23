@@ -178,7 +178,6 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
     reopened_at: ticket.reopened_at,
     escalation_level: ticket.escalation_level,
     status: statusValue,
-    metadata: metadata,
   }, normalizedStatus);
 
   // Add TAT set entry if TAT was set
@@ -267,7 +266,7 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
 
   const resolvedProfileFields = resolveProfileFields(
     profileFieldsConfig,
-    metadata,
+    metadata as Record<string, unknown>,
     studentRecord,
     userRecord
   );
