@@ -187,7 +187,7 @@ export function StatsCards({ stats }: StatsCardsProps) {
       RENDER
   ------------------------------------------------ */
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
       {statItems.map((item) => {
         const Icon = item.icon;
         const styles = COLOR_STYLES[item.color as keyof typeof COLOR_STYLES];
@@ -198,31 +198,31 @@ export function StatsCards({ stats }: StatsCardsProps) {
             className={cn(
               "border-2 cursor-pointer transition-all hover:shadow-lg hover:scale-105 group",
               styles.card,
-              item.isActive && "ring-2 ring-primary ring-offset-2 shadow-md"
+              item.isActive && "ring-2 ring-primary ring-offset-1 sm:ring-offset-2 shadow-md"
             )}
             onClick={item.onClick}
           >
-            <CardContent className="p-4">
+            <CardContent className="p-3 sm:p-4">
               {/* Icon + active dot */}
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center justify-between mb-1.5 sm:mb-2">
                 <Icon
                   className={cn(
-                    "w-4 h-4 transition-transform group-hover:scale-110",
+                    "w-3.5 h-3.5 sm:w-4 sm:h-4 transition-transform group-hover:scale-110",
                     styles.icon
                   )}
                 />
                 {item.isActive && (
-                  <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                  <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-primary animate-pulse" />
                 )}
               </div>
 
               {/* Label */}
-              <p className="text-xs font-medium text-muted-foreground mb-1">
+              <p className="text-[10px] sm:text-xs font-medium text-muted-foreground mb-0.5 sm:mb-1 line-clamp-1">
                 {item.label}
               </p>
 
               {/* Value */}
-              <p className={cn("text-2xl font-bold", styles.text)}>
+              <p className={cn("text-lg sm:text-xl lg:text-2xl font-bold", styles.text)}>
                 {item.value ?? 0}
               </p>
             </CardContent>

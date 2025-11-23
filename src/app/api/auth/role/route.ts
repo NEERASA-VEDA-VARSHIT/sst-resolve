@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUserRoleFromDB } from "@/lib/db-roles";
+import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 
 /**
  * GET /api/auth/role?userId={clerkId}

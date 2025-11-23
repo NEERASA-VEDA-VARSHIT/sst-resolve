@@ -6,8 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Calendar, AlertTriangle, CheckCircle2, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { getCachedAdminUser, getCachedAdminAssignment, getCachedTicketStatuses, getCachedAdminTickets } from "@/lib/admin/cached-queries";
-import { ticketMatchesAdminAssignment } from "@/lib/admin-assignment";
+import { getCachedAdminUser, getCachedAdminAssignment, getCachedTicketStatuses, getCachedAdminTickets } from "@/lib/cache/cached-queries";
+import { ticketMatchesAdminAssignment } from "@/lib/assignment/admin-assignment";
 
 // Revalidate every 30 seconds for fresh data
 export const revalidate = 30;
@@ -288,6 +288,7 @@ export default async function AdminTodayPendingPage() {
     </div>
   );
 }
+
 
 
 

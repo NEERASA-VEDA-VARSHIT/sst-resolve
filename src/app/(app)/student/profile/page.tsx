@@ -148,8 +148,8 @@ export default function StudentProfilePage() {
   ---------------------------------------------------- */
   if (!isLoaded || loading) {
     return (
-      <div className="flex h-screen items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      <div className="flex h-screen items-center justify-center p-4">
+        <Loader2 className="w-6 h-6 sm:w-8 sm:h-8 animate-spin text-primary" />
       </div>
     );
   }
@@ -159,18 +159,18 @@ export default function StudentProfilePage() {
   ---------------------------------------------------- */
   if (needsLink) {
     return (
-      <div className="flex h-screen items-center justify-center">
+      <div className="flex h-screen items-center justify-center p-4">
         <Card className="w-full max-w-md">
-          <CardHeader>
-            <CardTitle>Profile Not Linked</CardTitle>
-            <CardDescription>
+          <CardHeader className="p-4 sm:p-6">
+            <CardTitle className="text-lg sm:text-xl">Profile Not Linked</CardTitle>
+            <CardDescription className="text-xs sm:text-sm">
               Your student profile needs administrative linking.
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-4 sm:p-6 pt-0">
             <Alert className="border-amber-500 bg-amber-50 dark:bg-amber-900/20">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription className="mt-2">
+              <AlertCircle className="h-4 w-4 flex-shrink-0" />
+              <AlertDescription className="mt-2 text-xs sm:text-sm">
                 Please contact the administration office to complete your
                 profile setup.
               </AlertDescription>
@@ -186,15 +186,15 @@ export default function StudentProfilePage() {
   ---------------------------------------------------- */
   if (!profile) {
     return (
-      <div className="flex h-screen items-center justify-center">
+      <div className="flex h-screen items-center justify-center p-4">
         <Card className="w-full max-w-md">
-          <CardHeader>
-            <CardTitle>Profile Not Found</CardTitle>
+          <CardHeader className="p-4 sm:p-6">
+            <CardTitle className="text-lg sm:text-xl">Profile Not Found</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-4 sm:p-6 pt-0">
             <Alert>
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>
+              <AlertCircle className="h-4 w-4 flex-shrink-0" />
+              <AlertDescription className="text-xs sm:text-sm">
                 Please contact administration to have your student profile
                 created.
               </AlertDescription>
@@ -210,43 +210,43 @@ export default function StudentProfilePage() {
   ---------------------------------------------------- */
   return (
     <div className="flex h-[calc(100vh-73px)]">
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6">
         <div className="max-w-2xl mx-auto">
           {/* Header */}
-          <div className="flex items-center gap-3 mb-6">
-            <User className="w-8 h-8 text-primary" />
-            <div>
-              <h1 className="text-3xl font-bold">My Profile</h1>
-              <p className="text-muted-foreground">
+          <div className="flex items-center gap-2 sm:gap-3 mb-4 sm:mb-6">
+            <User className="w-6 h-6 sm:w-8 sm:h-8 text-primary flex-shrink-0" />
+            <div className="min-w-0 flex-1">
+              <h1 className="text-2xl sm:text-3xl font-bold">My Profile</h1>
+              <p className="text-sm sm:text-base text-muted-foreground">
                 View your information and update hostel, room, and mobile
               </p>
             </div>
           </div>
 
           {/* Admin note */}
-          <Alert className="mb-6 border-blue-500 bg-blue-50 dark:bg-blue-950">
-            <Lock className="h-4 w-4 text-blue-600" />
-            <AlertDescription className="ml-2">
-              <strong className="block mb-1">
+          <Alert className="mb-4 sm:mb-6 border-blue-500 bg-blue-50 dark:bg-blue-950">
+            <Lock className="h-4 w-4 text-blue-600 flex-shrink-0" />
+            <AlertDescription className="ml-2 text-sm sm:text-base">
+              <strong className="block mb-1 text-sm sm:text-base">
                 Profile Managed by Administration
               </strong>
-              You can update your hostel, room number, and mobile. Contact admin
-              for other changes.
+              <span className="text-xs sm:text-sm">You can update your hostel, room number, and mobile. Contact admin
+              for other changes.</span>
             </AlertDescription>
           </Alert>
 
           {/* Readonly Profile */}
-          <Card className="mb-6">
-            <CardHeader>
-              <CardTitle>Student Information</CardTitle>
-              <CardDescription>
+          <Card className="mb-4 sm:mb-6">
+            <CardHeader className="p-4 sm:p-6">
+              <CardTitle className="text-lg sm:text-xl">Student Information</CardTitle>
+              <CardDescription className="text-xs sm:text-sm">
                 Information managed by administration
               </CardDescription>
             </CardHeader>
 
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-3 sm:space-y-4 p-4 sm:p-6 pt-0">
               {/* Roll + Name */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <ReadonlyField
                   label="Roll Number"
                   value={profile.user_number}
@@ -258,7 +258,7 @@ export default function StudentProfilePage() {
               <ReadonlyField label="Email Address" value={profile.email} />
 
               {/* Class + Batch */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <ReadonlyField
                   label="Class Section"
                   value={profile.class_section ?? "Not Assigned"}
@@ -275,7 +275,7 @@ export default function StudentProfilePage() {
               )}
 
               {/* Timestamps */}
-              <div className="text-xs text-muted-foreground pt-4 border-t space-y-1">
+              <div className="text-[10px] sm:text-xs text-muted-foreground pt-3 sm:pt-4 border-t space-y-1">
                 <p>Created: {new Date(profile.created_at).toLocaleString()}</p>
                 <p>Updated: {new Date(profile.updated_at).toLocaleString()}</p>
               </div>
@@ -285,21 +285,21 @@ export default function StudentProfilePage() {
           {/* Editable Mobile */}
           {/* Editable Profile Section */}
           <Card>
-            <CardHeader>
-              <CardTitle>Update Your Information</CardTitle>
-              <CardDescription>
+            <CardHeader className="p-4 sm:p-6">
+              <CardTitle className="text-lg sm:text-xl">Update Your Information</CardTitle>
+              <CardDescription className="text-xs sm:text-sm">
                 You can update your hostel, room number, and mobile
               </CardDescription>
             </CardHeader>
 
-            <CardContent>
-              <form onSubmit={handleProfileUpdate} className="space-y-4">
+            <CardContent className="p-4 sm:p-6 pt-0">
+              <form onSubmit={handleProfileUpdate} className="space-y-3 sm:space-y-4">
                 {/* Hostel */}
                 <div>
-                  <Label htmlFor="hostel">Hostel *</Label>
+                  <Label htmlFor="hostel" className="text-sm sm:text-base">Hostel *</Label>
                   <select
                     id="hostel"
-                    className="w-full border rounded-md p-2 mt-1 bg-background"
+                    className="w-full border rounded-md p-2 sm:p-2.5 mt-1 bg-background text-sm sm:text-base h-9 sm:h-10"
                     value={hostelId}
                     onChange={(e) => setHostelId(e.target.value)}
                     disabled={!hostels.length}
@@ -316,7 +316,7 @@ export default function StudentProfilePage() {
 
                 {/* Room Number */}
                 <div>
-                  <Label htmlFor="room">Room Number *</Label>
+                  <Label htmlFor="room" className="text-sm sm:text-base">Room Number *</Label>
                   <Input
                     id="room"
                     value={roomNumber}
@@ -328,13 +328,13 @@ export default function StudentProfilePage() {
                     }}
                     placeholder="Enter room number"
                     required
-                    className="mt-1"
+                    className="mt-1 text-sm sm:text-base h-9 sm:h-10"
                   />
                 </div>
 
                 {/* Mobile */}
                 <div>
-                  <Label htmlFor="mobile">Mobile Number *</Label>
+                  <Label htmlFor="mobile" className="text-sm sm:text-base">Mobile Number *</Label>
                   <Input
                     id="mobile"
                     type="tel"
@@ -342,14 +342,14 @@ export default function StudentProfilePage() {
                     onChange={(e) => setMobile(e.target.value)}
                     placeholder="10-digit mobile number"
                     required
-                    className="mt-1"
+                    className="mt-1 text-sm sm:text-base h-9 sm:h-10"
                   />
-                  <p className="text-xs text-muted-foreground mt-1">
+                  <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">
                     Enter a valid 10-digit mobile number
                   </p>
                 </div>
 
-                <Button disabled={saving} type="submit">
+                <Button disabled={saving} type="submit" className="w-full sm:w-auto text-sm sm:text-base h-9 sm:h-10">
                   {saving ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -375,14 +375,14 @@ export default function StudentProfilePage() {
 function ReadonlyField({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <Label className="text-muted-foreground flex items-center gap-2">
-        <Lock className="w-3 h-3" /> {label}
+      <Label className="text-muted-foreground flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm">
+        <Lock className="w-3 h-3 flex-shrink-0" /> <span className="truncate">{label}</span>
       </Label>
       <Input
         value={value}
         readOnly
         disabled
-        className="bg-muted cursor-not-allowed mt-1"
+        className="bg-muted cursor-not-allowed mt-1 text-sm sm:text-base h-9 sm:h-10"
       />
     </div>
   );

@@ -1,8 +1,8 @@
 import { db } from "@/db";
 import { categories, tickets, users, ticket_statuses } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { getTicketCreatedEmail, sendEmail } from "@/lib/email";
-import { postToSlackChannel } from "@/lib/slack";
+import { getTicketCreatedEmail, sendEmail } from "@/lib/integration/email";
+import { postToSlackChannel } from "@/lib/integration/slack";
 import { slackConfig } from "@/conf/config";
 
 type TicketCreatedPayload = {
@@ -222,7 +222,7 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
     const subcategoryIdValue = safeGet(safeMetadata, 'subcategoryId');
     if (!subcategoryName && subcategoryIdValue && ticket.categoryId) {
       try {
-        const { getSubcategoryById } = await import("@/lib/categories");
+        const { getSubcategoryById } = await import("@/lib/category/categories");
         const subcategoryIdNum = typeof subcategoryIdValue === 'number' ? subcategoryIdValue : Number(subcategoryIdValue);
         if (!isNaN(subcategoryIdNum)) {
           const subcategory = await getSubcategoryById(subcategoryIdNum, ticket.categoryId);
@@ -441,7 +441,7 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
       if (categoryName === "Hostel") {
         try {
           // Use cached config lookup (60-second cache, very fast after first call)
-          const { getHostelSlackChannel } = await import("@/lib/slack-config");
+          const { getHostelSlackChannel } = await import("@/lib/integration/slack-config");
           channelOverride = await getHostelSlackChannel(hostelName);
         } catch (error) {
           console.warn(`[processTicketCreated] Error accessing Slack channel config for ticket ${ticket.id}:`, error);

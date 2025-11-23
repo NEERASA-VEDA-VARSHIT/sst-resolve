@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, tickets, ticket_statuses, categories, users } from "@/db";
 import { eq } from "drizzle-orm";
-import { postThreadReply } from "@/lib/slack";
-import { sendEmail, getStatusUpdateEmail, getTATSetEmail, getCommentAddedEmail, getStudentEmail } from "@/lib/email";
-import { getStatusIdByValue } from "@/lib/status-helpers";
+import { postThreadReply } from "@/lib/integration/slack";
+import { sendEmail, getStatusUpdateEmail, getTATSetEmail, getCommentAddedEmail, getStudentEmail } from "@/lib/integration/email";
+import { getStatusIdByValue } from "@/lib/status/status-helpers";
 import { calculateTATDate } from "@/utils";
 import type { TicketMetadata } from "@/db/types";
 
@@ -222,7 +222,7 @@ export async function POST(request: NextRequest) {
 									const ccUserIds = (slackConfig.ccMap[key] || slackConfig.ccMap[categoryName] || slackConfig.defaultCc);
 									const channelOverride: string | undefined = typeof details.slackChannel === "string" ? details.slackChannel : undefined;
 									if (channelOverride) {
-										const { postThreadReplyToChannel } = await import("@/lib/slack");
+										const { postThreadReplyToChannel } = await import("@/lib/integration/slack");
 										await postThreadReplyToChannel(channelOverride, slackMessageTs, tatMessage, ccUserIds);
 									} else {
 										await postThreadReply(
@@ -326,7 +326,7 @@ export async function POST(request: NextRequest) {
 									const ccUserIds = (slackConfig.ccMap[key] || slackConfig.ccMap[categoryName] || slackConfig.defaultCc);
 									const channelOverride: string | undefined = typeof details.slackChannel === "string" ? details.slackChannel : undefined;
 									if (channelOverride) {
-										const { postThreadReplyToChannel } = await import("@/lib/slack");
+										const { postThreadReplyToChannel } = await import("@/lib/integration/slack");
 										await postThreadReplyToChannel(channelOverride, slackMessageTs, commentText, ccUserIds);
 									} else {
 										await postThreadReply(

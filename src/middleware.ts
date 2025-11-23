@@ -1,6 +1,6 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
-import { getRoleFast } from '@/lib/get-role-fast';
+import { getRoleFast } from '@/lib/auth/get-role-fast';
 
 const isPublicRoute = createRouteMatcher([
   '/',
@@ -99,6 +99,24 @@ export default clerkMiddleware(async (auth, req) => {
   const isAdmin = !isSuperAdmin && (effectiveRole === 'admin');
   const isStudent = effectiveRole === 'student';
   const isCommittee = effectiveRole === 'committee';
+
+  // Handle /dashboard redirects - route users to their role-specific dashboard
+  if (pathname === '/dashboard') {
+    if (isSuperAdmin) {
+      return NextResponse.redirect(new URL('/superadmin/dashboard', req.url));
+    }
+    if (isAdmin) {
+      return NextResponse.redirect(new URL('/admin/dashboard', req.url));
+    }
+    if (isCommittee) {
+      return NextResponse.redirect(new URL('/committee/dashboard', req.url));
+    }
+    if (isStudent) {
+      return NextResponse.redirect(new URL('/student/dashboard', req.url));
+    }
+    // Fallback: unknown role, treat as student
+    return NextResponse.redirect(new URL('/student/dashboard', req.url));
+  }
 
   // SuperAdmin can access both /superadmin/* and /admin/* routes
   if (isSuperAdmin) {

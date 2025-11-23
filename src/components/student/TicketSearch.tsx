@@ -154,9 +154,9 @@ export default function TicketSearch({
   const dynamicFields = selectedSubcategory?.fields || [];
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3 sm:space-y-4">
       {/* Search Input and Buttons */}
-      <div className="flex flex-col sm:flex-row gap-4">
+      <div className="flex flex-col sm:flex-row gap-2 sm:gap-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
           <Input
@@ -164,22 +164,24 @@ export default function TicketSearch({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-            className="pl-10"
+            className="pl-10 text-sm sm:text-base h-9 sm:h-10"
           />
         </div>
         <div className="flex gap-2">
-          <Button onClick={handleSearch}>Search</Button>
+          <Button onClick={handleSearch} className="text-sm sm:text-base h-9 sm:h-10 flex-1 sm:flex-initial">
+            Search
+          </Button>
           {hasFilters && (
-            <Button variant="outline" onClick={handleClear} className="gap-2">
-              <X className="h-4 w-4" />
-              Clear
+            <Button variant="outline" onClick={handleClear} className="gap-1 sm:gap-2 text-sm sm:text-base h-9 sm:h-10">
+              <X className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              <span className="hidden sm:inline">Clear</span>
             </Button>
           )}
         </div>
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-4">
+      <div className="flex flex-wrap gap-2 sm:gap-3 lg:gap-4">
         <Select 
           value={statusFilter || "all"} 
           onValueChange={(value) => {
@@ -189,7 +191,7 @@ export default function TicketSearch({
             applyFilters(searchQuery, newValue, categoryFilter, subcategoryFilter, subSubcategoryFilter, sortBy, dynamicFilters);
           }}
         >
-          <SelectTrigger className="w-full sm:w-[180px] h-10">
+          <SelectTrigger className="w-full sm:w-[180px] h-9 sm:h-10 text-xs sm:text-sm">
             <SelectValue placeholder="All Statuses" />
           </SelectTrigger>
           <SelectContent>
@@ -221,7 +223,7 @@ export default function TicketSearch({
           setDynamicFilters({});
           applyFilters(searchQuery, statusFilter, newValue, "", "", sortBy, {});
         }}>
-          <SelectTrigger className="w-full sm:w-[180px] h-10">
+          <SelectTrigger className="w-full sm:w-[180px] h-9 sm:h-10 text-xs sm:text-sm">
             <SelectValue placeholder="All Categories" />
           </SelectTrigger>
           <SelectContent>
@@ -244,7 +246,7 @@ export default function TicketSearch({
             setDynamicFilters({});
             applyFilters(searchQuery, statusFilter, categoryFilter, newValue, "", sortBy, {});
           }}>
-            <SelectTrigger className="w-full sm:w-[180px] h-10">
+            <SelectTrigger className="w-full sm:w-[180px] h-9 sm:h-10 text-xs sm:text-sm">
               <SelectValue placeholder="All Subcategories" />
             </SelectTrigger>
             <SelectContent>
@@ -266,7 +268,7 @@ export default function TicketSearch({
             setSubSubcategoryFilter(newValue);
             applyFilters(searchQuery, statusFilter, categoryFilter, subcategoryFilter, newValue, sortBy, dynamicFilters);
           }}>
-            <SelectTrigger className="w-full sm:w-[180px] h-10">
+            <SelectTrigger className="w-full sm:w-[180px] h-9 sm:h-10 text-xs sm:text-sm">
               <SelectValue placeholder="All Types" />
             </SelectTrigger>
             <SelectContent>
@@ -297,7 +299,7 @@ export default function TicketSearch({
                 applyFilters(searchQuery, statusFilter, categoryFilter, subcategoryFilter, subSubcategoryFilter, sortBy, newFilters);
               }}
             >
-              <SelectTrigger className="w-full sm:w-[180px] h-10">
+              <SelectTrigger className="w-full sm:w-[180px] h-9 sm:h-10 text-xs sm:text-sm">
                 <SelectValue placeholder={`All ${field.name}s`} />
               </SelectTrigger>
               <SelectContent>
@@ -315,14 +317,14 @@ export default function TicketSearch({
         })}
 
         {/* Sort label and dropdown */}
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <ArrowUpDown className="h-4 w-4" />
-          <span>Sort:</span>
+        <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-muted-foreground w-full sm:w-auto">
+          <ArrowUpDown className="h-3.5 w-3.5 sm:h-4 sm:w-4 flex-shrink-0" />
+          <span className="flex-shrink-0">Sort:</span>
           <Select value={sortBy} onValueChange={(value) => {
             setSortBy(value);
             applyFilters(searchQuery, statusFilter, categoryFilter, subcategoryFilter, subSubcategoryFilter, value, dynamicFilters);
           }}>
-            <SelectTrigger className="w-full sm:w-[180px] h-10">
+            <SelectTrigger className="w-full sm:w-[180px] h-9 sm:h-10 text-xs sm:text-sm">
               <SelectValue placeholder="Sort By" />
             </SelectTrigger>
             <SelectContent>

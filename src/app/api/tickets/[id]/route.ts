@@ -2,12 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth, clerkClient } from "@clerk/nextjs/server";
 import { db, tickets, ticket_committee_tags, committee_members, categories, users, ticket_statuses } from "@/db";
 import { eq, and, inArray } from "drizzle-orm";
-import { sendEmail, getStatusUpdateEmail } from "@/lib/email";
-import { postThreadReply } from "@/lib/slack";
+import { sendEmail, getStatusUpdateEmail } from "@/lib/integration/email";
+import { postThreadReply } from "@/lib/integration/slack";
 import { TICKET_STATUS } from "@/conf/constants";
-import { getUserRoleFromDB } from "@/lib/db-roles";
-import { getOrCreateUser } from "@/lib/user-sync";
-import { getAdminAssignment, ticketMatchesAdminAssignment } from "@/lib/admin-assignment";
+import { getUserRoleFromDB } from "@/lib/auth/db-roles";
+import { getOrCreateUser } from "@/lib/auth/user-sync";
+import { getAdminAssignment, ticketMatchesAdminAssignment } from "@/lib/assignment/admin-assignment";
 import type { TicketMetadata } from "@/db/types";
 // Removed: statusToEnum - status values are already in correct format from database
 
@@ -522,7 +522,7 @@ export async function PATCH(
             const ccUserIds = (slackConfig.ccMap[key] || slackConfig.ccMap[updatedTicket.category_name] || slackConfig.defaultCc);
             const channelOverride: string | undefined = typeof slackChannel === "string" ? slackChannel : undefined;
             if (channelOverride) {
-              const { postThreadReplyToChannel } = await import("@/lib/slack");
+              const { postThreadReplyToChannel } = await import("@/lib/integration/slack");
               await postThreadReplyToChannel(channelOverride, slackMessageTs, reopenText, ccUserIds);
             } else {
               await postThreadReply(
@@ -576,7 +576,7 @@ export async function PATCH(
       // Check if ticket belongs to a group and if all tickets in that group are now closed
       // If so, archive the group
       if (ticket.group_id) {
-        const { checkAndArchiveGroupIfAllTicketsClosed } = await import("@/lib/group-archive");
+        const { checkAndArchiveGroupIfAllTicketsClosed } = await import("@/lib/archive/group-archive");
         await checkAndArchiveGroupIfAllTicketsClosed(ticket.group_id);
       }
 

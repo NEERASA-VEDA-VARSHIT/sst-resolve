@@ -3,8 +3,8 @@ import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { tickets, categories, ticket_statuses } from "@/db/schema";
 import { eq, inArray, sql, gte, and, ne } from "drizzle-orm";
-import { getUserRoleFromDB } from "@/lib/db-roles";
-import { getStatusIdByValue } from "@/lib/status-helpers";
+import { getUserRoleFromDB } from "@/lib/auth/db-roles";
+import { getStatusIdByValue } from "@/lib/status/status-helpers";
 
 /**
  * ============================================

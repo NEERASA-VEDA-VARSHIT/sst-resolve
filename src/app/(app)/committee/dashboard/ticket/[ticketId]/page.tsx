@@ -12,7 +12,7 @@ import { ArrowLeft, Clock, AlertCircle, MessageSquare, User, MapPin, FileText, I
 import { db, tickets, ticket_committee_tags, committee_members, categories, ticket_statuses } from "@/db";
 import { eq, inArray, and } from "drizzle-orm";
 import type { TicketMetadata } from "@/db/types";
-import { getOrCreateUser } from "@/lib/user-sync";
+import { getOrCreateUser } from "@/lib/auth/user-sync";
 import { CommentForm } from "@/components/tickets/CommentForm";
 import { RatingForm } from "@/components/tickets/RatingForm";
 import { CommitteeActions } from "@/components/tickets/CommitteeActions";

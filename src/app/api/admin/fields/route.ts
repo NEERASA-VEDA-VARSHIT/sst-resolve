@@ -3,8 +3,8 @@ import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { category_fields, field_options } from "@/db/schema";
 import { eq, and, desc, asc } from "drizzle-orm";
-import { getUserRoleFromDB } from "@/lib/db-roles";
-import { getOrCreateUser } from "@/lib/user-sync";
+import { getUserRoleFromDB } from "@/lib/auth/db-roles";
+import { getOrCreateUser } from "@/lib/auth/user-sync";
 
 // GET: Fetch fields for a subcategory
 export async function GET(request: NextRequest) {

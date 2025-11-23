@@ -31,14 +31,14 @@ import {
   ticket_statuses
 } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { getOrCreateUser } from "@/lib/user-sync";
+import { getOrCreateUser } from "@/lib/auth/user-sync";
 import {
   getCategorySchema,
   getSubcategoryById,
   getSubSubcategoryById,
   getCategoryById,
   getCategoryProfileFields
-} from "@/lib/categories";
+} from "@/lib/category/categories";
 import { extractDynamicFields } from "@/lib/ticket/formatDynamicFields";
 
 export async function GET(

@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, tickets } from "@/db";
 import { and, eq, ne } from "drizzle-orm";
-import { postThreadReply } from "@/lib/slack";
+import { postThreadReply } from "@/lib/integration/slack";
 import type { TicketMetadata } from "@/db/types";
 import { appConfig, cronConfig } from "@/conf/config";
 import { TICKET_STATUS, DEFAULTS } from "@/conf/constants";
-import { getStatusIdByValue } from "@/lib/status-helpers";
+import { getStatusIdByValue } from "@/lib/status/status-helpers";
 
 // Auto-escalate tickets that haven't been updated in n days
 // This should be called by a cron job (e.g., Vercel Cron, GitHub Actions, etc.)
@@ -127,7 +127,7 @@ export async function GET(request: NextRequest) {
 				// Get next escalation target based on category/location-specific rules
 				// Note: ticket.category and ticket.location are not direct fields - need to join with categories table
 				// For now, using a fallback approach - this should be improved to use proper category lookup
-				const { getNextEscalationTarget } = await import("@/lib/escalation");
+				const { getNextEscalationTarget } = await import("@/lib/escalation/escalation");
 				const categoryName = "College"; // TODO: Get actual category name from category_id join
 				const nextTarget = await getNextEscalationTarget(
 					categoryName,
@@ -229,7 +229,7 @@ export async function GET(request: NextRequest) {
 
 							const channelOverride = details.slackChannel;
 							if (channelOverride) {
-								const { postThreadReplyToChannel } = await import("@/lib/slack");
+								const { postThreadReplyToChannel } = await import("@/lib/integration/slack");
 								await postThreadReplyToChannel(
 									channelOverride,
 									slackMessageTs,

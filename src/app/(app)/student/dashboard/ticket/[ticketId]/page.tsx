@@ -17,7 +17,7 @@ import { ImageLightbox } from "@/components/tickets/ImageLightbox";
 import { TicketStatusBadge } from "@/components/tickets/TicketStatusBadge";
 import { DynamicFieldDisplay } from "@/components/tickets/DynamicFieldDisplay";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { getOrCreateUser } from "@/lib/user-sync";
+import { getOrCreateUser } from "@/lib/auth/user-sync";
 import { getFullTicketData } from "@/lib/ticket/getFullTicketData";
 import { resolveProfileFields } from "@/lib/ticket/profileFieldResolver";
 import { buildTimeline } from "@/lib/ticket/buildTimeline";
@@ -164,74 +164,77 @@ export default async function StudentTicketPage({ params }: { params: Promise<{ 
   const timelineEntries = buildTimeline(ticket, statusValue || "");
 
   return (
-    <div className="max-w-6xl mx-auto p-4 md:p-6 space-y-6">
+    <div className="max-w-6xl mx-auto p-3 sm:p-4 md:p-6 space-y-4 sm:space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
+      <div className="flex items-center justify-between flex-wrap gap-2 sm:gap-4">
         <Link href="/student/dashboard">
-          <Button variant="ghost" className="gap-2">
-            <ArrowLeft className="w-4 h-4" />
-            Back to Tickets
+          <Button variant="ghost" className="gap-1.5 sm:gap-2 text-sm sm:text-base h-8 sm:h-10">
+            <ArrowLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            <span className="hidden sm:inline">Back to Tickets</span>
+            <span className="sm:hidden">Back</span>
           </Button>
         </Link>
       </div>
 
       {/* 1. Ticket Header */}
       <Card className="border-2 shadow-lg">
-        <CardHeader className="space-y-4 pb-4">
-          <div className="space-y-3">
-            <CardTitle className="text-3xl md:text-4xl font-bold">
+        <CardHeader className="space-y-3 sm:space-y-4 pb-3 sm:pb-4 p-4 sm:p-6">
+          <div className="space-y-2 sm:space-y-3">
+            <CardTitle className="text-2xl sm:text-3xl md:text-4xl font-bold">
               Ticket #{ticket.id}
             </CardTitle>
 
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-muted-foreground">Category:</span>
-                <Badge variant="outline" className="font-medium">
+            <div className="space-y-1.5 sm:space-y-2">
+              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                <span className="text-xs sm:text-sm font-medium text-muted-foreground">Category:</span>
+                <Badge variant="outline" className="font-medium text-xs sm:text-sm">
                   {category?.name || "Unknown"}
                 </Badge>
               </div>
 
               {subcategory && (
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-muted-foreground">Subcategory:</span>
-                  <Badge variant="outline" className="font-medium">
-                    Issue Type → {subcategory.name}
+                <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                  <span className="text-xs sm:text-sm font-medium text-muted-foreground">Subcategory:</span>
+                  <Badge variant="outline" className="font-medium text-xs sm:text-sm">
+                    <span className="hidden sm:inline">Issue Type → </span>
+                    <span className="sm:hidden">Type: </span>
+                    {subcategory.name}
                   </Badge>
                 </div>
               )}
 
               {subSubcategory && (
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-muted-foreground">Sub-type:</span>
-                  <Badge variant="outline" className="font-medium">
+                <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                  <span className="text-xs sm:text-sm font-medium text-muted-foreground">Sub-type:</span>
+                  <Badge variant="outline" className="font-medium text-xs sm:text-sm">
                     {subSubcategory.name}
                   </Badge>
                 </div>
               )}
 
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-sm font-medium text-muted-foreground">Ticket Status:</span>
+              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                <span className="text-xs sm:text-sm font-medium text-muted-foreground">Ticket Status:</span>
                 <TicketStatusBadge status={ticket.status} />
               </div>
             </div>
           </div>
         </CardHeader>
 
-        <CardContent className="space-y-6">
+        <CardContent className="space-y-4 sm:space-y-6 p-4 sm:p-6 pt-0">
           {/* 2. Student Information - Dynamic based on category profile fields */}
           {resolvedProfileFields.length > 0 && (
-            <section className="rounded-lg border bg-muted/30 p-4">
-              <div className="flex items-center gap-2 mb-4">
-                <User className="w-4 h-4" />
-                <h3 className="text-base font-semibold">Student Information</h3>
+            <section className="rounded-lg border bg-muted/30 p-3 sm:p-4">
+              <div className="flex items-center gap-1.5 sm:gap-2 mb-3 sm:mb-4">
+                <User className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
+                <h3 className="text-sm sm:text-base font-semibold">Student Information</h3>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 {resolvedProfileFields.map((field) => (
                   <div key={field.field_name}>
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
+                    <p className="text-[10px] sm:text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
                       {field.label}
                     </p>
-                    <p className="text-sm font-semibold">{field.value}</p>
+                    <p className="text-xs sm:text-sm font-semibold break-words">{field.value}</p>
                   </div>
                 ))}
               </div>
@@ -240,53 +243,53 @@ export default async function StudentTicketPage({ params }: { params: Promise<{ 
 
           {/* 3. Submitted Information (All fields they submitted) */}
           <Card className="border bg-card">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-xl">
-                <FileText className="w-5 h-5" />
+            <CardHeader className="p-4 sm:p-6">
+              <CardTitle className="flex items-center gap-1.5 sm:gap-2 text-lg sm:text-xl">
+                <FileText className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" />
                 Submitted Information
               </CardTitle>
-              <CardDescription>
+              <CardDescription className="text-xs sm:text-sm">
                 Details provided when creating this ticket
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-3 sm:space-y-4 p-4 sm:p-6 pt-0">
               {/* Location */}
               {ticket.location && (
-                <div className="space-y-2 p-3 rounded-lg bg-background/50 border border-border/50">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Location</p>
-                  <p className="text-base font-medium">{ticket.location}</p>
+                <div className="space-y-1.5 sm:space-y-2 p-2.5 sm:p-3 rounded-lg bg-background/50 border border-border/50">
+                  <p className="text-[10px] sm:text-xs font-semibold text-muted-foreground uppercase tracking-wide">Location</p>
+                  <p className="text-sm sm:text-base font-medium break-words">{ticket.location}</p>
                 </div>
               )}
 
               {/* Issue Type (Subcategory) */}
               {subcategory && (
-                <div className="space-y-2 p-3 rounded-lg bg-background/50 border border-border/50">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Issue Type</p>
-                  <p className="text-base font-medium">{subcategory.name}</p>
+                <div className="space-y-1.5 sm:space-y-2 p-2.5 sm:p-3 rounded-lg bg-background/50 border border-border/50">
+                  <p className="text-[10px] sm:text-xs font-semibold text-muted-foreground uppercase tracking-wide">Issue Type</p>
+                  <p className="text-sm sm:text-base font-medium break-words">{subcategory.name}</p>
                 </div>
               )}
 
               {subSubcategory && (
-                <div className="space-y-2 p-3 rounded-lg bg-background/50 border border-border/50">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                <div className="space-y-1.5 sm:space-y-2 p-2.5 sm:p-3 rounded-lg bg-background/50 border border-border/50">
+                  <p className="text-[10px] sm:text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                     Sub-type
                   </p>
-                  <p className="text-base font-medium">{subSubcategory.name}</p>
+                  <p className="text-sm sm:text-base font-medium break-words">{subSubcategory.name}</p>
                 </div>
               )}
 
               {/* Description */}
               {ticket.description && (
-                <div className="space-y-2 p-3 rounded-lg bg-background/50 border border-border/50">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Description</p>
-                  <p className="text-base whitespace-pre-wrap leading-relaxed">{ticket.description}</p>
+                <div className="space-y-1.5 sm:space-y-2 p-2.5 sm:p-3 rounded-lg bg-background/50 border border-border/50">
+                  <p className="text-[10px] sm:text-xs font-semibold text-muted-foreground uppercase tracking-wide">Description</p>
+                  <p className="text-sm sm:text-base whitespace-pre-wrap leading-relaxed break-words">{ticket.description}</p>
                 </div>
               )}
 
               {/* Attachments */}
               {metadata.images && Array.isArray(metadata.images) && metadata.images.length > 0 && (
-                <div className="space-y-2 p-3 rounded-lg bg-background/50 border border-border/50">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Attachments</p>
+                <div className="space-y-1.5 sm:space-y-2 p-2.5 sm:p-3 rounded-lg bg-background/50 border border-border/50">
+                  <p className="text-[10px] sm:text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Attachments</p>
                   <ImageLightbox images={metadata.images} />
                 </div>
               )}
@@ -303,71 +306,76 @@ export default async function StudentTicketPage({ params }: { params: Promise<{ 
           </Card>
 
           {/* 4. Assignment Information */}
-          <section className="rounded-lg border bg-muted/30 p-4">
-            <div className="flex items-center gap-2 mb-4">
-              <UserCheck className="w-4 h-4" />
-              <h3 className="text-base font-semibold">Assignment Information</h3>
+          <section className="rounded-lg border bg-muted/30 p-3 sm:p-4">
+            <div className="flex items-center gap-1.5 sm:gap-2 mb-3 sm:mb-4">
+              <UserCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
+              <h3 className="text-sm sm:text-base font-semibold">Assignment Information</h3>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Assigned To</p>
-                <p className="text-sm font-semibold">
+                <p className="text-[10px] sm:text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Assigned To</p>
+                <p className="text-xs sm:text-sm font-semibold break-words">
                   {assignedStaff ? assignedStaff.name : "Not assigned yet"}
                 </p>
               </div>
               {spoc && (
                 <div>
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">SPOC (Point of Contact)</p>
-                  <p className="text-sm font-semibold">{spoc.name}</p>
+                  <p className="text-[10px] sm:text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">SPOC (Point of Contact)</p>
+                  <p className="text-xs sm:text-sm font-semibold break-words">{spoc.name}</p>
                 </div>
               )}
               {sla.expectedAckTime && (
                 <div>
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Expected Acknowledgement Time</p>
-                  <p className="text-sm font-semibold">{sla.expectedAckTime}</p>
+                  <p className="text-[10px] sm:text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Expected Acknowledgement Time</p>
+                  <p className="text-xs sm:text-sm font-semibold break-words">{sla.expectedAckTime}</p>
                 </div>
               )}
               {sla.expectedResolutionTime && (
                 <div>
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Expected Resolution Time</p>
-                  <p className="text-sm font-semibold">{sla.expectedResolutionTime}</p>
+                  <p className="text-[10px] sm:text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Expected Resolution Time</p>
+                  <p className="text-xs sm:text-sm font-semibold break-words">{sla.expectedResolutionTime}</p>
                 </div>
               )}
             </div>
           </section>
 
           {/* 5. Ticket Progress */}
-          <section className="rounded-lg border bg-muted/30 p-4">
-            <div className="flex items-center gap-2 mb-4">
-              <TrendingUp className="w-4 h-4" />
-              <h3 className="text-base font-semibold">Ticket Progress</h3>
+          <section className="rounded-lg border bg-muted/30 p-3 sm:p-4">
+            <div className="flex items-center gap-1.5 sm:gap-2 mb-3 sm:mb-4">
+              <TrendingUp className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
+              <h3 className="text-sm sm:text-base font-semibold">Ticket Progress</h3>
             </div>
             <div className="space-y-2">
-              <div className="flex items-center justify-between text-sm">
+              <div className="flex items-center justify-between text-xs sm:text-sm">
                 <span className="text-muted-foreground font-medium">Progress</span>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 sm:gap-2">
                   <span className="font-semibold">{ticketProgress}%</span>
                   <TicketStatusBadge status={ticket.status} />
                 </div>
               </div>
-              <Progress value={ticketProgress} className="h-2.5" />
-              <div className="flex items-center justify-between text-xs text-muted-foreground mt-2 flex-wrap gap-2">
-                <span>10% – OPEN</span>
-                <span>30% – ACKNOWLEDGED</span>
-                <span>50% – IN PROGRESS</span>
-                <span>70% – AWAITING STUDENT</span>
-                <span>100% – RESOLVED</span>
+              <Progress value={ticketProgress} className="h-2 sm:h-2.5" />
+              <div className="flex items-center justify-between text-[10px] sm:text-xs text-muted-foreground mt-2 flex-wrap gap-1 sm:gap-2">
+                <span className="hidden sm:inline">10% – OPEN</span>
+                <span className="sm:hidden">10%</span>
+                <span className="hidden sm:inline">30% – ACK</span>
+                <span className="sm:hidden">30%</span>
+                <span className="hidden sm:inline">50% – IN PROGRESS</span>
+                <span className="sm:hidden">50%</span>
+                <span className="hidden sm:inline">70% – AWAITING</span>
+                <span className="sm:hidden">70%</span>
+                <span className="hidden sm:inline">100% – RESOLVED</span>
+                <span className="sm:hidden">100%</span>
               </div>
             </div>
           </section>
 
           {/* 6. Timeline */}
-          <section className="rounded-lg border bg-muted/30 p-4">
-            <div className="flex items-center gap-2 mb-4">
-              <CalendarCheck className="w-4 h-4" />
-              <h3 className="text-base font-semibold">Timeline</h3>
+          <section className="rounded-lg border bg-muted/30 p-3 sm:p-4">
+            <div className="flex items-center gap-1.5 sm:gap-2 mb-3 sm:mb-4">
+              <CalendarCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
+              <h3 className="text-sm sm:text-base font-semibold">Timeline</h3>
             </div>
-            <div className="space-y-3">
+            <div className="space-y-2 sm:space-y-3">
               {timelineEntries.map((entry: Record<string, unknown>, index: number) => {
                 // Safeguard against missing icon - fallback to AlertCircle
                 const iconKey = typeof entry.icon === 'string' ? entry.icon : '';
@@ -375,20 +383,20 @@ export default async function StudentTicketPage({ params }: { params: Promise<{ 
                 const title = typeof entry.title === 'string' ? entry.title : '';
                 const entryDate = entry.date && (typeof entry.date === 'string' || entry.date instanceof Date) ? entry.date : null;
                 return (
-                  <div key={index} className="flex items-start gap-3">
-                    <div className={`p-2 rounded-lg ${typeof entry.color === 'string' ? entry.color : ''}`}>
-                      <IconComponent className={`w-4 h-4 ${typeof entry.textColor === 'string' ? entry.textColor : ''}`} />
+                  <div key={index} className="flex items-start gap-2 sm:gap-3">
+                    <div className={`p-1.5 sm:p-2 rounded-lg flex-shrink-0 ${typeof entry.color === 'string' ? entry.color : ''}`}>
+                      <IconComponent className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${typeof entry.textColor === 'string' ? entry.textColor : ''}`} />
                     </div>
-                    <div>
-                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[10px] sm:text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1 break-words">
                         {title}
                       </p>
                       {entryDate && (
                         <>
-                          <p className="text-sm font-semibold">
+                          <p className="text-xs sm:text-sm font-semibold">
                             {format(entryDate, 'MMM d, yyyy')}
                           </p>
-                          <p className="text-xs text-muted-foreground">
+                          <p className="text-[10px] sm:text-xs text-muted-foreground">
                             {format(entryDate, 'h:mm a')}
                           </p>
                         </>
@@ -402,44 +410,45 @@ export default async function StudentTicketPage({ params }: { params: Promise<{ 
 
           {/* 7. Comments / Conversation */}
           <Card className="border-2">
-            <CardHeader className="pb-4">
-              <CardTitle className="flex items-center gap-2 text-xl">
-                <MessageSquare className="w-5 h-5" />
-                Comments / Conversation
+            <CardHeader className="pb-3 sm:pb-4 p-4 sm:p-6">
+              <CardTitle className="flex items-center gap-1.5 sm:gap-2 text-lg sm:text-xl">
+                <MessageSquare className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" />
+                <span className="hidden sm:inline">Comments / Conversation</span>
+                <span className="sm:hidden">Comments</span>
                 {comments.length > 0 && (
-                  <Badge variant="secondary" className="ml-2">
+                  <Badge variant="secondary" className="ml-1.5 sm:ml-2 text-xs">
                     {comments.length}
                   </Badge>
                 )}
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-3 sm:space-y-4 p-4 sm:p-6 pt-0">
               {comments.length > 0 ? (
-                <ScrollArea className="max-h-[400px] pr-4">
-                  <div className="space-y-4">
+                <ScrollArea className="max-h-[300px] sm:max-h-[400px] pr-2 sm:pr-4">
+                  <div className="space-y-3 sm:space-y-4">
                     {comments.map((comment: Record<string, unknown>, idx: number) => {
                       const commentText = typeof comment.text === 'string' ? comment.text : '';
                       const commentAuthor = typeof comment.author === 'string' ? comment.author : null;
                       const commentCreatedAt = comment.created_at && (typeof comment.created_at === 'string' || comment.created_at instanceof Date) ? comment.created_at : null;
                       return (
-                        <div key={idx} className="rounded-lg border bg-gradient-to-br from-muted/50 to-muted/30 p-4">
-                          <p className="text-base whitespace-pre-wrap leading-relaxed mb-3 text-foreground">
+                        <div key={idx} className="rounded-lg border bg-gradient-to-br from-muted/50 to-muted/30 p-3 sm:p-4">
+                          <p className="text-sm sm:text-base whitespace-pre-wrap leading-relaxed mb-2 sm:mb-3 text-foreground break-words">
                             {commentText}
                           </p>
-                          <Separator className="my-3" />
-                          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                          <Separator className="my-2 sm:my-3" />
+                          <div className="flex items-center gap-2 sm:gap-3 text-[10px] sm:text-xs text-muted-foreground flex-wrap">
                             {commentAuthor && (
-                              <div className="flex items-center gap-1.5">
-                                <User className="w-3.5 h-3.5" />
-                                <span className="font-medium">{commentAuthor}</span>
+                              <div className="flex items-center gap-1 sm:gap-1.5">
+                                <User className="w-3 h-3 sm:w-3.5 sm:h-3.5 flex-shrink-0" />
+                                <span className="font-medium truncate">{commentAuthor}</span>
                               </div>
                             )}
                             {commentCreatedAt && (
                               <>
                                 <span className="text-muted-foreground/50">•</span>
-                                <div className="flex items-center gap-1.5">
-                                  <Calendar className="w-3.5 h-3.5" />
-                                  <span>{format(commentCreatedAt, 'MMM d, yyyy h:mm a')}</span>
+                                <div className="flex items-center gap-1 sm:gap-1.5">
+                                  <Calendar className="w-3 h-3 sm:w-3.5 sm:h-3.5 flex-shrink-0" />
+                                  <span className="whitespace-nowrap">{format(commentCreatedAt, 'MMM d, yyyy h:mm a')}</span>
                                 </div>
                               </>
                             )}
@@ -450,21 +459,21 @@ export default async function StudentTicketPage({ params }: { params: Promise<{ 
                   </div>
                 </ScrollArea>
               ) : (
-                <div className="text-center py-12 text-muted-foreground">
-                  <MessageSquare className="w-16 h-16 mx-auto mb-3 opacity-30" />
-                  <p className="text-sm font-medium">No comments yet</p>
-                  <p className="text-xs mt-1">Updates and responses will appear here</p>
+                <div className="text-center py-8 sm:py-12 text-muted-foreground">
+                  <MessageSquare className="w-12 h-12 sm:w-16 sm:h-16 mx-auto mb-2 sm:mb-3 opacity-30" />
+                  <p className="text-xs sm:text-sm font-medium">No comments yet</p>
+                  <p className="text-[10px] sm:text-xs mt-1">Updates and responses will appear here</p>
                 </div>
               )}
 
               {/* Students can reply only when admin asked a question and they haven't already replied */}
               {normalizedStatus === "awaiting_student_response" && (
-                <div className="pt-4 border-t">
+                <div className="pt-3 sm:pt-4 border-t">
                   {/* Only show alert if student can actually reply (last comment is from admin) */}
                   {comments.length > 0 && comments[comments.length - 1]?.source !== "website" && (
-                    <Alert className="border-amber-200 bg-amber-50/50 dark:bg-amber-950/20 mb-4">
-                      <AlertCircle className="h-4 w-4 text-amber-600" />
-                      <AlertDescription>
+                    <Alert className="border-amber-200 bg-amber-50/50 dark:bg-amber-950/20 mb-3 sm:mb-4">
+                      <AlertCircle className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-amber-600 flex-shrink-0" />
+                      <AlertDescription className="text-xs sm:text-sm">
                         <span className="font-medium text-amber-900 dark:text-amber-100">
                           Admin has asked a question. Please respond below.
                         </span>
@@ -484,16 +493,16 @@ export default async function StudentTicketPage({ params }: { params: Promise<{ 
           {/* Rating after closed/resolved */}
           {(normalizedStatus === "closed" || normalizedStatus === "resolved") && (
             <Card className="border-2 border-emerald-200 dark:border-emerald-900 bg-emerald-50/50 dark:bg-emerald-950/20">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+              <CardHeader className="p-4 sm:p-6">
+                <CardTitle className="flex items-center gap-1.5 sm:gap-2 text-lg sm:text-xl">
+                  <CheckCircle2 className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-600 flex-shrink-0" />
                   Rate Your Experience
                 </CardTitle>
-                <CardDescription>
+                <CardDescription className="text-xs sm:text-sm">
                   Help us improve by rating your ticket resolution experience
                 </CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="p-4 sm:p-6 pt-0">
                 <RatingForm ticketId={ticket.id} currentRating={ticket.rating ? ticket.rating.toString() : undefined} />
               </CardContent>
             </Card>
@@ -507,12 +516,12 @@ export default async function StudentTicketPage({ params }: { params: Promise<{ 
 
           {/* 9. Attachments */}
           {ticket.attachments && Array.isArray(ticket.attachments) && ticket.attachments.length > 0 && (
-            <section className="rounded-lg border bg-card p-4">
-              <div className="flex items-center gap-2 mb-4">
-                <AlertCircle className="w-4 h-4" />
-                <h3 className="text-base font-semibold">Attachments</h3>
+            <section className="rounded-lg border bg-card p-3 sm:p-4">
+              <div className="flex items-center gap-1.5 sm:gap-2 mb-3 sm:mb-4">
+                <AlertCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
+                <h3 className="text-sm sm:text-base font-semibold">Attachments</h3>
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-4">
                 {ticket.attachments.map((attachment: { url: string }, index: number) => (
                   <div key={index} className="relative group aspect-video">
                     <Image
@@ -520,11 +529,11 @@ export default async function StudentTicketPage({ params }: { params: Promise<{ 
                       alt={`Attachment ${index + 1}`}
                       fill
                       className="object-cover rounded-lg border cursor-pointer hover:opacity-80 transition-opacity"
-                      sizes="(max-width: 768px) 50vw, 25vw"
+                      sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
                       onClick={() => window.open(attachment.url, '_blank')}
                     />
                     <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 rounded-lg transition-all duration-200 flex items-center justify-center">
-                      <div className="opacity-0 group-hover:opacity-100 text-white text-sm font-medium">
+                      <div className="opacity-0 group-hover:opacity-100 text-white text-xs sm:text-sm font-medium px-2 text-center">
                         View Full Size
                       </div>
                     </div>
@@ -535,18 +544,18 @@ export default async function StudentTicketPage({ params }: { params: Promise<{ 
           )}
 
           {/* 10. System Information */}
-          <section className="rounded-lg border bg-muted/30 p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <AlertCircle className="w-4 h-4" />
-              <h3 className="text-base font-semibold">System Information</h3>
+          <section className="rounded-lg border bg-muted/30 p-3 sm:p-4">
+            <div className="flex items-center gap-1.5 sm:gap-2 mb-2">
+              <AlertCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
+              <h3 className="text-sm sm:text-base font-semibold">System Information</h3>
             </div>
-            <p className="text-xs text-muted-foreground mb-4">
+            <p className="text-[10px] sm:text-xs text-muted-foreground mb-3 sm:mb-4">
               Internal details visible to student
             </p>
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Current Escalation Level</span>
-                <span className="text-sm font-semibold">{ticket.escalation_level ?? 0}</span>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] sm:text-xs font-medium text-muted-foreground uppercase tracking-wide">Current Escalation Level</span>
+                <span className="text-xs sm:text-sm font-semibold">{ticket.escalation_level ?? 0}</span>
               </div>
             </div>
           </section>

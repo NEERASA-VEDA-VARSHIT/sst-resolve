@@ -12,8 +12,8 @@ import { StatsCards } from "@/components/dashboard/StatsCards";
 import { Button } from "@/components/ui/button";
 import { FileText, AlertCircle, TrendingUp, Calendar } from "lucide-react";
 import { isAdminLevel } from "@/conf/constants";
-import { getCachedAdminUser, getCachedAdminAssignment, getCachedAdminTickets } from "@/lib/admin/cached-queries";
-import { ticketMatchesAdminAssignment } from "@/lib/admin-assignment";
+import { getCachedAdminUser, getCachedAdminAssignment, getCachedAdminTickets } from "@/lib/cache/cached-queries";
+import { ticketMatchesAdminAssignment } from "@/lib/assignment/admin-assignment";
 
 // Revalidate every 30 seconds for fresh data
 export const revalidate = 30;
@@ -110,7 +110,7 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
   }
 
   // Get domains from categories this admin is assigned to
-  const { getAdminAssignedCategoryDomains } = await import("@/lib/admin-assignment");
+  const { getAdminAssignedCategoryDomains } = await import("@/lib/assignment/admin-assignment");
   const assignedCategoryDomains = adminUserId 
     ? await getAdminAssignedCategoryDomains(adminUserId)
     : [];

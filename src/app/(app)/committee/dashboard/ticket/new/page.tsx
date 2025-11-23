@@ -15,7 +15,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import Link from "next/link";
 import { ArrowLeft, HelpCircle, AlertCircle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { COMMITTEE_SUBCATEGORIES } from "@/lib/categories-constants";
+import { COMMITTEE_SUBCATEGORIES } from "@/lib/category/categories-constants";
 
 export default function CommitteeNewTicketPage() {
   const router = useRouter();

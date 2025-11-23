@@ -3,7 +3,7 @@ import { Webhook } from "svix";
 import { headers } from "next/headers";
 import { db, users } from "@/db";
 import { eq } from "drizzle-orm";
-import { getOrCreateUser } from "@/lib/user-sync";
+import { getOrCreateUser } from "@/lib/auth/user-sync";
 
 /**
  * Clerk Webhook Handler

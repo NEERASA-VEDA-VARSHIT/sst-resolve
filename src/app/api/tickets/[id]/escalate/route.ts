@@ -4,10 +4,10 @@ import { db } from "@/db";
 import { tickets, outbox, ticket_statuses } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { getUserRoleFromDB } from "@/lib/db-roles";
-import { getOrCreateUser } from "@/lib/user-sync";
+import { getUserRoleFromDB } from "@/lib/auth/db-roles";
+import { getOrCreateUser } from "@/lib/auth/user-sync";
 import { TICKET_STATUS } from "@/conf/constants";
-import { getStatusIdByValue } from "@/lib/status-helpers";
+import { getStatusIdByValue } from "@/lib/status/status-helpers";
 
 /**
  * ============================================

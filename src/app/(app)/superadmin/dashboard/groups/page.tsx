@@ -9,8 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import { ArrowLeft, Users, Package, CheckCircle2, TrendingUp } from "lucide-react";
-import { getUserRoleFromDB } from "@/lib/db-roles";
-import { getOrCreateUser } from "@/lib/user-sync";
+import { getUserRoleFromDB } from "@/lib/auth/db-roles";
+import { getOrCreateUser } from "@/lib/auth/user-sync";
 import type { Ticket } from "@/db/types-only";
 
 // Force dynamic rendering since we use auth headers

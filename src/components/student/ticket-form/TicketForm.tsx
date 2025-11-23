@@ -658,8 +658,8 @@ export default function TicketForm(props: TicketFormProps) {
   function CategorySelector() {
     return (
       <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <Label className="text-base font-semibold">Category <span className="text-destructive">*</span></Label>
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          <Label className="text-sm sm:text-base font-semibold">Category <span className="text-destructive">*</span></Label>
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger>
@@ -700,7 +700,7 @@ export default function TicketForm(props: TicketFormProps) {
     if (!subs || subs.length === 0) return null;
     return (
       <div className="space-y-2">
-        <Label className="text-base font-semibold">Subcategory <span className="text-destructive">*</span></Label>
+        <Label className="text-sm sm:text-base font-semibold">Subcategory <span className="text-destructive">*</span></Label>
         <Select
           value={form.subcategoryId?.toString() || ""}
           onValueChange={(v) => {
@@ -726,7 +726,7 @@ export default function TicketForm(props: TicketFormProps) {
     if (!ss || ss.length === 0) return null;
     return (
       <div className="space-y-2">
-        <Label className="text-base font-semibold">Sub-Type <span className="text-destructive">*</span></Label>
+        <Label className="text-sm sm:text-base font-semibold">Sub-Type <span className="text-destructive">*</span></Label>
         <Select
           value={form.subSubcategoryId?.toString() || ""}
           onValueChange={(v) => {
@@ -761,7 +761,7 @@ export default function TicketForm(props: TicketFormProps) {
     
     return (
       <div className="space-y-4 border-t pt-4">
-        <h3 className="text-lg font-semibold">Additional Details</h3>
+        <h3 className="text-base sm:text-lg font-semibold">Additional Details</h3>
         {sorted.map((f) => (
           <DynamicFieldRenderer
             key={f.id}
@@ -781,7 +781,7 @@ export default function TicketForm(props: TicketFormProps) {
     
     return (
       <div className="space-y-4 border-t pt-4">
-        <h3 className="text-lg font-semibold">Contact & Profile</h3>
+        <h3 className="text-base sm:text-lg font-semibold">Contact & Profile</h3>
         <ProfileFieldsRenderer
           profileFields={pf}
           studentProfile={student ?? {} as StudentProfile}
@@ -805,8 +805,8 @@ export default function TicketForm(props: TicketFormProps) {
     
     return (
       <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <Label htmlFor="description" className="text-base font-semibold">Description <span className="text-destructive">*</span></Label>
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          <Label htmlFor="description" className="text-sm sm:text-base font-semibold">Description <span className="text-destructive">*</span></Label>
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger>
@@ -852,8 +852,8 @@ export default function TicketForm(props: TicketFormProps) {
     const images: string[] = (form.details?.images as string[]) || [];
     return (
       <div className="space-y-2 border-t pt-4">
-        <h3 className="text-lg font-semibold">Attachments</h3>
-        <p className="text-sm text-muted-foreground">Upload images to help explain your issue (jpg/png/webp). Max 10MB each.</p>
+        <h3 className="text-base sm:text-lg font-semibold">Attachments</h3>
+        <p className="text-xs sm:text-sm text-muted-foreground">Upload images to help explain your issue (jpg/png/webp). Max 10MB each.</p>
 
         <div className="flex gap-3 items-center">
           <input
@@ -914,7 +914,7 @@ export default function TicketForm(props: TicketFormProps) {
     const isFormValid = hasCategory && hasMinDescription;
 
     return (
-      <div className="flex justify-end gap-3 pt-6">
+      <div className="flex flex-col sm:flex-row justify-end gap-2 sm:gap-3 pt-4 sm:pt-6">
         <Link href="/student/dashboard"><Button variant="outline" size="lg">Cancel</Button></Link>
 
         <Button
@@ -945,44 +945,46 @@ export default function TicketForm(props: TicketFormProps) {
      =========================== */
 
   return (
-    <div className="max-w-3xl mx-auto p-6 space-y-6">
+    <div className="max-w-3xl mx-auto p-3 sm:p-4 md:p-6 space-y-4 sm:space-y-6">
       <div className="flex items-center justify-between">
         <Link href="/student/dashboard">
-          <Button variant="ghost" className="gap-2">
-            <ArrowLeft className="w-4 h-4" /> Back to Tickets
+          <Button variant="ghost" className="gap-1.5 sm:gap-2 text-sm sm:text-base h-8 sm:h-10">
+            <ArrowLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            <span className="hidden sm:inline">Back to Tickets</span>
+            <span className="sm:hidden">Back</span>
           </Button>
         </Link>
       </div>
 
       <Card className="border-2 shadow-lg">
-        <CardHeader className="space-y-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-3xl font-bold">Create New Ticket</CardTitle>
-              <CardDescription className="mt-2 text-base">Fill in the details below to create a support ticket</CardDescription>
+        <CardHeader className="space-y-3 p-4 sm:p-6">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
+            <div className="flex-1 min-w-0">
+              <CardTitle className="text-2xl sm:text-3xl font-bold">Create New Ticket</CardTitle>
+              <CardDescription className="mt-1 sm:mt-2 text-sm sm:text-base">Fill in the details below to create a support ticket</CardDescription>
             </div>
-            <div className="w-56">
-              <div className="text-sm text-muted-foreground">Form Completion</div>
-              <div className="flex items-center justify-between">
-                <Progress value={progress} className="h-2 w-full rounded" />
-                <div className="ml-3 text-sm font-medium">{progress}%</div>
+            <div className="w-full sm:w-56">
+              <div className="text-xs sm:text-sm text-muted-foreground">Form Completion</div>
+              <div className="flex items-center justify-between gap-2">
+                <Progress value={progress} className="h-2 w-full rounded flex-1" />
+                <div className="text-xs sm:text-sm font-medium whitespace-nowrap">{progress}%</div>
               </div>
             </div>
           </div>
         </CardHeader>
 
-        <CardContent>
+        <CardContent className="p-4 sm:p-6 pt-0">
           {!student ? (
-            <div className="py-8">
+            <div className="py-6 sm:py-8">
               <Alert>
-                <AlertDescription>Please complete your profile to create tickets. <Link href="/student/profile"><Button size="sm">Go to Profile</Button></Link></AlertDescription>
+                <AlertDescription className="text-xs sm:text-sm">Please complete your profile to create tickets. <Link href="/student/profile"><Button size="sm" className="mt-2 sm:mt-0 sm:ml-2">Go to Profile</Button></Link></AlertDescription>
               </Alert>
             </div>
           ) : (
-            <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="space-y-6">
-              <div className="grid grid-cols-1 gap-6">
+            <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="space-y-4 sm:space-y-6">
+              <div className="grid grid-cols-1 gap-4 sm:gap-6">
                 <CategorySelector />
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
                   <SubcategorySelector />
                   <SubSubcategorySelector />
                 </div>

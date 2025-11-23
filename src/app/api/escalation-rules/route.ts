@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db, escalation_rules, users, domains, scopes } from "@/db";
 import { eq, and, isNull, inArray } from "drizzle-orm";
-import { getUserRoleFromDB } from "@/lib/db-roles";
-import { getOrCreateUser } from "@/lib/user-sync";
+import { getUserRoleFromDB } from "@/lib/auth/db-roles";
+import { getOrCreateUser } from "@/lib/auth/user-sync";
 
 // GET - Get all escalation rules
 export async function GET() {

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db, category_profile_fields } from "@/db";
 import { eq } from "drizzle-orm";
-import { getUserRoleFromDB } from "@/lib/db-roles";
+import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 
 // GET - Get profile field configuration for a category
 export async function GET(

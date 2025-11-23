@@ -40,7 +40,7 @@ export async function getUserRoles(clerkUserId: string): Promise<Array<{
   scope: string | null;
 }>> {
   try {
-    const { getUserRoles: getRoles } = await import("@/lib/db-roles");
+    const { getUserRoles: getRoles } = await import("@/lib/auth/db-roles");
     return await getRoles(clerkUserId);
   } catch (error) {
     console.error("[DB Helpers] Error getting user roles:", error);
@@ -164,7 +164,7 @@ export async function userHasScope(
   scope?: string | null
 ): Promise<boolean> {
   try {
-    const { userHasRole } = await import("@/lib/db-roles");
+    const { userHasRole } = await import("@/lib/auth/db-roles");
     return await userHasRole(clerkUserId, roleName, { domain, scope });
   } catch (error) {
     console.error("[DB Helpers] Error checking user scope:", error);

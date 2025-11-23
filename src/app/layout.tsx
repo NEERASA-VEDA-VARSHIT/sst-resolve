@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { ClerkProvider } from "@clerk/nextjs";
-import { UnifiedNav } from "@/components/layout/UnifiedNav";
+import { ConditionalNav } from "@/components/nav/ConditionalNav";
+import { NavLoadingShimmer } from "@/components/nav/NavLoadingShimmer";
 import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/provider/ThemeProvider";
 import { ProgressBar } from "@/components/dashboard/ProgressBar";
@@ -58,7 +59,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Suspense fallback={null}>
               <ProgressBar />
             </Suspense>
-            <UnifiedNav />
+            <Suspense fallback={<NavLoadingShimmer />}>
+              <ConditionalNav />
+            </Suspense>
             {children}
             <Toaster
               position="bottom-center"

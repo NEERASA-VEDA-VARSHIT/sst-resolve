@@ -3,7 +3,7 @@ import { auth, clerkClient } from "@clerk/nextjs/server";
 import { db, students, users, hostels, batches, class_sections } from "@/db";
 import { eq } from "drizzle-orm";
 import { UpdateStudentMobileSchema } from "@/schema/student.schema";
-import { getOrCreateUser } from "@/lib/user-sync";
+import { getOrCreateUser } from "@/lib/auth/user-sync";
 
 /* ------------------------------------------------------------
    Reusable function: returns full student profile with joins

@@ -12,8 +12,8 @@ import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { batches, students } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { getUserRoleFromDB } from "@/lib/db-roles";
-import { getOrCreateUser } from "@/lib/user-sync";
+import { getUserRoleFromDB } from "@/lib/auth/db-roles";
+import { getOrCreateUser } from "@/lib/auth/user-sync";
 
 // GET - Get single batch by ID
 export async function GET(

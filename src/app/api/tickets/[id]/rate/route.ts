@@ -49,7 +49,7 @@ export async function POST(
 		const { rating: ratingNum } = validationResult.data;
 
 		// Get current user from database
-		const { getOrCreateUser } = await import("@/lib/user-sync");
+		const { getOrCreateUser } = await import("@/lib/auth/user-sync");
 		const dbUser = await getOrCreateUser(userId);
 		if (!dbUser) {
 			return NextResponse.json({ error: "User not found" }, { status: 404 });

@@ -10,8 +10,8 @@ import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { users, students, hostels, batches, class_sections } from "@/db/schema";
 import { eq, ilike, or, and, sql, desc } from "drizzle-orm";
-import { getUserRoleFromDB } from "@/lib/db-roles";
-import { getOrCreateUser } from "@/lib/user-sync";
+import { getUserRoleFromDB } from "@/lib/auth/db-roles";
+import { getOrCreateUser } from "@/lib/auth/user-sync";
 
 export async function GET(request: NextRequest) {
 	try {

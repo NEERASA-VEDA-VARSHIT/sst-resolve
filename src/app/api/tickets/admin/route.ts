@@ -3,7 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { tickets, users, categories, ticket_statuses } from "@/db/schema";
 import { desc, eq, and, isNull, or, sql, aliasedTable } from "drizzle-orm";
-import { getUserRoleFromDB } from "@/lib/db-roles";
+import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 
 /**
  * ============================================

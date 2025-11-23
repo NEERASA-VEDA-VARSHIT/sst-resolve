@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db, domains, scopes, categories, committees, hostels, batches, class_sections, roles } from "@/db";
 import { eq } from "drizzle-orm";
-import { getUserRoleFromDB } from "@/lib/db-roles";
+import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 
 /**
  * GET /api/admin/master-data

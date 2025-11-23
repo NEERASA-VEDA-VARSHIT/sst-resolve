@@ -7,8 +7,8 @@ import { TicketCard } from "@/components/layout/TicketCard";
 import { AdminTicketFilters } from "@/components/admin/AdminTicketFilters";
 import { Card, CardContent } from "@/components/ui/card";
 import { FileText } from "lucide-react";
-import { getUserRoleFromDB } from "@/lib/db-roles";
-import { getOrCreateUser } from "@/lib/user-sync";
+import { getUserRoleFromDB } from "@/lib/auth/db-roles";
+import { getOrCreateUser } from "@/lib/auth/user-sync";
 import type { TicketMetadata } from "@/db/types";
 import type { Ticket } from "@/db/types-only";
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { getUserRoleFromDB, getUserRoles, setUserRole, removeUserRole } from "@/lib/db-roles";
-import { getOrCreateUser } from "@/lib/user-sync";
+import { getUserRoleFromDB, getUserRoles, setUserRole, removeUserRole } from "@/lib/auth/db-roles";
+import { getOrCreateUser } from "@/lib/auth/user-sync";
 import type { UserRole } from "@/types/auth";
 
 /**

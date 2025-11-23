@@ -3,8 +3,8 @@ import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { tickets, outbox, ticket_statuses } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { getUserRoleFromDB } from "@/lib/db-roles";
-import { getOrCreateUser } from "@/lib/user-sync";
+import { getUserRoleFromDB } from "@/lib/auth/db-roles";
+import { getOrCreateUser } from "@/lib/auth/user-sync";
 import { z } from "zod";
 
 /**
@@ -197,7 +197,7 @@ export async function PATCH(
     // Check if ticket belongs to a group and if all tickets in that group are now closed
     // If so, archive the group
     if (ticket.group_id) {
-      const { checkAndArchiveGroupIfAllTicketsClosed } = await import("@/lib/group-archive");
+      const { checkAndArchiveGroupIfAllTicketsClosed } = await import("@/lib/archive/group-archive");
       await checkAndArchiveGroupIfAllTicketsClosed(ticket.group_id);
     }
 

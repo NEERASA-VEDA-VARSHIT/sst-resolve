@@ -9,8 +9,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { getOrCreateUser } from "@/lib/user-sync";
-import { getUserRoleFromDB } from "@/lib/db-roles";
+import { getOrCreateUser } from "@/lib/auth/user-sync";
+import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { Progress } from "@/components/ui/progress";
 import { getAllTicketStatuses } from "@/lib/status/getTicketStatuses";
 import { Badge } from "@/components/ui/badge";

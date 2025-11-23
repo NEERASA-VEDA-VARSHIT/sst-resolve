@@ -15,8 +15,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { TicketStatusBadge } from "@/components/tickets/TicketStatusBadge";
 import { slackConfig } from "@/conf/config";
-import { ticketMatchesAdminAssignment } from "@/lib/admin-assignment";
-import { getCachedAdminUser, getCachedAdminAssignment } from "@/lib/admin/cached-queries";
+import { ticketMatchesAdminAssignment } from "@/lib/assignment/admin-assignment";
+import { getCachedAdminUser, getCachedAdminAssignment } from "@/lib/cache/cached-queries";
 
 // Revalidate every 10 seconds for ticket detail page (more frequent for real-time updates)
 export const revalidate = 10;

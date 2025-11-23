@@ -3,7 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { db, categories, subcategories, sub_subcategories, students, category_fields, category_profile_fields, field_options, hostels, class_sections } from "@/db";
 import { eq, asc } from "drizzle-orm";
-import { getOrCreateUser } from "@/lib/user-sync";
+import { getOrCreateUser } from "@/lib/auth/user-sync";
 import TicketForm from "@/components/student/ticket-form/TicketForm";
 
 export default async function NewTicketPage() {

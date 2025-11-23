@@ -1,9 +1,9 @@
 import { cache } from "react";
 import { db, tickets, users, categories, ticket_statuses } from "@/db";
 import { eq, or, isNull, desc } from "drizzle-orm";
-import { getUserRoleFromDB } from "@/lib/db-roles";
-import { getOrCreateUser } from "@/lib/user-sync";
-import { getAdminAssignment } from "@/lib/admin-assignment";
+import { getUserRoleFromDB } from "@/lib/auth/db-roles";
+import { getOrCreateUser } from "@/lib/auth/user-sync";
+import { getAdminAssignment } from "@/lib/assignment/admin-assignment";
 import { getTicketStatuses } from "@/lib/status/getTicketStatuses";
 
 /**

@@ -3,9 +3,9 @@ import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { tickets } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { getUserRoleFromDB } from "@/lib/db-roles";
-import { getOrCreateUser } from "@/lib/user-sync";
-import { deleteImage } from "@/lib/cloudinary"; // must exist in your lib
+import { getUserRoleFromDB } from "@/lib/auth/db-roles";
+import { getOrCreateUser } from "@/lib/auth/user-sync";
+import { deleteImage } from "@/lib/integration/cloudinary"; // must exist in your lib
 
 /**
  * ============================================

@@ -9,9 +9,9 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { StatsCards } from "@/components/dashboard/StatsCards";
-import { getOrCreateUser } from "@/lib/user-sync";
+import { getOrCreateUser } from "@/lib/auth/user-sync";
 import { TicketSearchWrapper } from "@/components/student/TicketSearchWrapper";
-import { getCategoriesHierarchy } from "@/lib/filters/getCategoriesHierarchy";
+import { getCategoriesHierarchy } from "@/lib/category/getCategoriesHierarchy";
 import { getTicketStatuses } from "@/lib/status/getTicketStatuses";
 
 export default async function StudentDashboardPage({
@@ -245,22 +245,23 @@ export default async function StudentDashboardPage({
   // 7. UI Render
   // -----------------------------
   return (
-    <div className="space-y-8">
+    <div className="space-y-4 sm:space-y-6 lg:space-y-8">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h1 className="text-4xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4">
+        <div className="flex-1 min-w-0">
+          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text">
             My Tickets
           </h1>
-          <p className="text-muted-foreground mt-2">
+          <p className="text-sm sm:text-base text-muted-foreground mt-1 sm:mt-2">
             Manage and track all your support tickets
           </p>
         </div>
-        <div className="flex gap-3">
-          <Link href="/student/dashboard/ticket/new">
-            <Button className="shadow-md hover:shadow-lg transition-shadow">
-              <Plus className="w-4 h-4 mr-2" />
-              New Ticket
+        <div className="flex gap-2 sm:gap-3 w-full sm:w-auto">
+          <Link href="/student/dashboard/ticket/new" className="flex-1 sm:flex-initial">
+            <Button className="w-full sm:w-auto shadow-md hover:shadow-lg transition-shadow text-sm sm:text-base">
+              <Plus className="w-4 h-4 sm:mr-2" />
+              <span className="hidden sm:inline">New Ticket</span>
+              <span className="sm:hidden">New</span>
             </Button>
           </Link>
         </div>
@@ -275,7 +276,7 @@ export default async function StudentDashboardPage({
 
       {/* Search + Filters */}
       <Card className="border-2">
-        <CardContent className="p-6">
+        <CardContent className="p-4 sm:p-6">
           <Suspense fallback={<div className="h-20 animate-pulse bg-muted rounded-lg" />}>
             <TicketSearchWrapper
               categories={categoryList}
@@ -288,13 +289,13 @@ export default async function StudentDashboardPage({
 
       {/* No Tickets */}
       {allTickets.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 px-4 border-2 border-dashed rounded-lg bg-muted/30">
-          <div className="text-center space-y-3">
-            <div className="w-16 h-16 mx-auto rounded-full bg-muted flex items-center justify-center">
-              <Plus className="w-8 h-8 text-muted-foreground" />
+        <div className="flex flex-col items-center justify-center py-12 sm:py-16 px-4 border-2 border-dashed rounded-lg bg-muted/30">
+          <div className="text-center space-y-3 max-w-sm">
+            <div className="w-12 h-12 sm:w-16 sm:h-16 mx-auto rounded-full bg-muted flex items-center justify-center">
+              <Plus className="w-6 h-6 sm:w-8 sm:h-8 text-muted-foreground" />
             </div>
-            <h3 className="text-lg font-semibold">No tickets yet</h3>
-            <p className="text-muted-foreground max-w-sm">
+            <h3 className="text-base sm:text-lg font-semibold">No tickets yet</h3>
+            <p className="text-sm sm:text-base text-muted-foreground">
               Get started by creating your first support ticket. We&apos;re here to
               help!
             </p>
@@ -302,15 +303,16 @@ export default async function StudentDashboardPage({
               href="/student/dashboard/ticket/new"
               className="inline-block mt-4"
             >
-              <Button>
+              <Button className="text-sm sm:text-base">
                 <Plus className="w-4 h-4 mr-2" />
-                Create Your First Ticket
+                <span className="hidden sm:inline">Create Your First Ticket</span>
+                <span className="sm:hidden">Create Ticket</span>
               </Button>
             </Link>
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
           {allTickets.map((ticket) => (
             <TicketCard 
               key={ticket.id} 

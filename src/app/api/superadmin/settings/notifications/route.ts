@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db, notification_settings } from "@/db";
 import { eq } from "drizzle-orm";
 import { auth } from "@clerk/nextjs/server";
-import { invalidateSlackConfigCache } from "@/lib/slack-config";
+import { invalidateSlackConfigCache } from "@/lib/integration/slack-config";
 
 export async function GET() {
     try {

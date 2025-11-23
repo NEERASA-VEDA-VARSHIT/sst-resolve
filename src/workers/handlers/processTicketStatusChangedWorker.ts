@@ -8,8 +8,8 @@
 import { db } from "@/db";
 import { tickets } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { postThreadReplyToChannel } from "@/lib/slack";
-import { sendEmail, getStatusUpdateEmail } from "@/lib/email";
+import { postThreadReplyToChannel } from "@/lib/integration/slack";
+import { sendEmail, getStatusUpdateEmail } from "@/lib/integration/email";
 import { STATUS_DISPLAY } from "@/conf/constants";
 
 type StatusChangedPayload = {

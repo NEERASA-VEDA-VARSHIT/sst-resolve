@@ -4,8 +4,8 @@ import { db } from "@/db";
 import { tickets, users, outbox } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { getUserRoleFromDB } from "@/lib/db-roles";
-import { getOrCreateUser } from "@/lib/user-sync";
+import { getUserRoleFromDB } from "@/lib/auth/db-roles";
+import { getOrCreateUser } from "@/lib/auth/user-sync";
 
 /**
  * ============================================

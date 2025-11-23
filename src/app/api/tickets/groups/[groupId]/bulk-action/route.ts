@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db, tickets, ticket_groups, outbox, ticket_statuses } from "@/db";
 import { eq } from "drizzle-orm";
-import { getUserRoleFromDB } from "@/lib/db-roles";
-import { getOrCreateUser } from "@/lib/user-sync";
+import { getUserRoleFromDB } from "@/lib/auth/db-roles";
+import { getOrCreateUser } from "@/lib/auth/user-sync";
 
 // POST - Perform bulk actions on grouped tickets (comment, close, etc.)
 export async function POST(
@@ -135,7 +135,7 @@ export async function POST(
       }
     } else if (action === "close") {
       // Close all tickets
-      const { getStatusIdByValue } = await import("@/lib/status-helpers");
+      const { getStatusIdByValue } = await import("@/lib/status/status-helpers");
       const newStatusValue = (status || "RESOLVED").toUpperCase();
       const newStatusId = await getStatusIdByValue(newStatusValue);
 
@@ -176,7 +176,7 @@ export async function POST(
       }
 
       // Check if all tickets in the group are now closed/resolved and archive if so
-      const { checkAndArchiveGroupIfAllTicketsClosed } = await import("@/lib/group-archive");
+      const { checkAndArchiveGroupIfAllTicketsClosed } = await import("@/lib/archive/group-archive");
       groupArchived = await checkAndArchiveGroupIfAllTicketsClosed(groupIdNum);
     } else {
       return NextResponse.json({ error: "Invalid action. Supported actions: 'comment', 'close'" }, { status: 400 });

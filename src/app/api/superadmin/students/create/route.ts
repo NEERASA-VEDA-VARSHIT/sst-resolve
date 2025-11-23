@@ -10,7 +10,7 @@ import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { users, students, hostels, batches, class_sections, roles } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { getUserRoleFromDB } from "@/lib/db-roles";
+import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 
 function splitFullName(name: string): { first_name: string; last_name: string } {
 	if (!name) return { first_name: "", last_name: "" };

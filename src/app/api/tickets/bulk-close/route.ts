@@ -3,10 +3,9 @@ import { auth } from "@clerk/nextjs/server";
 import { eq, inArray } from "drizzle-orm";
 import { db, tickets } from "@/db";
 import { BulkCloseTicketsSchema } from "@/schema/ticket.schema";
-import { getUserRoleFromDB } from "@/lib/db-roles";
-import { getOrCreateUser } from "@/lib/user-sync";
-import { statusToEnum } from "@/lib/status-helpers";
-import { getStatusIdByValue } from "@/lib/status-helpers";
+import { getUserRoleFromDB } from "@/lib/auth/db-roles";
+import { getOrCreateUser } from "@/lib/auth/user-sync";
+import { statusToEnum, getStatusIdByValue } from "@/lib/status/status-helpers";
 import type { TicketMetadata } from "@/db/types";
 
 /**

@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { tickets, ticket_statuses } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { postThreadReply } from "@/lib/slack";
-import { sendEmail, getTATReminderEmail } from "@/lib/email";
+import { postThreadReply } from "@/lib/integration/slack";
+import { sendEmail, getTATReminderEmail } from "@/lib/integration/email";
 
 /**
  * ============================================

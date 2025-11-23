@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { tickets, notification_settings, users, categories } from "@/db/schema";
 import { and, gte, lt, ne, eq, aliasedTable } from "drizzle-orm";
-import { sendEmail } from "@/lib/email";
-import { postToSlackChannel } from "@/lib/slack";
-import { getStatusIdByValue } from "@/lib/status-helpers";
+import { sendEmail } from "@/lib/integration/email";
+import { postToSlackChannel } from "@/lib/integration/slack";
+import { getStatusIdByValue } from "@/lib/status/status-helpers";
 import { cronConfig } from "@/conf/config";
 
 /**

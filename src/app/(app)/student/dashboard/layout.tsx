@@ -1,7 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { isProfileComplete } from "@/lib/profile-check";
-import { getOrCreateUser } from "@/lib/user-sync";
+import { isProfileComplete } from "@/lib/auth/profile-check";
+import { getOrCreateUser } from "@/lib/auth/user-sync";
 
 export default async function StudentDashboardLayout({
   children,

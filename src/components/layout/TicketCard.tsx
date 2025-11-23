@@ -161,12 +161,12 @@ function TicketCardComponent({ ticket, basePath = "/student/dashboard", disableL
           />
         )}
 
-        <CardHeader className="pb-3 relative z-10">
-          <div className="flex items-start justify-between gap-3">
-            <div className="space-y-2.5 flex-1 min-w-0">
+        <CardHeader className="pb-3 relative z-10 p-4 sm:p-6">
+          <div className="flex items-start justify-between gap-2 sm:gap-3">
+            <div className="space-y-2 sm:space-y-2.5 flex-1 min-w-0">
               {/* ID + Status */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <CardTitle className="text-lg font-bold group-hover:text-primary transition-colors">
+              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                <CardTitle className="text-base sm:text-lg font-bold group-hover:text-primary transition-colors">
                   #{ticket.id}
                 </CardTitle>
 
@@ -174,7 +174,7 @@ function TicketCardComponent({ ticket, basePath = "/student/dashboard", disableL
                   <Badge
                     variant="outline"
                     className={cn(
-                      "text-xs font-semibold border transition-all",
+                      "text-[10px] sm:text-xs font-semibold border transition-all",
                       STATUS_STYLES[statusValue] || "bg-muted text-foreground",
                       "group-hover:scale-105 group-hover:shadow-sm"
                     )}
@@ -186,19 +186,20 @@ function TicketCardComponent({ ticket, basePath = "/student/dashboard", disableL
                 {isEscalated && (
                   <Badge
                     variant="destructive"
-                    className="text-xs font-semibold gap-1.5 group-hover:scale-105 transition-transform shadow-sm"
+                    className="text-[10px] sm:text-xs font-semibold gap-1 sm:gap-1.5 group-hover:scale-105 transition-transform shadow-sm"
                   >
-                    <AlertTriangle className="w-3 h-3 group-hover:animate-pulse" />
-                    Escalated {ticket.escalation_level}x
+                    <AlertTriangle className="w-2.5 h-2.5 sm:w-3 sm:h-3 group-hover:animate-pulse" />
+                    <span className="hidden sm:inline">Escalated {ticket.escalation_level}x</span>
+                    <span className="sm:hidden">Esc. {ticket.escalation_level}x</span>
                   </Badge>
                 )}
               </div>
 
               {/* Category & Subcategories */}
-              <div className="flex flex-wrap gap-1.5 mt-1">
+              <div className="flex flex-wrap gap-1 sm:gap-1.5 mt-1">
                 <Badge
                   variant="outline"
-                  className="text-xs font-medium border-muted-foreground/30 group-hover:border-primary/40 transition-colors bg-muted/50"
+                  className="text-[10px] sm:text-xs font-medium border-muted-foreground/30 group-hover:border-primary/40 transition-colors bg-muted/50"
                 >
                   {ticket.category_name || "Unknown"}
                 </Badge>
@@ -206,7 +207,7 @@ function TicketCardComponent({ ticket, basePath = "/student/dashboard", disableL
                 {metadata.subcategory && (
                   <Badge
                     variant="secondary"
-                    className="text-xs font-medium bg-primary/5 text-primary/80 border-primary/10"
+                    className="text-[10px] sm:text-xs font-medium bg-primary/5 text-primary/80 border-primary/10"
                   >
                     {metadata.subcategory}
                   </Badge>
@@ -218,42 +219,42 @@ function TicketCardComponent({ ticket, basePath = "/student/dashboard", disableL
           </div>
         </CardHeader>
 
-        <CardContent className="pt-0 space-y-4 relative z-10">
+        <CardContent className="pt-0 space-y-3 sm:space-y-4 relative z-10 p-4 sm:p-6 pt-0">
           {/* Description */}
-          <p className="text-sm text-foreground/90 line-clamp-2 leading-relaxed group-hover:text-foreground transition-colors">
+          <p className="text-xs sm:text-sm text-foreground/90 line-clamp-2 sm:line-clamp-3 leading-relaxed group-hover:text-foreground transition-colors">
             {ticket.description || "No description provided"}
           </p>
 
           {/* Metadata */}
-          <div className="flex flex-col gap-2.5 pt-3 border-t border-border/50 group-hover:border-primary/30 transition-colors">
+          <div className="flex flex-col gap-2 sm:gap-2.5 pt-2 sm:pt-3 border-t border-border/50 group-hover:border-primary/30 transition-colors">
             {/* User + Location */}
-            <div className="flex items-center justify-between text-xs">
-              <div className="flex items-center gap-1.5 text-muted-foreground">
-                <div className="p-1 rounded-md bg-muted/50 group-hover:bg-primary/10 transition-colors">
-                  <User className="w-3 h-3" />
+            <div className="flex items-center justify-between gap-2 text-[10px] sm:text-xs">
+              <div className="flex items-center gap-1 sm:gap-1.5 text-muted-foreground min-w-0 flex-1">
+                <div className="p-0.5 sm:p-1 rounded-md bg-muted/50 group-hover:bg-primary/10 transition-colors flex-shrink-0">
+                  <User className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
                 </div>
-                <span className="font-semibold">
+                <span className="font-semibold truncate">
                   {creatorDisplayName}
                 </span>
               </div>
 
               {ticket.location && (
-                <div className="flex items-center gap-1.5 text-muted-foreground">
-                  <div className="p-1 rounded-md bg-muted/50 group-hover:bg-primary/10 transition-colors">
-                    <MapPin className="w-3 h-3" />
+                <div className="flex items-center gap-1 sm:gap-1.5 text-muted-foreground flex-shrink-0">
+                  <div className="p-0.5 sm:p-1 rounded-md bg-muted/50 group-hover:bg-primary/10 transition-colors">
+                    <MapPin className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
                   </div>
-                  <span className="font-medium truncate max-w-[120px]">{ticket.location}</span>
+                  <span className="font-medium truncate max-w-[80px] sm:max-w-[120px]">{ticket.location}</span>
                 </div>
               )}
             </div>
 
             {/* Created At + TAT */}
-            <div className="flex items-center justify-between text-xs">
-              <div className="flex items-center gap-1.5 text-muted-foreground">
-                <div className="p-1 rounded-md bg-muted/50 group-hover:bg-primary/10">
-                  <Calendar className="w-3 h-3" />
+            <div className="flex items-center justify-between gap-2 text-[10px] sm:text-xs">
+              <div className="flex items-center gap-1 sm:gap-1.5 text-muted-foreground min-w-0">
+                <div className="p-0.5 sm:p-1 rounded-md bg-muted/50 group-hover:bg-primary/10 flex-shrink-0">
+                  <Calendar className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
                 </div>
-                <span className="font-medium">
+                <span className="font-medium truncate">
                   {createdDateStr}
                 </span>
               </div>
@@ -261,23 +262,23 @@ function TicketCardComponent({ ticket, basePath = "/student/dashboard", disableL
               {tatDate && tatLabel && (
                 <div
                   className={cn(
-                    "flex items-center gap-1.5 font-semibold px-2 py-1 rounded-md text-xs transition-all",
+                    "flex items-center gap-1 sm:gap-1.5 font-semibold px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-md text-[10px] sm:text-xs transition-all flex-shrink-0",
                     overdue
                       ? "bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400"
                       : "bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400",
                     "group-hover:scale-105"
                   )}
                 >
-                  <Clock className="w-3.5 h-3.5" />
-                  {tatLabel}
+                  <Clock className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                  <span className="whitespace-nowrap">{tatLabel}</span>
                 </div>
               )}
             </div>
 
             {/* Comments */}
             {commentCount > 0 && (
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground group-hover:text-foreground/80 transition-colors">
-                <FileText className="w-3 h-3" />
+              <div className="flex items-center gap-1 sm:gap-1.5 text-[10px] sm:text-xs text-muted-foreground group-hover:text-foreground/80 transition-colors">
+                <FileText className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
                 <span>
                   {commentCount} {commentCount === 1 ? "comment" : "comments"}
                 </span>

@@ -8,8 +8,8 @@ import { AlertTriangle, TrendingUp, Calendar, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { getUserRoleFromDB } from "@/lib/db-roles";
-import { getOrCreateUser } from "@/lib/user-sync";
+import { getUserRoleFromDB } from "@/lib/auth/db-roles";
+import { getOrCreateUser } from "@/lib/auth/user-sync";
 import { getTicketStatuses } from "@/lib/status/getTicketStatuses";
 
 // Force dynamic rendering since we use auth headers
@@ -31,7 +31,7 @@ export default async function AdminEscalatedAnalyticsPage() {
   const adminUserId = userId;
 
   // Get admin's domain/scope assignment
-  const { getAdminAssignment, ticketMatchesAdminAssignment } = await import("@/lib/admin-assignment");
+  const { getAdminAssignment, ticketMatchesAdminAssignment } = await import("@/lib/assignment/admin-assignment");
   const adminAssignment = await getAdminAssignment(adminUserId);
 
   // Get admin's user record

@@ -9,8 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import { ArrowLeft, Users, Package, CheckCircle2, TrendingUp } from "lucide-react";
-import { getCachedAdminUser, getCachedAdminAssignment } from "@/lib/admin/cached-queries";
-import { ticketMatchesAdminAssignment } from "@/lib/admin-assignment";
+import { getCachedAdminUser, getCachedAdminAssignment } from "@/lib/cache/cached-queries";
+import { ticketMatchesAdminAssignment } from "@/lib/assignment/admin-assignment";
 import type { Ticket } from "@/db/types-only";
 
 // Force dynamic rendering since we use auth headers

@@ -3,11 +3,11 @@ import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { tickets, categories, users, ticket_statuses } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { sendEmail, getTATSetEmail } from "@/lib/email";
+import { sendEmail, getTATSetEmail } from "@/lib/integration/email";
 import { SetTATSchema } from "@/schema/ticket.schema";
 import { calculateTATDate } from "@/utils";
-import { getUserRoleFromDB } from "@/lib/db-roles";
-import { getOrCreateUser } from "@/lib/user-sync";
+import { getUserRoleFromDB } from "@/lib/auth/db-roles";
+import { getOrCreateUser } from "@/lib/auth/user-sync";
 import type { TicketMetadata } from "@/db/types";
 
 /**
@@ -227,10 +227,10 @@ export async function POST(
 						const channelOverride: string | undefined = typeof metadata.slackChannel === "string" ? metadata.slackChannel : undefined;
 
 						if (channelOverride) {
-							const { postThreadReplyToChannel } = await import("@/lib/slack");
+							const { postThreadReplyToChannel } = await import("@/lib/integration/slack");
 							await postThreadReplyToChannel(channelOverride, slackMessageTs, tatMessage, ccUserIds);
 						} else {
-							const { postThreadReply } = await import("@/lib/slack");
+							const { postThreadReply } = await import("@/lib/integration/slack");
 							await postThreadReply(
 								categoryName as "Hostel" | "College" | "Committee",
 								slackMessageTs,

@@ -4,14 +4,14 @@
  * IMPORTANT: Roles are stored in the DATABASE, not in Clerk metadata.
  * The database is the single source of truth for user roles.
  * 
- * Use getUserRoleFromDB() from @/lib/db-roles to get user roles.
+ * Use getUserRoleFromDB() from @/lib/auth/db-roles to get user roles.
  */
 
 export type UserRole = "super_admin" | "admin" | "committee" | "student";
 
 /**
  * @deprecated Roles are now stored in database, not Clerk metadata
- * Use getUserRoleFromDB() from @/lib/db-roles instead
+ * Use getUserRoleFromDB() from @/lib/auth/db-roles instead
  */
 export interface SessionMetadata {
   role?: UserRole;
@@ -19,7 +19,7 @@ export interface SessionMetadata {
 
 /**
  * @deprecated Roles are now stored in database, not Clerk metadata
- * Use getUserRoleFromDB() from @/lib/db-roles instead
+ * Use getUserRoleFromDB() from @/lib/auth/db-roles instead
  */
 export function getValidRole(metadata: SessionMetadata | undefined): UserRole {
   const allowedRoles: readonly UserRole[] = ["super_admin", "admin", "committee", "student"] as const;

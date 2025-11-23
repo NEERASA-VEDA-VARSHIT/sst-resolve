@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { FileText, Shield, Settings, Building2, Users, Calendar, AlertCircle, BarChart3 } from "lucide-react";
 import { StatsCards } from "@/components/dashboard/StatsCards";
 import { PaginationControls } from "@/components/dashboard/PaginationControls";
-import { getCachedAdminUser } from "@/lib/admin/cached-queries";
+import { getCachedAdminUser } from "@/lib/cache/cached-queries";
 import { normalizeStatusForComparison } from "@/lib/utils";
 
 // Create alias for users table to use for assigned admin (unused but kept for potential future use)

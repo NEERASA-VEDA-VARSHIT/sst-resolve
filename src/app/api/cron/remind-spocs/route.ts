@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { tickets, users, ticket_statuses, categories } from "@/db/schema";
 import { eq, and, or, isNotNull, aliasedTable } from "drizzle-orm";
-import { postThreadReplyToChannel } from "@/lib/slack";
-import { sendEmail } from "@/lib/email";
+import { postThreadReplyToChannel } from "@/lib/integration/slack";
+import { sendEmail } from "@/lib/integration/email";
 
 /**
  * GET /api/cron/remind-spocs
@@ -122,7 +122,7 @@ export async function GET(request: NextRequest) {
                   ccUserIds
                 );
               } else {
-                const { postThreadReply } = await import("@/lib/slack");
+                const { postThreadReply } = await import("@/lib/integration/slack");
                 await postThreadReply(
                   ticket.category_name as "Hostel" | "College",
                   slackMessageTs,

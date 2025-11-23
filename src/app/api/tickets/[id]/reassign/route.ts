@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db, tickets, users, categories, outbox } from "@/db";
 import { eq } from "drizzle-orm";
-import { postThreadReply } from "@/lib/slack";
-import { sendEmail } from "@/lib/email";
-import { getUserRoleFromDB } from "@/lib/db-roles";
-import { getOrCreateUser } from "@/lib/user-sync";
+import { postThreadReply } from "@/lib/integration/slack";
+import { sendEmail } from "@/lib/integration/email";
+import { getUserRoleFromDB } from "@/lib/auth/db-roles";
+import { getOrCreateUser } from "@/lib/auth/user-sync";
 
 /**
  * ============================================

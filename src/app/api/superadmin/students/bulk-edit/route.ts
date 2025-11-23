@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { students } from "@/db/schema";
 import { inArray } from "drizzle-orm";
 import { z } from "zod";
-import { getUserRoleFromDB } from "@/lib/db-roles";
+import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 
 /**
  * PATCH /api/superadmin/students/bulk-edit

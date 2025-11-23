@@ -2,10 +2,10 @@
 import { db, tickets, users, outbox, categories, subcategories } from "@/db";
 import { eq, and } from "drizzle-orm";
 import { TicketCreateInput } from "@/lib/validation/ticket";
-import { getOrCreateUser } from "@/lib/user-sync";
-import { getUserRoleFromDB } from "@/lib/db-roles";
+import { getOrCreateUser } from "@/lib/auth/user-sync";
+import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 // findSPOCForTicket is imported dynamically from spoc-assignment.ts
-import { getStatusIdByValue } from "@/lib/status-helpers";
+import { getStatusIdByValue } from "@/lib/status/status-helpers";
 
 /**
  * createTicket - core domain function
@@ -258,7 +258,7 @@ export async function createTicket(args: {
     assignedUserId = await superAdminPromise;
   } else {
     // find SPOC via helper (uses the full assignment hierarchy)
-    const { findSPOCForTicket } = await import("@/lib/spoc-assignment");
+    const { findSPOCForTicket } = await import("@/lib/assignment/spoc-assignment");
     // Safety check: ensure detailsObj is valid before calling Object.keys
     const fieldSlugs = detailsObj && typeof detailsObj === 'object' && !Array.isArray(detailsObj)
       ? Object.keys(detailsObj)

@@ -3,8 +3,8 @@ import { db } from "@/db";
 import { tickets, users, outbox, ticket_statuses } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { AddCommentSchema } from "@/schema/ticket.schema";
-import { getUserRoleFromDB } from "@/lib/db-roles";
-import { getOrCreateUser } from "@/lib/user-sync";
+import { getUserRoleFromDB } from "@/lib/auth/db-roles";
+import { getOrCreateUser } from "@/lib/auth/user-sync";
 import { auth } from "@clerk/nextjs/server";
 import type { TicketMetadata } from "@/db/types";
 

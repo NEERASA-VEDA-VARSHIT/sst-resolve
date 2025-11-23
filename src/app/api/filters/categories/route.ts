@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCategoriesHierarchy } from "@/lib/filters/getCategoriesHierarchy";
+import { getCategoriesHierarchy } from "@/lib/category/getCategoriesHierarchy";
 
 export const dynamic = "force-dynamic";
 

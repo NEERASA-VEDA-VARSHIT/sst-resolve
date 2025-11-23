@@ -19,7 +19,7 @@ import {
   getSubSubcategoryById,
   getCategoryById,
   getCategoryProfileFields
-} from "@/lib/categories";
+} from "@/lib/category/categories";
 import { extractDynamicFields } from "@/lib/ticket/formatDynamicFields";
 
 export async function getFullTicketData(ticketId: number, userId: string) {
