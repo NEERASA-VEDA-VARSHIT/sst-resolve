@@ -2,6 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { db, tickets, users, categories, subcategories, sub_subcategories, ticket_statuses } from "@/db";
 import { eq, ilike, and, or, sql, asc, desc } from "drizzle-orm";
 
+import { Suspense } from "react";
 import { TicketCard } from "@/components/layout/TicketCard";
 import { Card, CardContent } from "@/components/ui/card";
 import Link from "next/link";
@@ -266,16 +267,22 @@ export default async function StudentDashboardPage({
       </div>
 
       {/* Stats */}
-      {stats.total > 0 && <StatsCards stats={stats} />}
+      {stats.total > 0 && (
+        <Suspense fallback={<div className="h-32 animate-pulse bg-muted rounded-lg" />}>
+          <StatsCards stats={stats} />
+        </Suspense>
+      )}
 
       {/* Search + Filters */}
       <Card className="border-2">
         <CardContent className="p-6">
-          <TicketSearchWrapper
-            categories={categoryList}
-            currentSort={sortBy}
-            statuses={ticketStatuses}
-          />
+          <Suspense fallback={<div className="h-20 animate-pulse bg-muted rounded-lg" />}>
+            <TicketSearchWrapper
+              categories={categoryList}
+              currentSort={sortBy}
+              statuses={ticketStatuses}
+            />
+          </Suspense>
         </CardContent>
       </Card>
 

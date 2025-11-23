@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import dynamic from "next/dynamic";
 import type { TicketStatus } from "@/lib/status/types";
 
@@ -44,5 +45,9 @@ interface TicketSearchWrapperProps {
 }
 
 export function TicketSearchWrapper(props: TicketSearchWrapperProps) {
-  return <TicketSearch {...props} />;
+  return (
+    <Suspense fallback={<div className="h-20 w-full animate-pulse rounded-md bg-muted/40" />}>
+      <TicketSearch {...props} />
+    </Suspense>
+  );
 }
