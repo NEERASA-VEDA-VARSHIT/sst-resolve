@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { ClerkProvider } from "@clerk/nextjs";
 import { UnifiedNav } from "@/components/layout/UnifiedNav";
 import { Toaster } from "@/components/ui/sonner";
@@ -54,7 +55,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             enableSystem
             disableTransitionOnChange
           >
-            <ProgressBar />
+            <Suspense fallback={null}>
+              <ProgressBar />
+            </Suspense>
             <UnifiedNav />
             {children}
             <Toaster

@@ -11,6 +11,9 @@ import { Button } from "@/components/ui/button";
 import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
 
+// Force dynamic rendering since we use auth headers
+export const dynamic = "force-dynamic";
+
 export default async function SuperAdminTodayPendingPage() {
   const { userId } = await auth();
   if (!userId) redirect("/");

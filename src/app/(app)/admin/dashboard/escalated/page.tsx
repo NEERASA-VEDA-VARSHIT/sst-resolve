@@ -12,6 +12,9 @@ import { getUserRoleFromDB } from "@/lib/db-roles";
 import { getOrCreateUser } from "@/lib/user-sync";
 import { getTicketStatuses } from "@/lib/status/getTicketStatuses";
 
+// Force dynamic rendering since we use auth headers
+export const dynamic = "force-dynamic";
+
 export default async function AdminEscalatedAnalyticsPage() {
   const { userId } = await auth();
   if (!userId) redirect("/");
