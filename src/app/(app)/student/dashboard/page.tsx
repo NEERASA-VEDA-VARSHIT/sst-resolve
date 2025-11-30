@@ -1,5 +1,5 @@
 import { auth } from "@clerk/nextjs/server";
-import { db, tickets, users, categories, subcategories, sub_subcategories, ticket_statuses } from "@/db";
+import { db, tickets, users, categories, subcategories, sub_subcategories } from "@/db";
 import { eq, ilike, and, or, sql, asc, desc } from "drizzle-orm";
 
 import { Suspense } from "react";
@@ -13,6 +13,7 @@ import { getOrCreateUser } from "@/lib/auth/user-sync";
 import { TicketSearchWrapper } from "@/components/student/TicketSearchWrapper";
 import { getCategoriesHierarchy } from "@/lib/category/getCategoriesHierarchy";
 import { getTicketStatuses } from "@/lib/status/getTicketStatuses";
+import { getCanonicalStatus } from "@/conf/constants";
 import { PaginationControls } from "@/components/dashboard/PaginationControls";
 
 export default async function StudentDashboardPage({
@@ -69,15 +70,14 @@ export default async function StudentDashboardPage({
     }
   }
 
-  // Status Filter - use status_id from ticket_statuses table
+  // Status Filter
   if (statusFilter) {
-    const s = statusFilter.toUpperCase();
+    const canonical = (getCanonicalStatus(statusFilter) ?? statusFilter.toLowerCase()).toLowerCase();
 
-    if (s === "ESCALATED") {
+    if (canonical === "escalated") {
       conditions.push(sql`${tickets.escalation_level} > 0`);
-    } else {
-      // Filter by status value using the join (ticket_statuses is joined in main query)
-      conditions.push(eq(ticket_statuses.value, s));
+    } else if (canonical) {
+      conditions.push(sql`LOWER(${tickets.status}) = ${canonical}`);
     }
   }
 
@@ -113,7 +113,7 @@ export default async function StudentDashboardPage({
   }
 
   // Dynamic Field Filters (f_ prefix)
-  const dynamicFilters = Object.entries(params).filter(([key]) => key.startsWith("f_"));
+  const dynamicFilters = Object.entries(params || {}).filter(([key]) => key.startsWith("f_"));
 
   for (const [key, value] of dynamicFilters) {
     if (typeof value === 'string' && value) {
@@ -141,12 +141,14 @@ export default async function StudentDashboardPage({
     case "status":
       orderBy = sql`
         CASE 
-          WHEN ${ticket_statuses.value}='OPEN' THEN 1
-          WHEN ${ticket_statuses.value}='IN_PROGRESS' THEN 2
-          WHEN ${ticket_statuses.value}='AWAITING_STUDENT_RESPONSE' THEN 3
-          WHEN ${ticket_statuses.value}='REOPENED' THEN 4
-          WHEN ${ticket_statuses.value}='ESCALATED' THEN 5
-          WHEN ${ticket_statuses.value}='RESOLVED' THEN 6
+          WHEN LOWER(${tickets.status}) = 'open' THEN 1
+          WHEN LOWER(${tickets.status}) = 'in_progress' THEN 2
+          WHEN LOWER(${tickets.status}) = 'awaiting_student' THEN 3
+          WHEN LOWER(${tickets.status}) = 'reopened' THEN 4
+          WHEN LOWER(${tickets.status}) = 'escalated' THEN 5
+          WHEN LOWER(${tickets.status}) = 'forwarded' THEN 6
+          WHEN LOWER(${tickets.status}) = 'resolved' THEN 7
+          ELSE 999
         END
       `;
       break;
@@ -175,7 +177,7 @@ export default async function StudentDashboardPage({
         title: tickets.title,
         description: tickets.description,
         location: tickets.location,
-        status_id: tickets.status_id,
+        status: tickets.status,
         category_id: tickets.category_id,
         subcategory_id: tickets.subcategory_id,
         sub_subcategory_id: tickets.sub_subcategory_id,
@@ -194,20 +196,11 @@ export default async function StudentDashboardPage({
         reopened_at: tickets.reopened_at,
         sla_breached_at: tickets.sla_breached_at,
         reopen_count: tickets.reopen_count,
-        rating: tickets.rating,
-        feedback_type: tickets.feedback_type,
-        rating_submitted: tickets.rating_submitted,
-        feedback: tickets.feedback,
         is_public: tickets.is_public,
-        admin_link: tickets.admin_link,
-        student_link: tickets.student_link,
-        slack_thread_id: tickets.slack_thread_id,
-        external_ref: tickets.external_ref,
         metadata: tickets.metadata,
         created_at: tickets.created_at,
         updated_at: tickets.updated_at,
         resolved_at: tickets.resolved_at,
-        status: ticket_statuses.value,
         category_name: categories.name,
         creator_first_name: users.first_name,
         creator_last_name: users.last_name,
@@ -216,7 +209,7 @@ export default async function StudentDashboardPage({
       .from(tickets)
       .leftJoin(categories, eq(tickets.category_id, categories.id))
       .leftJoin(users, eq(tickets.created_by, users.id))
-      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
+      .leftJoin(ticket_statuses, eq(ticket_statuses.id, tickets.status_id))
       .where(and(...conditions))
       .orderBy(orderBy)
       .limit(limit)
@@ -230,21 +223,19 @@ export default async function StudentDashboardPage({
       .from(tickets)
       .leftJoin(categories, eq(tickets.category_id, categories.id))
       .leftJoin(users, eq(tickets.created_by, users.id))
-      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
       .where(and(...conditions)),
     
-    // Stats Query (Optimized) - using status_id joins
+    // Stats Query (Optimized)
     db
       .select({
         total: sql<number>`COUNT(*)`,
-        open: sql<number>`SUM(CASE WHEN ${ticket_statuses.value}='OPEN' THEN 1 ELSE 0 END)`,
-        inProgress: sql<number>`SUM(CASE WHEN ${ticket_statuses.value} IN ('IN_PROGRESS','ESCALATED') THEN 1 ELSE 0 END)`,
-        awaitingStudent: sql<number>`SUM(CASE WHEN ${ticket_statuses.value}='AWAITING_STUDENT_RESPONSE' THEN 1 ELSE 0 END)`,
-        resolved: sql<number>`SUM(CASE WHEN ${ticket_statuses.value}='RESOLVED' THEN 1 ELSE 0 END)`,
+        open: sql<number>`SUM(CASE WHEN LOWER(${tickets.status})='open' THEN 1 ELSE 0 END)`,
+        inProgress: sql<number>`SUM(CASE WHEN LOWER(${tickets.status}) IN ('in_progress','escalated') THEN 1 ELSE 0 END)`,
+        awaitingStudent: sql<number>`SUM(CASE WHEN LOWER(${tickets.status})='awaiting_student' THEN 1 ELSE 0 END)`,
+        resolved: sql<number>`SUM(CASE WHEN LOWER(${tickets.status})='resolved' THEN 1 ELSE 0 END)`,
         escalated: sql<number>`SUM(CASE WHEN ${tickets.escalation_level} > 0 THEN 1 ELSE 0 END)`,
       })
       .from(tickets)
-      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
       .where(eq(tickets.created_by, dbUser.id)),
     
     // Fetch categories hierarchy and statuses for search UI
@@ -253,9 +244,17 @@ export default async function StudentDashboardPage({
   ]);
   
   // Map to TicketCard format
-  const allTickets = allTicketsRaw.map(ticket => ({
+  const allTickets = allTicketsRaw.map((ticket) => ({
     ...ticket,
-    creator_name: [ticket.creator_first_name, ticket.creator_last_name].filter(Boolean).join(' ').trim() || null,
+    creator_name: [ticket.creator_first_name, ticket.creator_last_name].filter(Boolean).join(" ").trim() || null,
+    rating: null,
+    feedback_type: null,
+    rating_submitted: null,
+    feedback: null,
+    admin_link: null,
+    student_link: null,
+    slack_thread_id: null,
+    external_ref: null,
   }));
 
   // Pagination calculations
