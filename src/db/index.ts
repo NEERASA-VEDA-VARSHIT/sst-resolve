@@ -11,6 +11,6 @@ const client = postgres(connectionString, { ssl: 'require' });
 export const db = drizzle(client, { schema });
 
 // Re-export schema and types for server components
-// WARNING: Client components must use '@/db/schema-only' instead
+// WARNING: Client components must use '@/db/types-only' for client-safe types
 export * from './schema';
-export * from './types';
+export * from './inferred-types'; // Includes TicketMetadata and parseTicketMetadata

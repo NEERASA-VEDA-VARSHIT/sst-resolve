@@ -640,7 +640,7 @@ export default async function StudentTicketPage({ params }: { params: Promise<{ 
               )}
 
               {/* Comment Form - Enhanced */}
-              {normalizedStatus === "awaiting_student_response" && (
+              {(normalizedStatus === "awaiting_student" || normalizedStatus === "awaiting_student_response") && (
                 <div className="pt-6 mt-6 border-t">
                   {comments.length > 0 && comments[comments.length - 1]?.source !== "website" && (
                     <Alert className="border-amber-200 bg-amber-50/50 dark:bg-amber-950/20 mb-4">

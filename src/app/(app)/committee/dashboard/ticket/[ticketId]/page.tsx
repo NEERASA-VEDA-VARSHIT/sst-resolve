@@ -9,9 +9,9 @@ import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ArrowLeft, Clock, AlertCircle, MessageSquare, User, MapPin, FileText, Image as ImageIcon, CheckCircle2 } from "lucide-react";
-import { db, tickets, ticket_committee_tags, committee_members, categories, ticket_statuses } from "@/db";
+import { db, tickets, ticket_committee_tags, committees, categories, ticket_statuses } from "@/db";
 import { eq, inArray, and } from "drizzle-orm";
-import type { TicketMetadata } from "@/db/types";
+import type { TicketMetadata } from "@/db/inferred-types";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
 import { CommentForm } from "@/components/tickets/CommentForm";
 import { RatingForm } from "@/components/tickets/RatingForm";
@@ -30,7 +30,8 @@ export default async function CommitteeTicketPage({ params }: { params: Promise<
   const ticketRows = await db
     .select({
       id: tickets.id,
-      status: ticket_statuses.value,
+      status_id: tickets.status_id,
+      status_value: ticket_statuses.value,
       description: tickets.description,
       location: tickets.location,
       created_by: tickets.created_by,
@@ -38,12 +39,11 @@ export default async function CommitteeTicketPage({ params }: { params: Promise<
       metadata: tickets.metadata,
       due_at: tickets.resolution_due_at,
       created_at: tickets.created_at,
-      rating: tickets.rating,
       category_name: categories.name,
     })
     .from(tickets)
-    .leftJoin(categories, eq(tickets.category_id, categories.id))
     .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
+    .leftJoin(categories, eq(tickets.category_id, categories.id))
     .where(eq(tickets.id, id))
     .limit(1);
 
@@ -53,13 +53,13 @@ export default async function CommitteeTicketPage({ params }: { params: Promise<
   // Ensure user exists and get user_id
   const user = await getOrCreateUser(userId);
 
-  // Get committee IDs this user belongs to (using user_id FK)
-  const memberRecords = await db
-    .select({ committee_id: committee_members.committee_id })
-    .from(committee_members)
-    .where(eq(committee_members.user_id, user.id));
+  // Get committee IDs this user is the head of (using head_id)
+  const committeeRecords = await db
+    .select({ id: committees.id })
+    .from(committees)
+    .where(eq(committees.head_id, user.id));
 
-  const committeeIds = memberRecords.map(m => m.committee_id);
+  const committeeIds = committeeRecords.map(c => c.id);
 
   // Check if ticket is created by this committee member OR tagged to their committee
   let canAccess = false;
@@ -103,16 +103,17 @@ export default async function CommitteeTicketPage({ params }: { params: Promise<
     )
     .limit(1)).length > 0;
 
-  // Parse metadata (JSONB) for comments
+  // Parse metadata (JSONB) for comments and rating
   type TicketMetadataWithComments = TicketMetadata;
   const metadata = (ticket.metadata as TicketMetadataWithComments) || {};
   const comments = Array.isArray(metadata?.comments) ? metadata.comments : [];
   const visibleComments = comments.filter(
     (c: { type?: string }) => c.type !== "internal_note" && c.type !== "super_admin_note"
   );
+  const rating = (metadata.rating as number | null) || null;
 
   // Normalize status for comparisons
-  const normalizedStatus = normalizeStatusForComparison(ticket.status);
+  const normalizedStatus = normalizeStatusForComparison(ticket.status_value);
 
   const statusVariant = (status: string | null | undefined) => {
     const normalized = normalizeStatusForComparison(status);
@@ -200,9 +201,9 @@ export default async function CommitteeTicketPage({ params }: { params: Promise<
             <div className="space-y-2">
               <div className="flex items-center gap-3 flex-wrap">
                 <CardTitle className="text-3xl font-bold">Ticket #{ticket.id}</CardTitle>
-                {ticket.status && (
-                  <Badge variant={statusVariant(ticket.status)} className={getStatusColor(ticket.status)}>
-                    {formatStatus(ticket.status)}
+                {ticket.status_value && (
+                  <Badge variant={statusVariant(ticket.status_value)} className={getStatusColor(ticket.status_value)}>
+                    {formatStatus(ticket.status_value)}
                   </Badge>
                 )}
                 {ticket.category_name && (
@@ -387,7 +388,7 @@ export default async function CommitteeTicketPage({ params }: { params: Promise<
                       </span>
                     </AlertDescription>
                   </Alert>
-                  <CommentForm ticketId={ticket.id} currentStatus={ticket.status || undefined} />
+                  <CommentForm ticketId={ticket.id} currentStatus={ticket.status_value || undefined} />
                 </div>
               )}
             </CardContent>
@@ -408,7 +409,7 @@ export default async function CommitteeTicketPage({ params }: { params: Promise<
               <CardContent>
                 <CommitteeActions
                   ticketId={ticket.id}
-                  currentStatus={ticket.status || "open"}
+                  currentStatus={ticket.status_value || "open"}
                   isTaggedTicket={isTaggedTicket}
                 />
               </CardContent>
@@ -416,7 +417,7 @@ export default async function CommitteeTicketPage({ params }: { params: Promise<
           )}
 
           {/* Rating Form - only show for resolved tickets without rating */}
-          {normalizedStatus === "resolved" && !ticket.rating && (
+          {normalizedStatus === "resolved" && !rating && (
             <Card className="border-2">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -428,7 +429,7 @@ export default async function CommitteeTicketPage({ params }: { params: Promise<
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <RatingForm ticketId={ticket.id} currentRating={ticket.rating ? String(ticket.rating) : undefined} />
+                <RatingForm ticketId={ticket.id} currentRating={rating ? String(rating) : undefined} />
               </CardContent>
             </Card>
           )}

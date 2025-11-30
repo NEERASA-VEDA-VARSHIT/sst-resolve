@@ -12,7 +12,6 @@ export async function GET() {
 			.select({
 				id: hostels.id,
 				name: hostels.name,
-				code: hostels.code,
 			})
 			.from(hostels)
 			.where(eq(hostels.is_active, true))

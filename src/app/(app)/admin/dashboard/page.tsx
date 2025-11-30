@@ -2,7 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { db, tickets, categories, domains } from "@/db";
 import { eq, inArray } from "drizzle-orm";
-import type { TicketMetadata } from "@/db/types";
+import type { TicketMetadata } from "@/db/inferred-types";
 import { TicketCard } from "@/components/layout/TicketCard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
@@ -14,6 +14,7 @@ import { FileText, AlertCircle, TrendingUp, Calendar } from "lucide-react";
 import { isAdminLevel } from "@/conf/constants";
 import { getCachedAdminUser, getCachedAdminAssignment, getCachedAdminTickets } from "@/lib/cache/cached-queries";
 import { ticketMatchesAdminAssignment } from "@/lib/assignment/admin-assignment";
+import type { Ticket } from "@/db/types-only";
 
 // Revalidate every 30 seconds for fresh data
 export const revalidate = 30;
@@ -71,12 +72,13 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
   // Transform to match TicketCard expected format
   // The cached query already includes all ticket fields, just add computed fields
   type TicketWithExtras = typeof tickets.$inferSelect & {
+    status_id: number | null;
+    scope_id: number | null;
     status_value?: string | null;
     status_label?: string | null;
     status_badge_color?: string | null;
     category_name?: string | null;
-    creator_first_name?: string | null;
-    creator_last_name?: string | null;
+    creator_full_name?: string | null;
     creator_email?: string | null;
     status?: string | null;
     creator_name?: string | null;
@@ -84,10 +86,11 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
   };
 
   let allTickets: TicketWithExtras[] = ticketRows.map(ticket => ({
-    ...ticket, // Includes all ticket fields from cached query
-    // Additional computed fields for TicketCard
+    ...ticket,
+    status_id: ticket.status_id ?? 0,
+    scope_id: null,
     status: ticket.status_value || null,
-    creator_name: [ticket.creator_first_name, ticket.creator_last_name].filter(Boolean).join(' ').trim() || null,
+    creator_name: ticket.creator_full_name || null,
     due_at: ticket.resolution_due_at,
   }));
 
@@ -388,7 +391,7 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 {allTickets.map((ticket) => (
-                  <TicketCard key={ticket.id} ticket={ticket} basePath="/admin/dashboard" />
+                  <TicketCard key={ticket.id} ticket={ticket as unknown as Ticket & { status?: string | null; category_name?: string | null; creator_name?: string | null; creator_email?: string | null }} basePath="/admin/dashboard" />
                 ))}
               </div>
             )}

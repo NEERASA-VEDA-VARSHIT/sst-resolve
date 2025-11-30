@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { db, committees } from "@/db";
+import { db, committees, users } from "@/db";
 import { eq } from "drizzle-orm";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
@@ -63,12 +63,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Committee name is required" }, { status: 400 });
     }
 
-    // Validate email format if provided
-    if (contact_email && typeof contact_email === "string" && contact_email.trim().length > 0) {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(contact_email.trim())) {
-        return NextResponse.json({ error: "Invalid email format" }, { status: 400 });
-      }
+    // Contact email is required and will act as the committee head's email
+    if (!contact_email || typeof contact_email !== "string" || contact_email.trim().length === 0) {
+      return NextResponse.json({ error: "Contact email is required" }, { status: 400 });
+    }
+
+    const normalizedEmail = contact_email.trim().toLowerCase();
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(normalizedEmail)) {
+      return NextResponse.json({ error: "Invalid email format" }, { status: 400 });
     }
 
     // Check if committee with same name already exists
@@ -89,12 +94,51 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "A committee with this name already exists" }, { status: 400 });
     }
 
+    // Find the user who will be the committee head based on email.
+    // NOTE: We do NOT auto-create users here. A real user must exist first.
+    const [headUser] = await db
+      .select({
+        id: users.id,
+        email: users.email,
+      })
+      .from(users)
+      .where(eq(users.email, normalizedEmail))
+      .limit(1);
+
+    if (!headUser) {
+      return NextResponse.json(
+        {
+          error:
+            "No user found with this email. Please ensure the committee head has a user account before creating the committee.",
+        },
+        { status: 400 },
+      );
+    }
+
+    // Ensure this user is not already the head of another committee
+    const [existingHeadCommittee] = await db
+      .select({
+        id: committees.id,
+        name: committees.name,
+      })
+      .from(committees)
+      .where(eq(committees.head_id, headUser.id))
+      .limit(1);
+
+    if (existingHeadCommittee) {
+      return NextResponse.json(
+        { error: `User with email ${normalizedEmail} is already the head of committee '${existingHeadCommittee.name}'` },
+        { status: 400 },
+      );
+    }
+
     const [newCommittee] = await db
       .insert(committees)
       .values({
         name: name.trim(),
         description: description?.trim() || null,
-        contact_email: contact_email?.trim() || null,
+        contact_email: normalizedEmail,
+        head_id: headUser.id,
       })
       .returning();
 

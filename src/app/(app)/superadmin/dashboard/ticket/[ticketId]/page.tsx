@@ -5,10 +5,12 @@ import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Calendar, ArrowLeft, User, MapPin, FileText, Clock, AlertTriangle, AlertCircle, Image as ImageIcon, MessageSquare, CheckCircle2, Sparkles, RotateCw } from "lucide-react";
-import { db, tickets, categories, users, ticket_statuses, roles, students, hostels } from "@/db";
+import { db, tickets, categories, users, roles, students, hostels, ticket_statuses } from "@/db";
 import { eq, aliasedTable } from "drizzle-orm";
 import { AdminActions } from "@/components/tickets/AdminActions";
 import { CommitteeTagging } from "@/components/admin/CommitteeTagging";
+import { SlackThreadView } from "@/components/tickets/SlackThreadView";
+import { AdminCommentComposer } from "@/components/tickets/AdminCommentComposer";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
@@ -16,10 +18,11 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
 import { TicketStatusBadge } from "@/components/tickets/TicketStatusBadge";
-import type { TicketMetadata } from "@/db/types";
+import type { TicketMetadata } from "@/db/inferred-types";
 import { buildTimeline } from "@/lib/ticket/buildTimeline";
 import { normalizeStatusForComparison } from "@/lib/utils";
 import { getTicketStatuses, buildProgressMap } from "@/lib/status/getTicketStatuses";
+import { buildStatusDisplay } from "@/conf/constants";
 import { getCategoryProfileFields, getCategorySchema } from "@/lib/category/categories";
 import { resolveProfileFields } from "@/lib/ticket/profileFieldResolver";
 import { extractDynamicFields } from "@/lib/ticket/formatDynamicFields";
@@ -27,9 +30,10 @@ import { DynamicFieldDisplay } from "@/components/tickets/DynamicFieldDisplay";
 import { CardDescription } from "@/components/ui/card";
 import { Info } from "lucide-react";
 import { format } from "date-fns";
+import { slackConfig } from "@/conf/config";
 
-// Force dynamic rendering for real-time ticket data
-export const dynamic = "force-dynamic";
+// Revalidate every 10 seconds for ticket detail page (more frequent for real-time updates)
+export const revalidate = 10;
 
 export default async function SuperAdminTicketPage({ params }: { params: Promise<{ ticketId: string }> }) {
   const { userId } = await auth();
@@ -48,13 +52,11 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
 
   const assignedUser = aliasedTable(users, "assigned_user");
 
-  // Fetch ticket with joins for category, creator, and assigned staff
+  // Fetch ticket with joins for category, creator, assigned staff, and status
   const ticketRows = await db
     .select({
       id: tickets.id,
       status_value: ticket_statuses.value,
-      status_label: ticket_statuses.label,
-      status_badge_color: ticket_statuses.badge_color,
       description: tickets.description,
       location: tickets.location,
       created_by: tickets.created_by,
@@ -63,14 +65,11 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
       escalation_level: tickets.escalation_level,
       metadata: tickets.metadata,
       due_at: tickets.resolution_due_at,
+      acknowledgement_due_at: tickets.acknowledgement_due_at,
       created_at: tickets.created_at,
       updated_at: tickets.updated_at,
-      resolved_at: tickets.resolved_at,
-      acknowledged_at: tickets.acknowledged_at,
-      reopened_at: tickets.reopened_at,
       category_name: categories.name,
-      creator_first_name: users.first_name,
-      creator_last_name: users.last_name,
+      creator_full_name: users.full_name,
       creator_email: users.email,
       assigned_staff_id: assignedUser.id,
     })
@@ -83,14 +82,24 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
     .limit(1);
 
   if (ticketRows.length === 0) notFound();
+  
+  // Parse metadata to extract slack_thread_id
+  let slackThreadId: string | null = null;
+  try {
+    const rawMetadata = ticketRows[0].metadata;
+    if (rawMetadata && typeof rawMetadata === 'object' && !Array.isArray(rawMetadata)) {
+      const meta = rawMetadata as Record<string, unknown>;
+      slackThreadId = (typeof meta.slackMessageTs === 'string' ? meta.slackMessageTs : null);
+    }
+  } catch (error) {
+    // Ignore metadata parsing errors
+  }
+
   const ticket = {
     ...ticketRows[0],
-    creator_name: [ticketRows[0].creator_first_name, ticketRows[0].creator_last_name].filter(Boolean).join(' ').trim() || null,
-    status: ticketRows[0].status_value ? {
-      value: ticketRows[0].status_value,
-      label: ticketRows[0].status_label || ticketRows[0].status_value,
-      badge_color: ticketRows[0].status_badge_color,
-    } : null,
+    creator_name: ticketRows[0].creator_full_name || null,
+    status: buildStatusDisplay(ticketRows[0].status_value || undefined),
+    slack_thread_id: slackThreadId,
   };
 
   // Fetch student data, profile fields, and category schema after we have ticket data
@@ -105,7 +114,7 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
       })
       .from(students)
       .leftJoin(hostels, eq(hostels.id, students.hostel_id))
-      .where(eq(students.user_id, ticket.created_by))
+      .where(eq(students.user_id, ticket.created_by!))
       .limit(1),
     
     // Fetch profile fields configuration
@@ -122,8 +131,7 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
   const forwardTargetsRaw = await db
     .select({
       id: users.id,
-      first_name: users.first_name,
-      last_name: users.last_name,
+      full_name: users.full_name,
       email: users.email,
     })
     .from(users)
@@ -134,7 +142,7 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
     .filter((admin) => !!admin.id)
     .map((admin) => ({
       id: admin.id!,
-      name: [admin.first_name, admin.last_name].filter(Boolean).join(" ").trim() || admin.email || "Super Admin",
+      name: admin.full_name || admin.email || "Super Admin",
       email: admin.email,
     }));
 
@@ -157,27 +165,43 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
     // Continue with empty defaults
   }
 
+
   // Extract dynamic fields from metadata (after metadata is initialized)
   const dynamicFields = extractDynamicFields(metadata as Record<string, unknown>, categorySchema || {});
 
   // Normalize status for comparisons
-  const statusValue = ticket.status?.value || null;
-  const normalizedStatus = normalizeStatusForComparison(statusValue);
+  const statusValueStr = typeof ticket.status === 'string' 
+    ? ticket.status 
+    : (ticket.status && typeof ticket.status === 'object' && 'value' in ticket.status ? ticket.status.value : null);
+  const normalizedStatus = normalizeStatusForComparison(statusValueStr);
 
   // Get ticket statuses and build progress map
-  const ticketStatuses = await getTicketStatuses();
-  const progressMap = buildProgressMap(ticketStatuses);
-  const ticketProgress = progressMap[normalizedStatus] || 0;
+  const ticketStatuses = await getTicketStatuses().catch(() => []);
+  const progressMap = Array.isArray(ticketStatuses) && ticketStatuses.length > 0 
+    ? buildProgressMap(ticketStatuses) 
+    : {};
+  const ticketProgress = (progressMap && typeof progressMap === 'object' && normalizedStatus && progressMap[normalizedStatus]) 
+    ? progressMap[normalizedStatus] 
+    : 0;
+
+  // Extract timestamps from metadata
+  let ticketMetadata: TicketMetadata = {};
+  if (ticket.metadata && typeof ticket.metadata === 'object' && !Array.isArray(ticket.metadata)) {
+    ticketMetadata = ticket.metadata as TicketMetadata;
+  }
+  const resolvedAt = ticketMetadata.resolved_at ? new Date(ticketMetadata.resolved_at) : null;
+  const reopenedAt = ticketMetadata.reopened_at ? new Date(ticketMetadata.reopened_at) : null;
+  const acknowledgedAt = ticketMetadata.acknowledged_at ? new Date(ticketMetadata.acknowledged_at) : null;
 
   // Build timeline
   const timelineEntries = buildTimeline({
     created_at: ticket.created_at,
-    acknowledged_at: ticket.acknowledged_at,
+    acknowledged_at: acknowledgedAt,
     updated_at: ticket.updated_at,
-    resolved_at: ticket.resolved_at,
-    reopened_at: ticket.reopened_at,
+    resolved_at: resolvedAt,
+    reopened_at: reopenedAt,
     escalation_level: ticket.escalation_level,
-    status: statusValue,
+    status: statusValueStr,
   }, normalizedStatus);
 
   // Add TAT set entry if TAT was set
@@ -530,15 +554,15 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
                 )}
               </CardTitle>
             </CardHeader>
-            <CardContent className="pt-6">
+            <CardContent className="pt-6 space-y-6">
               {comments.length > 0 ? (
                 <ScrollArea className="max-h-[500px] pr-4">
                   <div className="space-y-4">
                     {comments.map((comment: Record<string, unknown>, idx: number) => {
                       if (!comment || typeof comment !== 'object') return null;
                       const isInternal = comment.isInternal || comment.type === "internal_note" || comment.type === "super_admin_note";
-                      const commentText = typeof comment.text === 'string' ? comment.text : typeof comment.message === 'string' ? comment.message : '';
-                      const commentAuthor = typeof comment.author === 'string' ? comment.author : typeof comment.created_by === 'string' ? comment.created_by : 'Unknown';
+                      const commentText = (typeof comment.text === 'string' ? comment.text : typeof comment.message === 'string' ? comment.message : '') || '';
+                      const commentAuthor = (typeof comment.author === 'string' ? comment.author : typeof comment.created_by === 'string' ? comment.created_by : 'Unknown') || 'Unknown';
                       const commentSource = typeof comment.source === 'string' ? comment.source : null;
                       const rawTimestamp = comment.createdAt || comment.created_at;
                       const commentCreatedAt = rawTimestamp && 
@@ -630,6 +654,10 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
                   <p className="text-xs">Updates and responses will appear here</p>
                 </div>
               )}
+
+              <Separator />
+
+              <AdminCommentComposer ticketId={ticket.id} />
             </CardContent>
           </Card>
 
@@ -641,7 +669,7 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
             <CardContent>
               <AdminActions
                 ticketId={ticket.id}
-                currentStatus={statusValue || "open"}
+                currentStatus={statusValueStr || "open"}
                 hasTAT={!!ticket.due_at || !!metadata?.tat}
                 isSuperAdmin={true}
                 ticketCategory={ticket.category_name || "General"}
@@ -661,6 +689,18 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
               <CommitteeTagging ticketId={ticket.id} />
             </CardContent>
           </Card>
+
+          {/* Slack Thread */}
+          {ticket.slack_thread_id && (
+            <SlackThreadView
+              threadId={ticket.slack_thread_id}
+              channel={
+                (slackConfig.channels.hostel as string) ||
+                (Object.values(slackConfig.channels.hostels as Record<string, string> || {})[0]) ||
+                "#tickets-velankani"
+              }
+            />
+          )}
         </div>
 
         {/* Sidebar */}

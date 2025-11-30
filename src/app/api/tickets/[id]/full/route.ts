@@ -27,8 +27,8 @@ import {
   tickets,
   users,
   students,
+  ticket_statuses,
   categories,
-  ticket_statuses
 } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
@@ -69,6 +69,7 @@ export async function GET(
       .select({
         // Ticket fields
         ticket_id: tickets.id,
+        ticket_status_id: tickets.status_id,
         ticket_status: ticket_statuses.value,
         ticket_description: tickets.description,
         ticket_location: tickets.location,
@@ -79,15 +80,9 @@ export async function GET(
         ticket_escalation_level: tickets.escalation_level,
         ticket_created_at: tickets.created_at,
         ticket_updated_at: tickets.updated_at,
-        ticket_resolved_at: tickets.resolved_at,
         ticket_due_at: tickets.resolution_due_at,
-        ticket_acknowledged_at: tickets.acknowledged_at,
-        ticket_rating: tickets.rating,
-        ticket_feedback: tickets.feedback,
-        ticket_tat_extended_count: tickets.tat_extended_count,
         // User fields
-        user_first_name: users.first_name,
-        user_last_name: users.last_name,
+        user_full_name: users.full_name,
         user_email: users.email,
         // Student fields
         student_roll_no: students.roll_no,
@@ -95,9 +90,9 @@ export async function GET(
         student_room_no: students.room_no,
       })
       .from(tickets)
+      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
       .leftJoin(users, eq(users.id, tickets.created_by))
       .leftJoin(students, eq(students.user_id, tickets.created_by))
-      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
       .where(eq(tickets.id, ticketId))
       .limit(1);
 
@@ -157,8 +152,7 @@ export async function GET(
     if (ticketData.ticket_assigned_to) {
       const [staffData] = await db
         .select({
-          user_first_name: users.first_name,
-          user_last_name: users.last_name,
+          user_full_name: users.full_name,
           user_email: users.email,
         })
         .from(users)
@@ -166,10 +160,7 @@ export async function GET(
         .limit(1);
 
       if (staffData) {
-        const staffName = [staffData.user_first_name, staffData.user_last_name]
-          .filter(Boolean)
-          .join(' ')
-          .trim() || "Unknown";
+        const staffName = staffData.user_full_name?.trim() || "Unknown";
         assignedStaff = {
           name: staffName,
           email: staffData.user_email || null,
@@ -190,8 +181,7 @@ export async function GET(
         if (categoryData?.default_admin_id) {
           const [spocData] = await db
             .select({
-              user_first_name: users.first_name,
-              user_last_name: users.last_name,
+              user_full_name: users.full_name,
               user_email: users.email,
             })
             .from(users)
@@ -199,10 +189,7 @@ export async function GET(
             .limit(1);
 
           if (spocData) {
-            const spocName = [spocData.user_first_name, spocData.user_last_name]
-              .filter(Boolean)
-              .join(' ')
-              .trim() || "Unknown";
+            const spocName = spocData.user_full_name?.trim() || "Unknown";
             spoc = {
               name: spocName,
               email: spocData.user_email || null,
@@ -219,7 +206,11 @@ export async function GET(
       ? extractDynamicFields(metadata, categorySchema as Record<string, unknown>)
       : [];
 
-    // 9. Extract comments
+    // 9. Extract resolved_at, acknowledged_at from metadata
+    const resolvedAt = metadata.resolved_at ? new Date(metadata.resolved_at as string) : null;
+    const acknowledgedAt = metadata.acknowledged_at ? new Date(metadata.acknowledged_at as string) : null;
+
+    // Extract comments
     type Comment = { isInternal?: boolean; type?: string };
     const comments = Array.isArray(metadata?.comments) ? metadata.comments : [];
     const visibleComments = comments.filter(
@@ -235,9 +226,9 @@ export async function GET(
         textColor: "text-primary",
         icon: "Calendar",
       },
-      ticketData.ticket_acknowledged_at && {
+      acknowledgedAt && {
         title: "Acknowledged",
-        date: ticketData.ticket_acknowledged_at,
+        date: acknowledgedAt,
         color: "bg-green-100 dark:bg-green-900/30",
         textColor: "text-green-600 dark:text-green-400",
         icon: "CheckCircle2",
@@ -249,9 +240,9 @@ export async function GET(
         textColor: "text-blue-600 dark:text-blue-400",
         icon: "Clock",
       },
-      ticketData.ticket_resolved_at && {
+      resolvedAt && {
         title: "Resolved",
-        date: ticketData.ticket_resolved_at,
+        date: resolvedAt,
         color: "bg-emerald-100 dark:bg-emerald-900/30",
         textColor: "text-emerald-600 dark:text-emerald-400",
         icon: "CheckCircle2",
@@ -285,12 +276,12 @@ export async function GET(
         escalation_level: ticketData.ticket_escalation_level,
         created_at: ticketData.ticket_created_at,
         updated_at: ticketData.ticket_updated_at,
-        resolved_at: ticketData.ticket_resolved_at,
+        resolved_at: resolvedAt,
         due_at: ticketData.ticket_due_at,
-        acknowledged_at: ticketData.ticket_acknowledged_at,
-        rating: ticketData.ticket_rating,
-        feedback: ticketData.ticket_feedback,
-        tat_extended_count: ticketData.ticket_tat_extended_count,
+        acknowledged_at: acknowledgedAt,
+        rating: metadata.rating as number | null || null,
+        feedback: metadata.feedback as string | null || null,
+        tat_extended_count: (metadata.tatExtensions as unknown[])?.length || 0,
       },
       category: category ? {
         id: category.id,
@@ -309,10 +300,7 @@ export async function GET(
         slug: subSubcategory.slug,
       } : null,
       creator: {
-        name: [ticketData.user_first_name, ticketData.user_last_name]
-          .filter(Boolean)
-          .join(' ')
-          .trim() || null,
+        name: ticketData.user_full_name?.trim() || null,
         email: ticketData.user_email,
       },
       student: {

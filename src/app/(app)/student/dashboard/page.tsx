@@ -1,5 +1,5 @@
 import { auth } from "@clerk/nextjs/server";
-import { db, tickets, users, categories, subcategories, sub_subcategories } from "@/db";
+import { db, tickets, users, categories, subcategories, sub_subcategories, ticket_statuses } from "@/db";
 import { eq, ilike, and, or, sql, asc, desc } from "drizzle-orm";
 
 import { Suspense } from "react";
@@ -15,17 +15,19 @@ import { getCategoriesHierarchy } from "@/lib/category/getCategoriesHierarchy";
 import { getTicketStatuses } from "@/lib/status/getTicketStatuses";
 import { getCanonicalStatus } from "@/conf/constants";
 import { PaginationControls } from "@/components/dashboard/PaginationControls";
+import type { Ticket } from "@/db/types-only";
 
 export default async function StudentDashboardPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  // -----------------------------
-  // 1. Auth + Get DB User
-  // -----------------------------
-  const { userId } = await auth();
-  const dbUser = await getOrCreateUser(userId!);
+  try {
+    // -----------------------------
+    // 1. Auth + Get DB User
+    // -----------------------------
+    const { userId } = await auth();
+    const dbUser = await getOrCreateUser(userId!);
 
   if (!dbUser) {
     return (
@@ -77,7 +79,12 @@ export default async function StudentDashboardPage({
     if (canonical === "escalated") {
       conditions.push(sql`${tickets.escalation_level} > 0`);
     } else if (canonical) {
-      conditions.push(sql`LOWER(${tickets.status}) = ${canonical}`);
+      // Join ticket_statuses for status filtering
+      conditions.push(sql`EXISTS (
+        SELECT 1 FROM ticket_statuses ts 
+        WHERE ts.id = ${tickets.status_id} 
+        AND LOWER(ts.value) = ${canonical}
+      )`);
     }
   }
 
@@ -113,7 +120,9 @@ export default async function StudentDashboardPage({
   }
 
   // Dynamic Field Filters (f_ prefix)
-  const dynamicFilters = Object.entries(params || {}).filter(([key]) => key.startsWith("f_"));
+  // Safety check: ensure params is a valid object before calling Object.entries
+  const safeParams = params && typeof params === 'object' && !Array.isArray(params) ? params : {};
+  const dynamicFilters = Object.entries(safeParams).filter(([key]) => key.startsWith("f_"));
 
   for (const [key, value] of dynamicFilters) {
     if (typeof value === 'string' && value) {
@@ -139,15 +148,16 @@ export default async function StudentDashboardPage({
       break;
 
     case "status":
+      // Join ticket_statuses for status-based sorting
       orderBy = sql`
         CASE 
-          WHEN LOWER(${tickets.status}) = 'open' THEN 1
-          WHEN LOWER(${tickets.status}) = 'in_progress' THEN 2
-          WHEN LOWER(${tickets.status}) = 'awaiting_student' THEN 3
-          WHEN LOWER(${tickets.status}) = 'reopened' THEN 4
-          WHEN LOWER(${tickets.status}) = 'escalated' THEN 5
-          WHEN LOWER(${tickets.status}) = 'forwarded' THEN 6
-          WHEN LOWER(${tickets.status}) = 'resolved' THEN 7
+          WHEN LOWER((SELECT value FROM ticket_statuses WHERE id = ${tickets.status_id})) = 'open' THEN 1
+          WHEN LOWER((SELECT value FROM ticket_statuses WHERE id = ${tickets.status_id})) = 'in_progress' THEN 2
+          WHEN LOWER((SELECT value FROM ticket_statuses WHERE id = ${tickets.status_id})) = 'awaiting_student' THEN 3
+          WHEN LOWER((SELECT value FROM ticket_statuses WHERE id = ${tickets.status_id})) = 'reopened' THEN 4
+          WHEN LOWER((SELECT value FROM ticket_statuses WHERE id = ${tickets.status_id})) = 'escalated' THEN 5
+          WHEN LOWER((SELECT value FROM ticket_statuses WHERE id = ${tickets.status_id})) = 'forwarded' THEN 6
+          WHEN LOWER((SELECT value FROM ticket_statuses WHERE id = ${tickets.status_id})) = 'resolved' THEN 7
           ELSE 999
         END
       `;
@@ -169,7 +179,7 @@ export default async function StudentDashboardPage({
   // -----------------------------
   
   // Run all queries in parallel for maximum performance
-  const [allTicketsRaw, countResult, statsResult, categoryList, ticketStatuses] = await Promise.all([
+  const [allTicketsRaw, countResult, statsResult, categoryListResult, ticketStatusesResult] = await Promise.all([
     // Fetch Filtered Tickets
     db
       .select({
@@ -177,33 +187,21 @@ export default async function StudentDashboardPage({
         title: tickets.title,
         description: tickets.description,
         location: tickets.location,
-        status: tickets.status,
+        status_id: tickets.status_id,
+        status: ticket_statuses.value,
         category_id: tickets.category_id,
         subcategory_id: tickets.subcategory_id,
         sub_subcategory_id: tickets.sub_subcategory_id,
         created_by: tickets.created_by,
         assigned_to: tickets.assigned_to,
-        acknowledged_by: tickets.acknowledged_by,
-        group_id: tickets.group_id,
         escalation_level: tickets.escalation_level,
-        tat_extended_count: tickets.tat_extended_count,
-        last_escalation_at: tickets.last_escalation_at,
-        acknowledgement_tat_hours: tickets.acknowledgement_tat_hours,
-        resolution_tat_hours: tickets.resolution_tat_hours,
         acknowledgement_due_at: tickets.acknowledgement_due_at,
         resolution_due_at: tickets.resolution_due_at,
-        acknowledged_at: tickets.acknowledged_at,
-        reopened_at: tickets.reopened_at,
-        sla_breached_at: tickets.sla_breached_at,
-        reopen_count: tickets.reopen_count,
-        is_public: tickets.is_public,
         metadata: tickets.metadata,
         created_at: tickets.created_at,
         updated_at: tickets.updated_at,
-        resolved_at: tickets.resolved_at,
         category_name: categories.name,
-        creator_first_name: users.first_name,
-        creator_last_name: users.last_name,
+        creator_full_name: users.full_name,
         creator_email: users.email,
       })
       .from(tickets)
@@ -229,33 +227,165 @@ export default async function StudentDashboardPage({
     db
       .select({
         total: sql<number>`COUNT(*)`,
-        open: sql<number>`SUM(CASE WHEN LOWER(${tickets.status})='open' THEN 1 ELSE 0 END)`,
-        inProgress: sql<number>`SUM(CASE WHEN LOWER(${tickets.status}) IN ('in_progress','escalated') THEN 1 ELSE 0 END)`,
-        awaitingStudent: sql<number>`SUM(CASE WHEN LOWER(${tickets.status})='awaiting_student' THEN 1 ELSE 0 END)`,
-        resolved: sql<number>`SUM(CASE WHEN LOWER(${tickets.status})='resolved' THEN 1 ELSE 0 END)`,
+        open: sql<number>`SUM(CASE WHEN LOWER((SELECT value FROM ticket_statuses WHERE id = ${tickets.status_id}))='open' THEN 1 ELSE 0 END)`,
+        inProgress: sql<number>`SUM(CASE WHEN LOWER((SELECT value FROM ticket_statuses WHERE id = ${tickets.status_id})) IN ('in_progress','escalated') THEN 1 ELSE 0 END)`,
+        awaitingStudent: sql<number>`SUM(CASE WHEN LOWER((SELECT value FROM ticket_statuses WHERE id = ${tickets.status_id}))='awaiting_student' THEN 1 ELSE 0 END)`,
+        resolved: sql<number>`SUM(CASE WHEN LOWER((SELECT value FROM ticket_statuses WHERE id = ${tickets.status_id}))='resolved' THEN 1 ELSE 0 END)`,
         escalated: sql<number>`SUM(CASE WHEN ${tickets.escalation_level} > 0 THEN 1 ELSE 0 END)`,
       })
       .from(tickets)
       .where(eq(tickets.created_by, dbUser.id)),
     
     // Fetch categories hierarchy and statuses for search UI
-    getCategoriesHierarchy(),
-    getTicketStatuses(),
+    getCategoriesHierarchy().catch(() => []),
+    getTicketStatuses().catch(() => []),
   ]);
   
-  // Map to TicketCard format
-  const allTickets = allTicketsRaw.map((ticket) => ({
-    ...ticket,
-    creator_name: [ticket.creator_first_name, ticket.creator_last_name].filter(Boolean).join(" ").trim() || null,
-    rating: null,
-    feedback_type: null,
-    rating_submitted: null,
-    feedback: null,
-    admin_link: null,
-    student_link: null,
-    slack_thread_id: null,
-    external_ref: null,
-  }));
+  // Helper function to recursively sanitize objects for serialization
+  const sanitizeForSerialization = (obj: unknown): unknown => {
+    if (obj === null || obj === undefined) {
+      return null;
+    }
+    if (typeof obj !== 'object') {
+      return obj;
+    }
+    if (Array.isArray(obj)) {
+      return obj.map(sanitizeForSerialization).filter((item) => item !== undefined);
+    }
+    const sanitized: Record<string, unknown> = {};
+    const objRecord = obj as Record<string, unknown>;
+    for (const key in objRecord) {
+      if (Object.prototype.hasOwnProperty.call(objRecord, key)) {
+        const value = objRecord[key];
+        if (value !== undefined) {
+          sanitized[key] = sanitizeForSerialization(value);
+        }
+      }
+    }
+    return sanitized;
+  };
+
+  // Ensure categoryList and ticketStatuses are arrays (safety check)
+  // Also ensure they are properly serializable (no undefined/null values in nested objects)
+  const categoryList = Array.isArray(categoryListResult) 
+    ? categoryListResult.map((cat) => {
+        if (!cat || typeof cat !== 'object') return null;
+        const sanitized = sanitizeForSerialization({
+          value: cat.value ?? '',
+          label: cat.label ?? '',
+          id: cat.id ?? 0,
+          subcategories: Array.isArray(cat.subcategories) 
+            ? cat.subcategories.map((sub) => ({
+                value: sub.value ?? '',
+                label: sub.label ?? '',
+                id: sub.id ?? 0,
+                sub_subcategories: Array.isArray(sub.sub_subcategories)
+                  ? sub.sub_subcategories.map((ss) => ({
+                      value: ss.value ?? '',
+                      label: ss.label ?? '',
+                      id: ss.id ?? 0,
+                    }))
+                  : [],
+                fields: Array.isArray(sub.fields)
+                  ? sub.fields.map((f) => ({
+                      id: f.id ?? 0,
+                      name: f.name ?? '',
+                      slug: f.slug ?? '',
+                      type: f.type ?? 'text',
+                      options: Array.isArray(f.options)
+                        ? f.options.map((o) => ({
+                            label: o.label ?? '',
+                            value: o.value ?? '',
+                          }))
+                        : [],
+                    }))
+                  : [],
+              }))
+            : [],
+        });
+        return sanitized;
+      }).filter(Boolean) as Array<{ value: string; label: string; id: number; subcategories: Array<{ value: string; label: string; id: number; sub_subcategories: Array<{ value: string; label: string; id: number }>; fields: Array<{ id: number; name: string; slug: string; type: string; options: Array<{ label: string; value: string }> }> }> }>
+    : [];
+  
+  const ticketStatuses = Array.isArray(ticketStatusesResult)
+    ? ticketStatusesResult.map((status) => {
+        if (!status || typeof status !== 'object') return null;
+        return sanitizeForSerialization({
+          id: status.id ?? 0,
+          value: status.value ?? '',
+          label: status.label ?? '',
+          description: status.description ?? null,
+          progress_percent: status.progress_percent ?? 0,
+          badge_color: status.badge_color ?? null,
+          is_active: status.is_active ?? true,
+          is_final: status.is_final ?? false,
+          display_order: status.display_order ?? 0,
+        });
+      }).filter(Boolean) as Array<{ id: number; value: string; label: string; description: string | null; progress_percent: number; badge_color: string | null; is_active: boolean; is_final: boolean; display_order: number }>
+    : [];
+  
+  // Convert Date objects to ISO strings for serialization
+  const serializeDate = (date: Date | string | null | undefined): string | null => {
+    if (!date) return null;
+    if (date instanceof Date) {
+      return date.toISOString();
+    }
+    if (typeof date === 'string') {
+      return date;
+    }
+    return null;
+  };
+
+  const allTickets = (Array.isArray(allTicketsRaw) ? allTicketsRaw : []).map((ticket) => {
+    // Ensure ticket is a valid object
+    if (!ticket || typeof ticket !== 'object') {
+      return null;
+    }
+    
+    // Ensure metadata is a valid object (not null/undefined)
+    let safeMetadata: Record<string, unknown> = {};
+    try {
+      if (ticket.metadata !== null && ticket.metadata !== undefined) {
+        if (typeof ticket.metadata === 'object') {
+          // Deep clone and ensure all values are serializable
+          safeMetadata = JSON.parse(JSON.stringify(ticket.metadata));
+        }
+      }
+    } catch {
+      // If metadata can't be serialized, use empty object
+      safeMetadata = {};
+    }
+    
+    return {
+      id: ticket.id ?? null,
+      title: ticket.title ?? null,
+      description: ticket.description ?? null,
+      location: ticket.location ?? null,
+      status: ticket.status ?? null,
+      category_id: ticket.category_id ?? null,
+      subcategory_id: ticket.subcategory_id ?? null,
+      sub_subcategory_id: ticket.sub_subcategory_id ?? null,
+      created_by: ticket.created_by ?? null,
+      assigned_to: ticket.assigned_to ?? null,
+      escalation_level: Number(ticket.escalation_level) || 0,
+      acknowledgement_due_at: serializeDate(ticket.acknowledgement_due_at),
+      resolution_due_at: serializeDate(ticket.resolution_due_at),
+      metadata: safeMetadata,
+      created_at: serializeDate(ticket.created_at),
+      updated_at: serializeDate(ticket.updated_at),
+      category_name: ticket.category_name ?? null,
+      creator_name: ticket.creator_full_name ?? null,
+      creator_email: ticket.creator_email ?? null,
+      rating: null,
+      feedback_type: null,
+      rating_submitted: null,
+      feedback: null,
+      admin_link: null,
+      student_link: null,
+      slack_thread_id: null,
+      external_ref: null,
+    };
+  }).filter((ticket): ticket is NonNullable<typeof ticket> => ticket !== null); // Remove any null entries
 
   // Pagination calculations
   const totalCount = Number(countResult[0]?.count || 0);
@@ -265,7 +395,55 @@ export default async function StudentDashboardPage({
   const startIndex = totalCount > 0 ? offset + 1 : 0;
   const endIndex = Math.min(offset + allTickets.length, totalCount);
 
-  const stats = statsResult[0];
+  // Ensure stats is a valid object with default values
+  const stats = statsResult[0] || {
+    total: 0,
+    open: 0,
+    inProgress: 0,
+    awaitingStudent: 0,
+    resolved: 0,
+    escalated: 0,
+  };
+
+  // Ensure stats values are numbers (not null/undefined)
+  const safeStats = {
+    total: Number(stats.total) || 0,
+    open: Number(stats.open) || 0,
+    inProgress: Number(stats.inProgress) || 0,
+    awaitingStudent: Number(stats.awaitingStudent) || 0,
+    resolved: Number(stats.resolved) || 0,
+    escalated: Number(stats.escalated) || 0,
+  };
+
+  // Test serialization before rendering to catch any issues early
+  try {
+    JSON.stringify({
+      allTickets,
+      categoryList,
+      ticketStatuses,
+      safeStats,
+      totalCount,
+      totalPages,
+      hasNextPage,
+      hasPrevPage,
+      startIndex,
+      endIndex,
+      sortBy,
+    });
+  } catch (serializationError) {
+    console.error('[StudentDashboardPage] Serialization error:', serializationError);
+    // Return error UI if serialization fails
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center space-y-4">
+          <h2 className="text-2xl font-bold text-destructive">Data Error</h2>
+          <p className="text-muted-foreground">
+            There was an error preparing the dashboard data. Please try refreshing the page.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   // -----------------------------
   // 7. UI Render
@@ -294,9 +472,9 @@ export default async function StudentDashboardPage({
       </div>
 
       {/* Stats */}
-      {stats.total > 0 && (
+      {safeStats && typeof safeStats === 'object' && 'total' in safeStats && safeStats.total > 0 && (
         <Suspense fallback={<div className="h-32 animate-pulse bg-muted rounded-lg" />}>
-          <StatsCards stats={stats} />
+          <StatsCards stats={safeStats} />
         </Suspense>
       )}
 
@@ -306,7 +484,7 @@ export default async function StudentDashboardPage({
           <Suspense fallback={<div className="h-20 animate-pulse bg-muted rounded-lg" />}>
             <TicketSearchWrapper
               categories={categoryList}
-              currentSort={sortBy}
+              currentSort={sortBy || 'newest'}
               statuses={ticketStatuses}
             />
           </Suspense>
@@ -343,7 +521,7 @@ export default async function StudentDashboardPage({
             {allTickets.map((ticket) => (
               <TicketCard 
                 key={ticket.id} 
-                ticket={ticket} 
+                ticket={ticket as unknown as Ticket & { status?: string | null; category_name?: string | null; creator_name?: string | null; creator_email?: string | null }} 
               />
             ))}
           </div>
@@ -364,4 +542,17 @@ export default async function StudentDashboardPage({
       )}
     </div>
   );
+  } catch (error) {
+    console.error('[StudentDashboardPage] Error:', error);
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center space-y-4">
+          <h2 className="text-2xl font-bold text-destructive">Error Loading Dashboard</h2>
+          <p className="text-muted-foreground">
+            There was an error loading your dashboard. Please try refreshing the page.
+          </p>
+        </div>
+      </div>
+    );
+  }
 }

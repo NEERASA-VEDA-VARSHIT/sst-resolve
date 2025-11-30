@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { 
-  Bell, 
   Users, 
   Settings, 
   Info, 
@@ -18,18 +17,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
-
-interface NotificationSettings {
-  slack_enabled: boolean;
-  email_enabled: boolean;
-  tat_reminders_enabled: boolean;
-  committee_notifications_enabled: boolean;
-  slack_config: {
-    hostel_channel?: string;
-    college_channel?: string;
-    committee_channel?: string;
-  };
-}
 
 interface Category {
   id: number;
@@ -49,8 +36,7 @@ interface Assignment {
   priority: number;
   user: {
     id: string;
-    first_name: string | null;
-    last_name: string | null;
+    full_name: string | null;
     email: string;
   };
 }
@@ -58,7 +44,6 @@ interface Assignment {
 export function TicketAssignmentManager() {
   const [activeTab, setActiveTab] = useState("overview");
   const [loading, setLoading] = useState(true);
-  const [notificationSettings, setNotificationSettings] = useState<NotificationSettings | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
 
   useEffect(() => {
@@ -68,19 +53,17 @@ export function TicketAssignmentManager() {
   async function fetchData() {
     try {
       setLoading(true);
-      
-      // Fetch notification settings
-      const notifResponse = await fetch("/api/superadmin/settings/notifications");
-      if (notifResponse.ok) {
-        const notifData = await notifResponse.json();
-        setNotificationSettings(notifData);
-      }
 
       // Fetch categories
       const catResponse = await fetch("/api/admin/categories");
       if (catResponse.ok) {
-        const catData = await catResponse.json();
-        setCategories(catData.categories || []);
+        const contentType = catResponse.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const catData = await catResponse.json();
+          setCategories(catData.categories || []);
+        } else {
+          console.error("Server returned non-JSON response when fetching categories");
+        }
       }
     } catch (error) {
       console.error("Error fetching data:", error);
@@ -100,10 +83,9 @@ export function TicketAssignmentManager() {
 
   return (
     <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-      <TabsList className="grid w-full grid-cols-3">
+      <TabsList className="grid w-full grid-cols-2">
         <TabsTrigger value="overview">Overview</TabsTrigger>
         <TabsTrigger value="assignments">Admin Assignments</TabsTrigger>
-        <TabsTrigger value="notifications">Notifications</TabsTrigger>
       </TabsList>
 
       <TabsContent value="overview" className="space-y-6">
@@ -223,12 +205,10 @@ export function TicketAssignmentManager() {
               <CardTitle className="text-sm font-medium text-muted-foreground">Notifications</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
-                {notificationSettings?.slack_enabled && notificationSettings?.email_enabled ? "Both" : 
-                 notificationSettings?.slack_enabled ? "Slack" :
-                 notificationSettings?.email_enabled ? "Email" : "None"}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">Active channels</p>
+              <div className="text-2xl font-bold">Auto</div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Slack + email configured via environment
+              </p>
             </CardContent>
           </Card>
 
@@ -238,16 +218,8 @@ export function TicketAssignmentManager() {
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2">
-                {notificationSettings?.slack_enabled || notificationSettings?.email_enabled ? (
-                  <CheckCircle2 className="w-5 h-5 text-green-500" />
-                ) : (
-                  <AlertCircle className="w-5 h-5 text-amber-500" />
-                )}
-                <span className="text-sm font-medium">
-                  {notificationSettings?.slack_enabled || notificationSettings?.email_enabled 
-                    ? "Configured" 
-                    : "Not Configured"}
-                </span>
+                <CheckCircle2 className="w-5 h-5 text-green-500" />
+                <span className="text-sm font-medium">Always on</span>
               </div>
             </CardContent>
           </Card>
@@ -292,67 +264,6 @@ export function TicketAssignmentManager() {
         </Card>
       </TabsContent>
 
-      <TabsContent value="notifications" className="space-y-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Notification Settings</CardTitle>
-            <CardDescription>
-              Configure Slack and email notifications for ticket events
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button asChild>
-              <Link href="/superadmin/settings/notifications">
-                <Bell className="w-4 h-4 mr-2" />
-                Open Notification Settings
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-
-        {notificationSettings && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Current Settings</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Slack Notifications</span>
-                <Badge variant={notificationSettings.slack_enabled ? "default" : "secondary"}>
-                  {notificationSettings.slack_enabled ? "Enabled" : "Disabled"}
-                </Badge>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Email Notifications</span>
-                <Badge variant={notificationSettings.email_enabled ? "default" : "secondary"}>
-                  {notificationSettings.email_enabled ? "Enabled" : "Disabled"}
-                </Badge>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">TAT Reminders</span>
-                <Badge variant={notificationSettings.tat_reminders_enabled ? "default" : "secondary"}>
-                  {notificationSettings.tat_reminders_enabled ? "Enabled" : "Disabled"}
-                </Badge>
-              </div>
-              {notificationSettings.slack_config && (
-                <div className="pt-4 border-t space-y-2">
-                  <p className="text-sm font-medium">Slack Channels:</p>
-                  {notificationSettings.slack_config.hostel_channel && (
-                    <div className="text-sm text-muted-foreground">
-                      Hostel: <code className="bg-muted px-1 py-0.5 rounded">{notificationSettings.slack_config.hostel_channel}</code>
-                    </div>
-                  )}
-                  {notificationSettings.slack_config.college_channel && (
-                    <div className="text-sm text-muted-foreground">
-                      College: <code className="bg-muted px-1 py-0.5 rounded">{notificationSettings.slack_config.college_channel}</code>
-                    </div>
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
-      </TabsContent>
     </Tabs>
   );
 }

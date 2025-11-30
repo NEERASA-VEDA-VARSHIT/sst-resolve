@@ -1,198 +1,125 @@
-import 'server-only';
+import "server-only";
+import { getCanonicalStatus } from "@/conf/constants";
 import { db } from "@/db";
-import { ticket_statuses, tickets } from "@/db/schema";
-import { asc, eq, sql } from "drizzle-orm";
-import { unstable_cache } from "next/cache";
-import type { TicketStatus } from "./types";
+import { tickets, ticket_statuses } from "@/db/schema";
+import { sql, eq } from "drizzle-orm";
 
-// Re-export the type for convenience
-export type { TicketStatus } from "./types";
+// Type for ticket status values (matches database values)
+export type TicketStatus =
+	| "open"
+	| "in_progress"
+	| "awaiting_student"
+	| "reopened"
+	| "escalated"
+	| "forwarded"
+	| "resolved";
 
 /**
- * Fetch all active ticket statuses from the database, ordered by display_order
- * Results are cached for 5 minutes to reduce database load
+ * Get all ticket statuses from database
  */
-export const getTicketStatuses = unstable_cache(
-    async (): Promise<TicketStatus[]> => {
-        try {
-            const statuses = await db
-                .select({
-                    id: ticket_statuses.id,
-                    value: ticket_statuses.value,
-                    label: ticket_statuses.label,
-                    description: ticket_statuses.description,
-                    progress_percent: ticket_statuses.progress_percent,
-                    badge_color: ticket_statuses.badge_color,
-                    is_active: ticket_statuses.is_active,
-                    is_final: ticket_statuses.is_final,
-                    display_order: ticket_statuses.display_order,
-                })
-                .from(ticket_statuses)
-                .where(eq(ticket_statuses.is_active, true))
-                .orderBy(asc(ticket_statuses.display_order));
+export async function getTicketStatuses(): Promise<Array<{
+    id: number;
+    value: string;
+    label: string;
+    description: string | null;
+    progress_percent: number | null;
+    badge_color: string | null;
+    is_active: boolean | null;
+    is_final: boolean | null;
+    display_order: number | null;
+}>> {
+    return await db
+        .select()
+        .from(ticket_statuses)
+        .where(eq(ticket_statuses.is_active, true))
+        .orderBy(ticket_statuses.display_order);
+}
 
-            return statuses;
-        } catch (error) {
-            console.error("[getTicketStatuses] Failed to fetch ticket statuses:", error);
-            // Return fallback statuses to prevent catastrophic failure
-            return [
-                {
-                    id: 1,
-                    value: "OPEN",
-                    label: "Open",
-                    description: "New ticket",
-                    progress_percent: 10,
-                    badge_color: "default",
-                    is_active: true,
-                    is_final: false,
-                    display_order: 1,
-                },
-                {
-                    id: 2,
-                    value: "IN_PROGRESS",
-                    label: "In Progress",
-                    description: "Being worked on",
-                    progress_percent: 50,
-                    badge_color: "secondary",
-                    is_active: true,
-                    is_final: false,
-                    display_order: 2,
-                },
-                {
-                    id: 3,
-                    value: "RESOLVED",
-                    label: "Resolved",
-                    description: "Issue resolved",
-                    progress_percent: 100,
-                    badge_color: "default",
-                    is_active: true,
-                    is_final: true,
-                    display_order: 3,
-                },
-            ];
-        }
-    },
-    ["ticket-statuses"],
-    {
-        revalidate: 300, // Cache for 5 minutes
-        tags: ["ticket-statuses"],
+export async function getTicketStatusByValue(value: string): Promise<{
+    id: number;
+    value: string;
+    label: string;
+    description: string | null;
+    progress_percent: number | null;
+    badge_color: string | null;
+    is_active: boolean | null;
+    is_final: boolean | null;
+    display_order: number | null;
+} | null> {
+    const canonical = getCanonicalStatus(value);
+    if (!canonical) return null;
+    
+    const [status] = await db
+        .select()
+        .from(ticket_statuses)
+        .where(eq(ticket_statuses.value, canonical))
+        .limit(1);
+    
+    return status ?? null;
+}
+
+/**
+ * Get status_id from status value (helper for updates)
+ */
+export async function getStatusIdByValue(value: string): Promise<number | null> {
+    const status = await getTicketStatusByValue(value);
+    return status?.id ?? null;
+}
+
+export function buildProgressMap(
+    statuses: Awaited<ReturnType<typeof getTicketStatuses>> = []
+): Record<string, number> {
+    // Safety check: ensure statuses is a valid array
+    if (!Array.isArray(statuses) || statuses.length === 0) {
+        return {};
     }
-);
-
-/**
- * Get a specific status by its value
- */
-export async function getTicketStatusByValue(value: string): Promise<TicketStatus | null> {
     try {
-        const [status] = await db
-            .select({
-                id: ticket_statuses.id,
-                value: ticket_statuses.value,
-                label: ticket_statuses.label,
-                description: ticket_statuses.description,
-                progress_percent: ticket_statuses.progress_percent,
-                badge_color: ticket_statuses.badge_color,
-                is_active: ticket_statuses.is_active,
-                is_final: ticket_statuses.is_final,
-                display_order: ticket_statuses.display_order,
-            })
-            .from(ticket_statuses)
-            .where(eq(ticket_statuses.value, value))
-            .limit(1);
-
-        return status || null;
+        return Object.fromEntries(
+            statuses
+                .filter((status) => status && typeof status === 'object' && status.value && (typeof status.progress_percent === 'number' || status.progress_percent !== null))
+                .map((status) => [status.value, status.progress_percent ?? 0])
+        ) as Record<string, number>;
     } catch (error) {
-        console.error(`[getTicketStatusByValue] Failed to fetch status ${value}:`, error);
-        return null;
+        console.error('[buildProgressMap] Error building progress map:', error);
+        return {};
     }
 }
 
-/**
- * Build a progress map from statuses array
- * Returns object like { "OPEN": 10, "IN_PROGRESS": 50, ... }
- */
-export function buildProgressMap(statuses: TicketStatus[]): Record<string, number> {
-    return Object.fromEntries(
-        statuses.map(s => [s.value.toLowerCase(), s.progress_percent])
-    );
-}
-
-/**
- * Build a badge color map from statuses array
- * Returns object like { "OPEN": "default", "IN_PROGRESS": "secondary", ... }
- */
-export function buildBadgeColorMap(statuses: TicketStatus[]): Record<string, string> {
-    return Object.fromEntries(
-        statuses.map(s => [s.value, s.badge_color || "default"])
-    );
-}
-
-/**
- * Get all ticket statuses including inactive ones (for admin/super-admin)
- * No caching - always fetches latest data
- */
-export async function getAllTicketStatuses(): Promise<TicketStatus[]> {
+export function buildBadgeColorMap(
+    statuses: Awaited<ReturnType<typeof getTicketStatuses>> = []
+): Record<string, string> {
+    // Safety check: ensure statuses is a valid array
+    if (!Array.isArray(statuses) || statuses.length === 0) {
+        return {};
+    }
     try {
-        const statuses = await db
-            .select({
-                id: ticket_statuses.id,
-                value: ticket_statuses.value,
-                label: ticket_statuses.label,
-                description: ticket_statuses.description,
-                progress_percent: ticket_statuses.progress_percent,
-                badge_color: ticket_statuses.badge_color,
-                is_active: ticket_statuses.is_active,
-                is_final: ticket_statuses.is_final,
-                display_order: ticket_statuses.display_order,
-            })
-            .from(ticket_statuses)
-            .orderBy(asc(ticket_statuses.display_order));
-
-        return statuses;
+        return Object.fromEntries(
+            statuses
+                .filter((status) => status && typeof status === 'object' && status.value)
+                .map((status) => [status.value, status.badge_color || "default"])
+        );
     } catch (error) {
-        console.error("[getAllTicketStatuses] Failed to fetch all ticket statuses:", error);
-        return [];
+        console.error('[buildBadgeColorMap] Error building badge color map:', error);
+        return {};
     }
 }
 
-/**
- * Get count of tickets using a specific status value
- */
+export async function getAllTicketStatuses(): Promise<Awaited<ReturnType<typeof getTicketStatuses>>> {
+    return getTicketStatuses();
+}
+
 export async function getTicketCountByStatus(statusValue: string): Promise<number> {
-    try {
-        const [result] = await db
-            .select({ count: sql<number>`count(*)` })
-            .from(tickets)
-            .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
-            .where(eq(ticket_statuses.value, statusValue));
+    const canonical = getCanonicalStatus(statusValue);
+    if (!canonical) return 0;
 
-        return result?.count || 0;
-    } catch (error) {
-        console.error(`[getTicketCountByStatus] Failed to count tickets for status ${statusValue}:`, error);
-        return 0;
-    }
-}
+    // Get status_id from ticket_statuses
+    const status = await getTicketStatusByValue(canonical);
+    if (!status) return 0;
 
-/**
- * Check if a status can be safely deleted
- * Returns count of tickets using this status
- */
-export async function canDeleteStatus(statusId: number): Promise<{ canDelete: boolean; ticketCount: number }> {
-    try {
-        // Check directly by ID which is faster and safer
-        const [result] = await db
-            .select({ count: sql<number>`count(*)` })
-            .from(tickets)
-            .where(eq(tickets.status_id, statusId));
+    const [result] = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(tickets)
+        .where(eq(tickets.status_id, status.id));
 
-        const ticketCount = result?.count || 0;
-
-        return {
-            canDelete: ticketCount === 0,
-            ticketCount,
-        };
-    } catch (error) {
-        console.error(`[canDeleteStatus] Failed to check if status ${statusId} can be deleted:`, error);
-        return { canDelete: false, ticketCount: 0 };
-    }
+    return result?.count || 0;
 }

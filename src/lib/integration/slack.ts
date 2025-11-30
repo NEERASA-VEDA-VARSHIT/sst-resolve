@@ -24,11 +24,12 @@ const SLACK_CHANNELS: Record<"Hostel" | "College" | "Committee", string> = {
 };
 
 export async function postToSlackChannel(
-    category: "Hostel" | "College" | "Committee",
+    category: "Hostel" | "College" | "Committee" | string, // Allow any string for flexibility
     text: string,
     ticketId?: number,
     ccUserIds?: string[],
-    channelOverride?: string
+    channelOverride?: string,
+    threadTs?: string // Support posting to existing thread
 ): Promise<string | null> {
 	console.log("[Slack] Preparing message", {
 		category,
@@ -48,9 +49,31 @@ export async function postToSlackChannel(
 		return null;
 	}
 
-	const channel = channelOverride || SLACK_CHANNELS[category];
+	// Use channelOverride if provided, otherwise try to get from category mapping
+	// If channelOverride is explicitly provided (even if empty string), use it
+	// Otherwise, fall back to category-based mapping
+	let channel: string | null = null;
+	
+	if (channelOverride) {
+		channel = channelOverride;
+	} else if (category && typeof category === 'string') {
+		// Try exact match first
+		if (category in SLACK_CHANNELS) {
+			channel = SLACK_CHANNELS[category as keyof typeof SLACK_CHANNELS];
+		} else {
+			// Try case-insensitive match
+			const categoryLower = category.toLowerCase();
+			const matchingKey = Object.keys(SLACK_CHANNELS).find(
+				key => key.toLowerCase() === categoryLower
+			) as keyof typeof SLACK_CHANNELS | undefined;
+			if (matchingKey) {
+				channel = SLACK_CHANNELS[matchingKey];
+			}
+		}
+	}
+	
 	if (!channel) {
-		console.warn("[Slack] No channel configured for category", { category, channelOverride });
+		console.warn("[Slack] No channel configured", { category, channelOverride, availableChannels: Object.keys(SLACK_CHANNELS) });
 		return null;
 	}
 
@@ -157,6 +180,7 @@ export async function postToSlackChannel(
 			channel: normalizedChannel,
 			category,
 			ticketId,
+			threadTs,
 			ccCount: ccUserIds?.length || 0,
 			textLength: text.length,
 		});
@@ -164,6 +188,7 @@ export async function postToSlackChannel(
 			channel: normalizedChannel,
             text: `${text}${ccSuffix}`,
 			blocks,
+			...(threadTs ? { thread_ts: threadTs } : {}), // Post to thread if threadTs provided
 		});
 		
 		const messageTs = result.ts || null;

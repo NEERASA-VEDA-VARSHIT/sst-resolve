@@ -2,7 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { db } from "@/db";
-import { tickets, categories, users, domains, scopes, ticket_statuses } from "@/db/schema";
+import { tickets, categories, users, domains, scopes, admin_profiles, ticket_statuses } from "@/db/schema";
 import { eq, or, isNull, desc, sql, and, gte } from "drizzle-orm";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -51,14 +51,15 @@ export default async function AdminAnalyticsPage({
   const [currentStaff] = await db
     .select({
       id: users.id,
-      full_name: sql<string>`TRIM(CONCAT(COALESCE(${users.first_name}, ''), ' ', COALESCE(${users.last_name}, '')))`,
+      full_name: users.full_name,
       email: users.email,
       domain: domains.name,
       scope: scopes.name,
     })
     .from(users)
-    .leftJoin(domains, eq(users.primary_domain_id, domains.id))
-    .leftJoin(scopes, eq(users.primary_scope_id, scopes.id))
+    .leftJoin(admin_profiles, eq(admin_profiles.user_id, users.id))
+    .leftJoin(domains, eq(admin_profiles.primary_domain_id, domains.id))
+    .leftJoin(scopes, eq(admin_profiles.primary_scope_id, scopes.id))
     .where(eq(users.id, dbUser.id))
     .limit(1);
 

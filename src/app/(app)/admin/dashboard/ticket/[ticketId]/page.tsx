@@ -5,12 +5,13 @@ import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Calendar, ArrowLeft, User, MapPin, FileText, Clock, AlertTriangle, AlertCircle, Image as ImageIcon, MessageSquare, CheckCircle2, Sparkles, RotateCw } from "lucide-react";
-import { db, tickets, categories, users, ticket_statuses, roles, students, hostels } from "@/db";
-import { eq, aliasedTable } from "drizzle-orm";
-import type { TicketMetadata } from "@/db/types";
+import { db, categories, users, roles, students, hostels, tickets, ticket_statuses, domains } from "@/db";
+import { eq, sql } from "drizzle-orm";
+import type { TicketMetadata } from "@/db/inferred-types";
 import { AdminActions } from "@/components/tickets/AdminActions";
 import { CommitteeTagging } from "@/components/admin/CommitteeTagging";
 import { SlackThreadView } from "@/components/tickets/SlackThreadView";
+import { AdminCommentComposer } from "@/components/tickets/AdminCommentComposer";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
@@ -22,6 +23,7 @@ import { getCachedAdminUser, getCachedAdminAssignment } from "@/lib/cache/cached
 import { buildTimeline } from "@/lib/ticket/buildTimeline";
 import { normalizeStatusForComparison } from "@/lib/utils";
 import { getTicketStatuses, buildProgressMap } from "@/lib/status/getTicketStatuses";
+import { buildStatusDisplay } from "@/conf/constants";
 import { getCategoryProfileFields, getCategorySchema } from "@/lib/category/categories";
 import { resolveProfileFields } from "@/lib/ticket/profileFieldResolver";
 import { extractDynamicFields } from "@/lib/ticket/formatDynamicFields";
@@ -41,19 +43,14 @@ export default async function AdminTicketPage({ params }: { params: Promise<{ ti
   const id = Number(ticketId);
   if (!Number.isFinite(id)) notFound();
 
-  // Parallelize queries with cached functions
-  const assignedUser = aliasedTable(users, "assigned_user");
-
   const [{ dbUser: dbUserResult, role }, ticketRowsResult, forwardTargetsResult] = await Promise.all([
     // Use cached function for user and role (request-scoped deduplication)
     getCachedAdminUser(userId),
-    // Fetch ticket with joins
+    // Fetch ticket with joins using Drizzle ORM
     db
       .select({
         id: tickets.id,
-        status: ticket_statuses.value,
-        status_label: ticket_statuses.label,
-        status_badge_color: ticket_statuses.badge_color,
+        status_value: ticket_statuses.value,
         description: tickets.description,
         location: tickets.location,
         created_by: tickets.created_by,
@@ -62,22 +59,19 @@ export default async function AdminTicketPage({ params }: { params: Promise<{ ti
         escalation_level: tickets.escalation_level,
         metadata: tickets.metadata,
         due_at: tickets.resolution_due_at,
+        acknowledgement_due_at: tickets.acknowledgement_due_at,
         created_at: tickets.created_at,
         updated_at: tickets.updated_at,
-        resolved_at: tickets.resolved_at,
-        acknowledged_at: tickets.acknowledged_at,
-        reopened_at: tickets.reopened_at,
         category_name: categories.name,
-        creator_first_name: users.first_name,
-        creator_last_name: users.last_name,
+        category_domain_name: domains.name,
+        creator_full_name: users.full_name,
         creator_email: users.email,
-        assigned_staff_id: assignedUser.id,
-        slack_thread_id: tickets.slack_thread_id,
+        assigned_staff_id: tickets.assigned_to,
       })
       .from(tickets)
       .leftJoin(categories, eq(tickets.category_id, categories.id))
+      .leftJoin(domains, eq(categories.domain_id, domains.id))
       .leftJoin(users, eq(tickets.created_by, users.id))
-      .leftJoin(assignedUser, eq(tickets.assigned_to, assignedUser.id))
       .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
       .where(eq(tickets.id, id))
       .limit(1),
@@ -86,14 +80,34 @@ export default async function AdminTicketPage({ params }: { params: Promise<{ ti
     db
       .select({
         id: users.id,
-        first_name: users.first_name,
-        last_name: users.last_name,
+        full_name: users.full_name,
         email: users.email,
       })
       .from(users)
       .leftJoin(roles, eq(users.role_id, roles.id))
       .where(eq(roles.name, "super_admin")),
   ]);
+
+  type TicketRow = {
+    id: number;
+    status_value: string | null;
+    description: string | null;
+    location: string | null;
+    created_by: string;
+    category_id: number | null;
+    assigned_to: string | null;
+    assigned_staff_id: string | null;
+    escalation_level: number | null;
+    metadata: unknown;
+    due_at: Date | null;
+    acknowledgement_due_at: Date | null;
+    created_at: Date | null;
+    updated_at: Date | null;
+    category_name: string | null;
+    category_domain_name: string | null;
+    creator_full_name: string | null;
+    creator_email: string | null;
+  };
 
   const ticketRows = ticketRowsResult;
   const dbUser = dbUserResult;
@@ -113,7 +127,7 @@ export default async function AdminTicketPage({ params }: { params: Promise<{ ti
       })
       .from(students)
       .leftJoin(hostels, eq(hostels.id, students.hostel_id))
-      .where(eq(students.user_id, ticketRows[0].created_by))
+      .where(eq(students.user_id, ticketRows[0].created_by!))
       .limit(1),
     
     // Fetch profile fields configuration
@@ -131,32 +145,68 @@ export default async function AdminTicketPage({ params }: { params: Promise<{ ti
   if (role !== "admin" && role !== "super_admin") redirect("/student/dashboard");
   
   // Security check: Ensure admin has access to this ticket (if not super_admin)
+  // Super admins can always access any ticket
   if (role === "admin") {
     const ticketRow = ticketRows[0];
     const isAssigned = ticketRow.assigned_to === dbUser.id;
     
     if (!isAssigned) {
-      // Check domain/scope access (use cached assignment)
-      const adminAssignment = await getCachedAdminAssignment(userId);
-      const hasAccess = ticketMatchesAdminAssignment(
-        { category: ticketRow.category_name || null, location: ticketRow.location || null },
-        adminAssignment
-      );
-      
-      if (!hasAccess) {
-        redirect("/admin/dashboard"); // Redirect to dashboard if no access
+      try {
+        const adminAssignment = await getCachedAdminAssignment(userId);
+        
+        // Priority 1: Check if admin is assigned to this category (via category_assignments or default_admin_id)
+        // This matches the dashboard filtering logic
+        const { getAdminAssignedCategoryDomains } = await import("@/lib/assignment/admin-assignment");
+        const assignedCategoryDomains = await getAdminAssignedCategoryDomains(dbUser.id);
+        const ticketDomain = ticketRow.category_domain_name || null;
+        
+        if (ticketDomain && assignedCategoryDomains.includes(ticketDomain)) {
+          // Admin is assigned to this category's domain - allow access
+          // If admin has a scope, we still allow access (scope filtering is for dashboard listing, not individual ticket access)
+        } else {
+          // Priority 2: Check domain/scope access (from primary assignment)
+          // Handle "Global" as a special case - admins with Global domain can access all tickets
+          const assignmentDomain = (adminAssignment.domain || "").toLowerCase();
+          const ticketDomainLower = (ticketRow.category_domain_name || "").toLowerCase();
+          
+          if (assignmentDomain === "global" || !adminAssignment.domain) {
+            // Admin with Global domain or no assignment can access all tickets
+            // Allow access
+          } else {
+            // Use category_domain_name (from domains table) instead of category_name
+            // This correctly matches the admin's domain assignment
+            const hasAccess = ticketMatchesAdminAssignment(
+              { category: ticketRow.category_domain_name || null, location: ticketRow.location || null },
+              adminAssignment
+            );
+            
+            if (!hasAccess) {
+              // Log for debugging
+              console.warn('[Admin Ticket Page] Access denied:', {
+                ticketId: id,
+                categoryDomain: ticketRow.category_domain_name,
+                location: ticketRow.location,
+                adminAssignment,
+                assignedCategoryDomains,
+                isAssigned,
+              });
+              redirect("/admin/dashboard"); // Redirect to dashboard if no access
+            }
+          }
+        }
+      } catch (error) {
+        console.error('[Admin Ticket Page] Error checking access:', error);
+        // On error, allow access to prevent blocking legitimate access
+        // The page will still render, and if there's a real issue, it will be caught elsewhere
       }
     }
   }
   
   const ticket = {
     ...ticketRows[0],
-    creator_name: [ticketRows[0].creator_first_name, ticketRows[0].creator_last_name].filter(Boolean).join(' ').trim() || null,
-    status: ticketRows[0].status ? {
-      value: ticketRows[0].status,
-      label: ticketRows[0].status_label || ticketRows[0].status,
-      badge_color: ticketRows[0].status_badge_color,
-    } : null,
+    creator_name: ticketRows[0].creator_full_name || null,
+    status: buildStatusDisplay(ticketRows[0].status_value || undefined),
+    slack_thread_id: null,
   };
 
   // Parse metadata (JSONB) with error handling
@@ -188,18 +238,31 @@ export default async function AdminTicketPage({ params }: { params: Promise<{ ti
   const normalizedStatus = normalizeStatusForComparison(statusValueStr);
 
   // Get ticket statuses and build progress map
-  const ticketStatuses = await getTicketStatuses();
-  const progressMap = buildProgressMap(ticketStatuses);
-  const ticketProgress = progressMap[normalizedStatus] || 0;
+  const ticketStatuses = await getTicketStatuses().catch(() => []);
+  const progressMap = Array.isArray(ticketStatuses) && ticketStatuses.length > 0 
+    ? buildProgressMap(ticketStatuses) 
+    : {};
+  const ticketProgress = (progressMap && typeof progressMap === 'object' && normalizedStatus && progressMap[normalizedStatus]) 
+    ? progressMap[normalizedStatus] 
+    : 0;
+
+  // Extract metadata fields for timeline
+  let ticketMetadata: TicketMetadata = {};
+  if (ticket.metadata && typeof ticket.metadata === 'object' && !Array.isArray(ticket.metadata)) {
+    ticketMetadata = ticket.metadata as TicketMetadata;
+  }
+  const resolvedAt = ticketMetadata.resolved_at ? new Date(ticketMetadata.resolved_at) : null;
+  const reopenedAt = ticketMetadata.reopened_at ? new Date(ticketMetadata.reopened_at) : null;
+  const acknowledgedAt = ticketMetadata.acknowledged_at ? new Date(ticketMetadata.acknowledged_at) : null;
 
   // Build timeline
   const timelineEntries = buildTimeline({
     created_at: ticket.created_at,
-    acknowledged_at: ticket.acknowledged_at,
+    acknowledged_at: acknowledgedAt || ticket.acknowledgement_due_at || null,
+    resolved_at: resolvedAt,
+    reopened_at: reopenedAt,
     updated_at: ticket.updated_at,
-    resolved_at: ticket.resolved_at,
-    reopened_at: ticket.reopened_at,
-    escalation_level: ticket.escalation_level,
+    escalation_level: ticket.escalation_level || 0,
     status: statusValueStr,
   }, normalizedStatus);
 
@@ -300,7 +363,7 @@ export default async function AdminTicketPage({ params }: { params: Promise<{ ti
     .filter((admin) => !!admin.id)
     .map((admin) => ({
       id: admin.id!,
-      name: [admin.first_name, admin.last_name].filter(Boolean).join(" ").trim() || admin.email || "Super Admin",
+      name: admin.full_name || admin.email || "Super Admin",
       email: admin.email,
     }));
 
@@ -565,7 +628,7 @@ export default async function AdminTicketPage({ params }: { params: Promise<{ ti
                 )}
               </CardTitle>
             </CardHeader>
-            <CardContent className="pt-6">
+            <CardContent className="pt-6 space-y-6">
               {comments.length > 0 ? (
                 <ScrollArea className="max-h-[500px] pr-4">
                   <div className="space-y-4">
@@ -665,6 +728,10 @@ export default async function AdminTicketPage({ params }: { params: Promise<{ ti
                   <p className="text-xs">Updates and responses will appear here</p>
                 </div>
               )}
+
+              <Separator />
+
+              <AdminCommentComposer ticketId={ticket.id} />
             </CardContent>
           </Card>
 

@@ -3,7 +3,7 @@
  * Handles determining which tickets an admin can see based on their domain/scope assignment
  */
 
-import { db, users, roles, admin_assignments, domains, scopes } from "@/db";
+import { db, users, roles, admin_assignments, domains, scopes, admin_profiles } from "@/db";
 import { eq, and, or, isNull } from "drizzle-orm";
 
 export interface AdminAssignment {
@@ -12,7 +12,7 @@ export interface AdminAssignment {
 }
 
 /**
- * Get admin's domain and scope assignment from users table (primary)
+ * Get admin's domain and scope assignment from admin_profiles table (primary)
  * Role is checked via users.role_id
  */
 export async function getAdminAssignment(clerkUserId: string): Promise<AdminAssignment> {
@@ -25,9 +25,10 @@ export async function getAdminAssignment(clerkUserId: string): Promise<AdminAssi
       })
       .from(users)
       .leftJoin(roles, eq(users.role_id, roles.id))
-      .leftJoin(domains, eq(users.primary_domain_id, domains.id))
-      .leftJoin(scopes, eq(users.primary_scope_id, scopes.id))
-      .where(eq(users.clerk_id, clerkUserId))
+      .leftJoin(admin_profiles, eq(users.id, admin_profiles.user_id))
+      .leftJoin(domains, eq(admin_profiles.primary_domain_id, domains.id))
+      .leftJoin(scopes, eq(admin_profiles.primary_scope_id, scopes.id))
+      .where(eq(users.external_id, clerkUserId))
       .limit(1);
 
     if (user.length === 0 || !user[0].roleName) {
@@ -35,7 +36,7 @@ export async function getAdminAssignment(clerkUserId: string): Promise<AdminAssi
     }
 
     const userData = user[0];
-    const validRoles = ["admin", "committee", "super_admin"];
+    const validRoles = ["admin", "committee_head", "super_admin"];
 
     if (!userData.roleName || !validRoles.includes(userData.roleName)) {
       return { domain: null, scope: null };
@@ -67,6 +68,11 @@ export function ticketMatchesAdminAssignment(
   const ticketLocation = (ticket.location || "").toLowerCase();
   const assignmentDomain = (assignment.domain || "").toLowerCase();
   const assignmentScope = (assignment.scope || "").toLowerCase();
+
+  // Handle "Global" as a special case - admins with Global domain can access all tickets
+  if (assignmentDomain === "global") {
+    return true;
+  }
 
   // Match domain (category)
   if (!ticketCategory || ticketCategory !== assignmentDomain) {
@@ -102,31 +108,32 @@ export async function getAdminsForDomainScope(
   scope: string | null = null
 ): Promise<string[]> {
   try {
-    // 1. Get admins with matching primary assignment
+    // 1. Get admins with matching primary assignment from admin_profiles
     const primaryQuery = db
       .select({
-        clerk_id: users.clerk_id,
+        external_id: users.external_id,
       })
       .from(users)
       .leftJoin(roles, eq(users.role_id, roles.id))
-      .leftJoin(domains, eq(users.primary_domain_id, domains.id))
-      .leftJoin(scopes, eq(users.primary_scope_id, scopes.id))
+      .leftJoin(admin_profiles, eq(users.id, admin_profiles.user_id))
+      .leftJoin(domains, eq(admin_profiles.primary_domain_id, domains.id))
+      .leftJoin(scopes, eq(admin_profiles.primary_scope_id, scopes.id))
       .where(
         and(
           eq(domains.name, domain),
           or(
             eq(roles.name, "admin"),
-            eq(roles.name, "committee"),
+            eq(roles.name, "committee_head"),
             eq(roles.name, "super_admin")
           ),
-          scope ? eq(scopes.name, scope) : isNull(users.primary_scope_id)
+          scope ? eq(scopes.name, scope) : isNull(admin_profiles.primary_scope_id)
         )
       );
 
     // 2. Get admins with matching secondary assignment
     const secondaryQuery = db
       .select({
-        clerk_id: users.clerk_id,
+        external_id: users.external_id,
       })
       .from(admin_assignments)
       .innerJoin(users, eq(admin_assignments.user_id, users.id))
@@ -145,8 +152,8 @@ export async function getAdminsForDomainScope(
     ]);
 
     const allAdminIds = [
-      ...primaryAdmins.map(a => a.clerk_id),
-      ...secondaryAdmins.map(a => a.clerk_id)
+      ...primaryAdmins.map(a => a.external_id),
+      ...secondaryAdmins.map(a => a.external_id)
     ];
 
     // Deduplicate

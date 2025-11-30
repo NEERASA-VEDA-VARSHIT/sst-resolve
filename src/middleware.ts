@@ -120,26 +120,43 @@ export default clerkMiddleware(async (auth, req) => {
 
   // SuperAdmin can access both /superadmin/* and /admin/* routes
   if (isSuperAdmin) {
-    if (!isSuperAdminRoute(req) && !isAdminRoute(req)) {
+    // Handle exact /admin path - redirect to superadmin dashboard
+    if (pathname === '/admin') {
       return NextResponse.redirect(new URL('/superadmin/dashboard', req.url));
     }
-    return NextResponse.next();
+    // Allow all /superadmin/* and /admin/* routes including ticket detail pages
+    // Check pathname directly to ensure ticket pages are allowed
+    if (pathname.startsWith('/superadmin/') || pathname.startsWith('/admin/')) {
+      return NextResponse.next();
+    }
+    // If not a superadmin or admin route, redirect to dashboard
+    return NextResponse.redirect(new URL('/superadmin/dashboard', req.url));
   }
 
   // Admin role 
   if (isAdmin) {
-    if (!isAdminRoute(req)) {
+    // Handle exact /admin path - redirect to admin dashboard
+    if (pathname === '/admin') {
       return NextResponse.redirect(new URL('/admin/dashboard', req.url));
     }
-    return NextResponse.next();
+    // Allow all /admin/* routes including ticket detail pages
+    // Check pathname directly to ensure ticket pages are allowed
+    if (pathname.startsWith('/admin/')) {
+      return NextResponse.next();
+    }
+    // If not an admin route, redirect to dashboard
+    return NextResponse.redirect(new URL('/admin/dashboard', req.url));
   }
 
   // Committee role
   if (isCommittee) {
-    if (!isCommitteeRoute(req)) {
-      return NextResponse.redirect(new URL('/committee/dashboard', req.url));
+    // Allow all /committee/* routes including ticket detail pages
+    // Check pathname directly to ensure ticket pages are allowed
+    if (pathname.startsWith('/committee/')) {
+      return NextResponse.next();
     }
-    return NextResponse.next();
+    // If not a committee route, redirect to dashboard
+    return NextResponse.redirect(new URL('/committee/dashboard', req.url));
   }
 
   // Student role (default)
@@ -147,11 +164,13 @@ export default clerkMiddleware(async (auth, req) => {
     // EDGE RUNTIME FIX: Skip profile check in middleware (fails in Edge runtime)
     // Student profile check moved to page layouts where DB queries work
 
-    // Student can access all student routes
-    if (!isStudentRoute(req)) {
-      return NextResponse.redirect(new URL('/student/dashboard', req.url));
+    // Allow all /student/* routes including ticket detail pages
+    // Check pathname directly to ensure ticket pages are allowed
+    if (pathname.startsWith('/student/')) {
+      return NextResponse.next();
     }
-    return NextResponse.next();
+    // If not a student route, redirect to dashboard
+    return NextResponse.redirect(new URL('/student/dashboard', req.url));
   }
 
   // Fallback: unknown role, treat as student

@@ -21,7 +21,7 @@ export const getCategoriesHierarchy = unstable_cache(
                 display_order: categories.display_order,
             })
             .from(categories)
-            .where(eq(categories.active, true)),
+            .where(eq(categories.is_active, true)),
         db
             .select({
                 id: subcategories.id,
@@ -31,7 +31,7 @@ export const getCategoriesHierarchy = unstable_cache(
                 display_order: subcategories.display_order,
             })
             .from(subcategories)
-            .where(eq(subcategories.active, true)),
+            .where(eq(subcategories.is_active, true)),
         db
             .select({
                 id: sub_subcategories.id,
@@ -40,7 +40,8 @@ export const getCategoriesHierarchy = unstable_cache(
                 slug: sub_subcategories.slug,
                 display_order: sub_subcategories.display_order,
             })
-            .from(sub_subcategories),
+            .from(sub_subcategories)
+            .where(eq(sub_subcategories.is_active, true)),
         db
             .select({
                 id: category_fields.id,
@@ -51,7 +52,7 @@ export const getCategoriesHierarchy = unstable_cache(
                 display_order: category_fields.display_order,
             })
             .from(category_fields)
-            .where(eq(category_fields.active, true)),
+            .where(eq(category_fields.is_active, true)),
         db
             .select({
                 field_id: field_options.field_id,
@@ -60,7 +61,7 @@ export const getCategoriesHierarchy = unstable_cache(
                 display_order: field_options.display_order,
             })
             .from(field_options)
-            .where(eq(field_options.active, true))
+            .where(eq(field_options.is_active, true))
     ]);
 
     // Sort manually to avoid orderBy issues

@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { db, tickets, ticket_statuses, categories, users } from "@/db";
+import { db, tickets, categories, users, ticket_statuses } from "@/db";
 import { desc, sql, and, count, eq } from "drizzle-orm";
 import Link from "next/link";
 import { TicketCard } from "@/components/layout/TicketCard";
@@ -9,7 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { FileText } from "lucide-react";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
-import type { TicketMetadata } from "@/db/types";
+import type { TicketMetadata } from "@/db/inferred-types";
 import type { Ticket } from "@/db/types-only";
 
 // Force dynamic rendering since we use auth headers
@@ -41,33 +41,12 @@ export default async function SuperAdminAllTicketsPage({ searchParams }: { searc
   const limit = Math.min(50, Math.max(5, parseInt((typeof params["limit"] === "string" ? params["limit"] : params["limit"]?.[0]) || "20", 10)));
   const offset = (page - 1) * limit;
 
-  // Build server-side where conditions (simple, case-insensitive where possible)
   type WhereClause = ReturnType<typeof sql>;
   const whereClauses: WhereClause[] = [];
-  // Note: status, category, subcategory filters disabled due to schema changes
-  // These would require joins with ticket_statuses and categories tables
-  // and subcategory is stored in metadata JSON
-
-  // if (status) {
-  //   // Would need: JOIN ticket_statuses WHERE ticket_statuses.value = status
-  //   whereClauses.push(sql`${tickets.status_id} = ${statusId}`);
-  // }
-  // if (category) {
-  //   // Would need: JOIN categories WHERE categories.name = category
-  //   whereClauses.push(sql`${tickets.category_id} = ${categoryId}`);
-  // }
-  // if (subcategory) {
-  //   // Subcategory is in metadata->>'subcategory'
-  //   whereClauses.push(sql`${tickets.metadata}->>'subcategory' ILIKE ${"%" + subcategory + "%"}`);
-  // }
 
   if (location) {
     whereClauses.push(sql`LOWER(${tickets.location}) LIKE ${"%" + location.toLowerCase() + "%"}`);
   }
-  // if (user) {
-  //   // user_number doesn't exist - would need to join users table
-  //   whereClauses.push(sql`${tickets.created_by} = ${userId}`);
-  // }
   if (createdFrom) {
     const from = new Date(createdFrom);
     from.setHours(0, 0, 0, 0);
@@ -81,24 +60,28 @@ export default async function SuperAdminAllTicketsPage({ searchParams }: { searc
 
   type TicketRow = {
     id: number;
-    created_at: Date;
-    updated_at: Date;
-    status_id: number;
+    created_at: Date | null;
+    updated_at: Date | null;
     status: string | null;
+    status_id: number | null;
+    scope_id: number | null;
     category_id: number | null;
     category_name: string | null;
-    created_by: string;
+    created_by: string | null;
     creator_name: string | null;
     creator_email: string | null;
     assigned_to: string | null;
     description: string | null;
     location: string | null;
     metadata: unknown;
-    escalation_level: number;
+    escalation_level: number | null;
     resolved_at: Date | null;
     acknowledged_at: Date | null;
     resolution_due_at: Date | null;
     rating: number | null;
+    title: string | null;
+    subcategory_id: number | null;
+    sub_subcategory_id: number | null;
   };
   let allTickets: TicketRow[] = [];
   let total = 0;
@@ -114,54 +97,52 @@ export default async function SuperAdminAllTicketsPage({ searchParams }: { searc
     // fetch page with joins for status, category, and creator info
     type TicketRowRaw = {
       id: number;
-      created_at: Date;
-      updated_at: Date;
-      status_id: number;
+      title: string | null;
+      created_at: Date | null;
+      updated_at: Date | null;
+      status_id: number | null;
       status: string | null;
       category_id: number | null;
+      subcategory_id: number | null;
+      sub_subcategory_id: number | null;
       category_name: string | null;
-      created_by: string;
-      creator_first_name: string | null;
-      creator_last_name: string | null;
+      created_by: string | null;
+      creator_full_name: string | null;
       creator_email: string | null;
       assigned_to: string | null;
       description: string | null;
       location: string | null;
       metadata: unknown;
-      escalation_level: number;
-      resolved_at: Date | null;
-      acknowledged_at: Date | null;
+      escalation_level: number | null;
       resolution_due_at: Date | null;
-      rating: number | null;
     };
 
     const baseQuery = db
       .select({
         id: tickets.id,
+        title: tickets.title,
         created_at: tickets.created_at,
         updated_at: tickets.updated_at,
         status_id: tickets.status_id,
         status: ticket_statuses.value,
         category_id: tickets.category_id,
+        subcategory_id: tickets.subcategory_id,
+        sub_subcategory_id: tickets.sub_subcategory_id,
         category_name: categories.name,
         created_by: tickets.created_by,
-        creator_first_name: users.first_name,
-        creator_last_name: users.last_name,
+        creator_full_name: users.full_name,
         creator_email: users.email,
         assigned_to: tickets.assigned_to,
         description: tickets.description,
         location: tickets.location,
         metadata: tickets.metadata,
         escalation_level: tickets.escalation_level,
-        resolved_at: tickets.resolved_at,
-        acknowledged_at: tickets.acknowledged_at,
         resolution_due_at: tickets.resolution_due_at,
-        rating: tickets.rating,
       })
       .from(tickets)
-      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
       .leftJoin(categories, eq(tickets.category_id, categories.id))
       .leftJoin(users, eq(tickets.created_by, users.id))
+      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
       .orderBy(desc(tickets.created_at))
       .limit(limit)
       .offset(offset);
@@ -172,11 +153,33 @@ export default async function SuperAdminAllTicketsPage({ searchParams }: { searc
 
     const rawTickets: TicketRowRaw[] = await rowsQuery;
     
-    // Transform to combine first_name and last_name into creator_name
-    allTickets = rawTickets.map(t => ({
-      ...t,
-      creator_name: [t.creator_first_name, t.creator_last_name].filter(Boolean).join(" ").trim() || null,
-    }));
+    allTickets = rawTickets.map(t => {
+      // Extract metadata fields
+      let ticketMetadata: TicketMetadata = {};
+      if (t.metadata && typeof t.metadata === 'object' && !Array.isArray(t.metadata)) {
+        ticketMetadata = t.metadata as TicketMetadata;
+      }
+      const resolvedAt = ticketMetadata.resolved_at ? new Date(ticketMetadata.resolved_at) : null;
+      const acknowledgedAt = ticketMetadata.acknowledged_at ? new Date(ticketMetadata.acknowledged_at) : null;
+      const rating = (ticketMetadata.rating as number | null) || null;
+      
+      return {
+        ...t,
+        status_id: t.status_id || null,
+        scope_id: null,
+        title: t.title || null,
+        subcategory_id: t.subcategory_id || null,
+        sub_subcategory_id: t.sub_subcategory_id || null,
+        created_at: t.created_at || new Date(),
+        updated_at: t.updated_at || new Date(),
+        created_by: t.created_by || "",
+        escalation_level: t.escalation_level || 0,
+        creator_name: t.creator_full_name || null,
+        resolved_at: resolvedAt,
+        acknowledged_at: acknowledgedAt,
+        rating,
+      };
+    });
   } catch (error) {
     console.error('[Super Admin All Tickets] Error fetching tickets:', error);
     throw new Error('Failed to load tickets');
@@ -261,11 +264,16 @@ export default async function SuperAdminAllTicketsPage({ searchParams }: { searc
               key={ticket.id} 
               ticket={{
                 ...ticket,
+                status_id: ticket.status_id || null,
+                scope_id: null,
+                title: ticket.title || null,
+                subcategory_id: ticket.subcategory_id || null,
+                sub_subcategory_id: ticket.sub_subcategory_id || null,
                 status: ticket.status || null,
                 category_name: ticket.category_name || null,
                 creator_name: ticket.creator_name || null,
                 creator_email: ticket.creator_email || null,
-              } as Ticket & { status?: string | null; category_name?: string | null; creator_name?: string | null; creator_email?: string | null; }} 
+              } as unknown as Ticket & { status?: string | null; category_name?: string | null; creator_name?: string | null; creator_email?: string | null; }} 
               basePath="/superadmin/dashboard" 
             />
           ))}

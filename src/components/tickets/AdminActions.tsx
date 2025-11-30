@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { RefreshCw, Clock, MessageSquare, CheckCircle, Trash2, FileText, UserCog, AlertTriangle, ArrowUpRight, Loader2 } from "lucide-react";
+import { RefreshCw, Clock, CheckCircle, Trash2, FileText, UserCog, ArrowUpRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { ReassignDialog } from "./ReassignDialog";
 import { normalizeStatusForComparison } from "@/lib/utils";
@@ -40,18 +40,42 @@ export function AdminActions({
 }) {
 	const router = useRouter();
 	const [loading, setLoading] = useState<string | null>(null);
-	const [showTATForm, setShowTATForm] = useState(false);
+	const [showCustomTat, setShowCustomTat] = useState(false);
 	const [showCommentForm, setShowCommentForm] = useState(false);
 	const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 	const [showReassignDialog, setShowReassignDialog] = useState(false);
-	const [showEscalateDialog, setShowEscalateDialog] = useState(false);
 	const [showForwardDialog, setShowForwardDialog] = useState(false);
 	const [tat, setTat] = useState("");
 	const [comment, setComment] = useState("");
-	const [escalationReason, setEscalationReason] = useState("");
 	const [forwardReason, setForwardReason] = useState("");
 	const [selectedForwardAdmin, setSelectedForwardAdmin] = useState<string>("auto");
 	const [commentType, setCommentType] = useState<"comment" | "question" | "internal" | "super_admin">("comment");
+
+	const DEFAULT_TAT = "48 hours";
+	const handleMarkInProgress = async () => {
+		setLoading("mark");
+		try {
+			const response = await fetch(`/api/tickets/${ticketId}/tat`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ tat: DEFAULT_TAT, markInProgress: true }),
+			});
+
+			if (response.ok) {
+				toast.success("Ticket marked In Progress with 48h TAT");
+				router.refresh();
+			} else {
+				const error = await response.json().catch(() => ({ error: "Failed to mark in progress" }));
+				toast.error(error.error || "Failed to mark in progress");
+			}
+		} catch (error) {
+			console.error("Error marking in progress:", error);
+			toast.error("Failed to mark in progress. Please try again.");
+		} finally {
+			setLoading(null);
+		}
+	};
+
 
 	// Normalize status for comparison (handles both uppercase enum and lowercase constants)
 	const normalizedStatus = normalizeStatusForComparison(currentStatus);
@@ -79,12 +103,14 @@ export function AdminActions({
 
 			if (response.ok) {
 				setTat("");
-				setShowTATForm(false);
+				setShowCustomTat(false);
 				toast.success("TAT set successfully");
 				router.refresh();
 			} else {
-				const error = await response.json().catch(() => ({ error: "Failed to set TAT" }));
-				toast.error(error.error || "Failed to set TAT");
+				const errorData = await response.json().catch(() => ({ error: "Failed to set TAT" }));
+				console.error("TAT API error:", errorData);
+				const errorMessage = errorData.error || errorData.details || "Failed to set TAT";
+				toast.error(errorMessage);
 			}
 		} catch (error) {
 			console.error("Error setting TAT:", error);
@@ -202,33 +228,6 @@ export function AdminActions({
 		}
 	};
 
-	const handleEscalate = async (e: React.FormEvent) => {
-		e.preventDefault();
-		setLoading("escalate");
-		try {
-			const response = await fetch(`/api/tickets/${ticketId}/escalate`, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ reason: escalationReason || undefined }),
-			});
-
-			if (response.ok) {
-				const data = await response.json();
-				setEscalationReason("");
-				setShowEscalateDialog(false);
-				toast.success(`Ticket escalated successfully (Escalation #${data.escalationCount})`);
-				router.refresh();
-			} else {
-				const error = await response.json().catch(() => ({ error: "Failed to escalate ticket" }));
-				toast.error(error.error || "Failed to escalate ticket");
-			}
-		} catch (error) {
-			console.error("Error escalating ticket:", error);
-			toast.error("Failed to escalate ticket. Please try again.");
-		} finally {
-			setLoading(null);
-		}
-	};
 
 	const handleForward = async (e: React.FormEvent) => {
 		e.preventDefault();
@@ -271,9 +270,28 @@ export function AdminActions({
 			</label>
 
 			<div className="flex flex-wrap gap-2">
-				{/* Show TAT form when marking in progress or extending TAT */}
-				{showTATForm ? (
-					<form onSubmit={handleSetTAT} className="flex gap-2 items-end">
+				{normalizedStatus !== "in_progress" && (
+					<Button
+						variant="outline"
+						onClick={handleMarkInProgress}
+						disabled={loading !== null}
+					>
+						{loading === "mark" ? (
+							<>
+								<Loader2 className="w-4 h-4 mr-2 animate-spin" />
+								Marking...
+							</>
+						) : (
+							<>
+								<RefreshCw className="w-4 h-4 mr-2" />
+								Mark In Progress (48h TAT)
+							</>
+						)}
+					</Button>
+				)}
+
+				{showCustomTat && (
+					<form onSubmit={handleSetTAT} className="flex gap-2 items-end w-full sm:w-auto">
 						<div className="flex-1">
 							<Label htmlFor="tat">Turnaround Time (TAT)</Label>
 							<Input
@@ -291,71 +309,46 @@ export function AdminActions({
 									Setting...
 								</>
 							) : (
-								"Set"
+								"Update"
 							)}
 						</Button>
 						<Button
 							type="button"
 							variant="ghost"
 							onClick={() => {
-								setShowTATForm(false);
+								setShowCustomTat(false);
 								setTat("");
 							}}
 						>
 							Cancel
 						</Button>
 					</form>
-				) : (
-					// Show Mark In Progress button if not in progress
-					normalizedStatus !== "in_progress" && (
-						<Button
-							variant="outline"
-							onClick={() => setShowTATForm(true)}
-							disabled={loading !== null}
-						>
-							<RefreshCw className="w-4 h-4 mr-2" />
-							Mark In Progress
-						</Button>
-					)
 				)}
 
 				{/* Show Extend TAT button if already in progress with TAT */}
-				{!showTATForm && normalizedStatus === "in_progress" && hasTAT && (
+				{!showCustomTat && normalizedStatus === "in_progress" && hasTAT && (
 					<Button
 						variant="outline"
-						onClick={() => setShowTATForm(true)}
+						onClick={() => {
+							setTat("");
+							setShowCustomTat(true);
+						}}
 					>
 						<Clock className="w-4 h-4 mr-2" />
 						Extend TAT
 					</Button>
 				)}
 
-				{/* Ask Question Button - sets status to awaiting_student_response */}
-				{normalizedStatus !== "resolved" && (
+				{!showCustomTat && normalizedStatus !== "in_progress" && (
 					<Button
-						variant="outline"
+						variant="ghost"
 						onClick={() => {
-							setShowCommentForm(true);
-							setCommentType("question");
+							setTat("");
+							setShowCustomTat(true);
 						}}
-						disabled={loading !== null}
+						className="text-xs sm:text-sm"
 					>
-						<MessageSquare className="w-4 h-4 mr-2" />
-						Ask Question
-					</Button>
-				)}
-
-				{/* Add Comment Button */}
-				{!showCommentForm && (
-					<Button
-						variant="outline"
-						onClick={() => {
-							setShowCommentForm(true);
-							setCommentType("comment");
-						}}
-					>
-						<MessageSquare className="w-4 h-4 mr-2" />
-						Add Comment
+						Set custom TAT before starting
 					</Button>
 				)}
 
@@ -363,13 +356,21 @@ export function AdminActions({
 					<form onSubmit={handleAddComment} className="space-y-2 flex-1 w-full">
 						<div>
 							<Label htmlFor="adminComment">
-								{commentType === "question" ? "Ask Question (Student will be notified)" : "Admin Comment"}
+								{commentType === "internal"
+									? "Internal Note"
+									: commentType === "super_admin"
+										? "Super Admin Note"
+										: "Admin Comment"}
 							</Label>
 							<Textarea
 								id="adminComment"
 								value={comment}
 								onChange={(e) => setComment(e.target.value)}
-								placeholder={commentType === "question" ? "Enter your question for the student..." : "Enter your comment..."}
+								placeholder={
+									commentType === "internal"
+										? "This note is visible only to admins and committees..."
+										: "Enter your comment..."
+								}
 								rows={3}
 								required
 							/>
@@ -382,7 +383,7 @@ export function AdminActions({
 										Sending...
 									</>
 								) : (
-									commentType === "question" ? "Ask Question" : "Add Comment"
+									commentType === "internal" ? "Save Note" : "Add Comment"
 								)}
 							</Button>
 							<Button
@@ -567,62 +568,6 @@ export function AdminActions({
 					</Dialog>
 				)}
 
-				{/* Manual Escalation */}
-				{normalizedStatus !== "resolved" && (
-					<Dialog open={showEscalateDialog} onOpenChange={setShowEscalateDialog}>
-						<DialogTrigger asChild>
-							<Button
-								variant="outline"
-								disabled={loading !== null}
-							>
-								<AlertTriangle className="w-4 h-4 mr-2" />
-								Escalate
-							</Button>
-						</DialogTrigger>
-						<DialogContent>
-							<DialogHeader>
-								<DialogTitle>Escalate Ticket</DialogTitle>
-								<DialogDescription>
-									Escalate this ticket to a higher level. This will notify super admins and mark as ESCALATED.
-								</DialogDescription>
-							</DialogHeader>
-							<form onSubmit={handleEscalate} className="space-y-4">
-								<div>
-									<Label htmlFor="escalationReason">Reason (Optional)</Label>
-									<Textarea
-										id="escalationReason"
-										value={escalationReason}
-										onChange={(e) => setEscalationReason(e.target.value)}
-										placeholder="e.g., Requires urgent attention, Complex issue beyond scope..."
-										rows={3}
-									/>
-								</div>
-								<DialogFooter>
-									<Button
-										type="button"
-										variant="outline"
-										onClick={() => {
-											setShowEscalateDialog(false);
-											setEscalationReason("");
-										}}
-									>
-										Cancel
-									</Button>
-									<Button type="submit" disabled={loading === "escalate"}>
-										{loading === "escalate" ? (
-											<>
-												<Loader2 className="w-4 h-4 animate-spin mr-2" />
-												Escalating...
-											</>
-										) : (
-											"Escalate"
-										)}
-									</Button>
-								</DialogFooter>
-							</form>
-						</DialogContent>
-					</Dialog>
-				)}
 
 				{/* Mark as Resolved */}
 				{normalizedStatus !== "resolved" && (

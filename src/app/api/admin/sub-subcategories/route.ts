@@ -34,12 +34,18 @@ export async function GET(request: NextRequest) {
       .where(
         and(
           eq(sub_subcategories.subcategory_id, parseInt(subcategoryId)),
-          eq(sub_subcategories.active, true)
+          eq(sub_subcategories.is_active, true)
         )
       )
       .orderBy(asc(sub_subcategories.display_order), desc(sub_subcategories.created_at));
 
-    return NextResponse.json(subSubcats);
+    // Transform is_active to active for frontend compatibility
+    const transformedSubSubcats = subSubcats.map(subSubcat => {
+      const { is_active, ...rest } = subSubcat;
+      return { ...rest, active: is_active };
+    });
+
+    return NextResponse.json(transformedSubSubcats);
   } catch (error) {
     console.error("Error fetching sub-subcategories:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
@@ -79,7 +85,7 @@ export async function POST(request: NextRequest) {
         and(
           eq(sub_subcategories.subcategory_id, parseInt(subcategory_id)),
           eq(sub_subcategories.slug, slug),
-          eq(sub_subcategories.active, false)
+          eq(sub_subcategories.is_active, false)
         )
       )
       .limit(1);
@@ -92,12 +98,15 @@ export async function POST(request: NextRequest) {
           name,
           description: description || null,
           display_order: display_order || 0,
-          active: true,
+          is_active: true,
           updated_at: new Date(),
         })
         .where(eq(sub_subcategories.id, existingInactive.id))
         .returning();
-      return NextResponse.json(reactivated, { status: 201 });
+      
+      // Transform is_active to active for frontend compatibility
+      const { is_active, ...rest } = reactivated;
+      return NextResponse.json({ ...rest, active: is_active }, { status: 201 });
     }
 
     const [newSubSubcategory] = await db
@@ -108,11 +117,13 @@ export async function POST(request: NextRequest) {
         slug,
         description: description || null,
         display_order: display_order || 0,
-        active: true,
+        is_active: true,
       })
       .returning();
 
-    return NextResponse.json(newSubSubcategory, { status: 201 });
+    // Transform is_active to active for frontend compatibility
+    const { is_active, ...rest } = newSubSubcategory;
+    return NextResponse.json({ ...rest, active: is_active }, { status: 201 });
   } catch (error: unknown) {
     console.error("Error creating sub-subcategory:", error);
     if (error && typeof error === 'object' && 'code' in error && error.code === "23505") {

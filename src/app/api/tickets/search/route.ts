@@ -68,7 +68,14 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    if (status) filters.push(eq(ticket_statuses.value, status));
+    if (status) {
+      // Join ticket_statuses for status filtering
+      filters.push(sql`EXISTS (
+        SELECT 1 FROM ticket_statuses ts 
+        WHERE ts.id = ${tickets.status_id} 
+        AND ts.value = ${status}
+      )`);
+    }
 
     if (categoryId) filters.push(eq(tickets.category_id, Number(categoryId)));
 
@@ -99,7 +106,7 @@ export async function GET(request: NextRequest) {
         createdBy: tickets.created_by,
       })
       .from(tickets)
-      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
+      .leftJoin(ticket_statuses, eq(ticket_statuses.id, tickets.status_id))
       .where(whereClause ?? undefined)
       .limit(limit)
       .offset(offset)
@@ -113,7 +120,7 @@ export async function GET(request: NextRequest) {
         count: sql<number>`COUNT(*)`,
       })
       .from(tickets)
-      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
+      .leftJoin(ticket_statuses, eq(ticket_statuses.id, tickets.status_id))
       .where(whereClause ?? undefined);
 
     return NextResponse.json({

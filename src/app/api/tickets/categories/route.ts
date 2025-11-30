@@ -44,10 +44,10 @@ export async function GET() {
         id: subcategories.id,
         name: subcategories.name,
         category_id: subcategories.category_id,
-        active: subcategories.active,
+        active: subcategories.is_active,
       })
       .from(subcategories)
-      .where(eq(subcategories.active, true));
+      .where(eq(subcategories.is_active, true));
 
     // 3. Organize into hierarchical structure
     const result = categoryRows.map((cat) => {

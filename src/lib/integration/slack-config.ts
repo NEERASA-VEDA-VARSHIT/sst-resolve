@@ -4,7 +4,6 @@
  * Includes caching to reduce database load and improve performance
  */
 
-import { db, notification_settings } from "@/db";
 import { slackConfig as envSlackConfig } from "@/conf/config";
 
 export interface SlackChannelConfig {
@@ -29,66 +28,23 @@ const configCache: { config: SlackChannelConfig | null; expires: number } = {
  */
 export async function getSlackChannelConfig(): Promise<SlackChannelConfig> {
     const now = Date.now();
-    
+
     // Return cached config if still valid
     if (configCache.config && configCache.expires > now) {
         return configCache.config;
     }
 
-    try {
-        const [settings] = await db
-            .select({ slack_config: notification_settings.slack_config })
-            .from(notification_settings)
-            .limit(1);
+    const config: SlackChannelConfig = {
+        hostel: envSlackConfig.channels.hostel as string | undefined,
+        college: envSlackConfig.channels.college as string | undefined,
+        committee: envSlackConfig.channels.committee as string | undefined,
+        hostel_channels: (envSlackConfig.channels.hostels as Record<string, string> | undefined) || {},
+    };
 
-        let config: SlackChannelConfig;
+    configCache.config = config;
+    configCache.expires = now + 60_000;
 
-        if (settings?.slack_config && typeof settings.slack_config === 'object') {
-            const dbConfig = settings.slack_config as {
-                hostel_channel?: string;
-                college_channel?: string;
-                committee_channel?: string;
-                hostel_channels?: Record<string, string>;
-            };
-
-            // Merge database config with env config (DB takes precedence)
-            config = {
-                hostel: dbConfig.hostel_channel || (envSlackConfig.channels.hostel as string | undefined),
-                college: dbConfig.college_channel || (envSlackConfig.channels.college as string | undefined),
-                committee: dbConfig.committee_channel || (envSlackConfig.channels.committee as string | undefined),
-                hostel_channels: dbConfig.hostel_channels || (envSlackConfig.channels.hostels as Record<string, string> | undefined) || {},
-            };
-        } else {
-            // Fallback to environment config
-            config = {
-                hostel: envSlackConfig.channels.hostel as string | undefined,
-                college: envSlackConfig.channels.college as string | undefined,
-                committee: envSlackConfig.channels.committee as string | undefined,
-                hostel_channels: (envSlackConfig.channels.hostels as Record<string, string> | undefined) || {},
-            };
-        }
-
-        // Cache for 60 seconds
-        configCache.config = config;
-        configCache.expires = now + 60_000;
-
-        return config;
-    } catch (error) {
-        console.error("[getSlackChannelConfig] Error fetching from database:", error);
-        
-        // On error, use env config and cache it for 10 seconds (shorter to retry sooner)
-        const fallbackConfig: SlackChannelConfig = {
-            hostel: envSlackConfig.channels.hostel as string | undefined,
-            college: envSlackConfig.channels.college as string | undefined,
-            committee: envSlackConfig.channels.committee as string | undefined,
-            hostel_channels: (envSlackConfig.channels.hostels as Record<string, string> | undefined) || {},
-        };
-        
-        configCache.config = fallbackConfig;
-        configCache.expires = now + 10_000; // Shorter cache on error
-        
-        return fallbackConfig;
-    }
+    return config;
 }
 
 /**

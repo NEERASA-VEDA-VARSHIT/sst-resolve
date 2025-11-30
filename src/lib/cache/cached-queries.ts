@@ -5,6 +5,7 @@ import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
 import { getAdminAssignment } from "@/lib/assignment/admin-assignment";
 import { getTicketStatuses } from "@/lib/status/getTicketStatuses";
+import { buildStatusDisplay } from "@/conf/constants";
 
 /**
  * Cached helper functions for admin dashboard
@@ -39,7 +40,7 @@ export const getCachedCategories = cache(async () => {
       slug: categories.slug,
     })
     .from(categories)
-    .where(eq(categories.active, true));
+    .where(eq(categories.is_active, true));
 });
 
 /**
@@ -64,37 +65,71 @@ export const getCachedAdminTickets = cache(async (
   // Include all ticket fields needed for TicketCard component
   const ticketRows = await db
     .select({
-      // All ticket fields
-      ticket: tickets,
-      // Joined fields
-      status_value: ticket_statuses.value,
-      status_label: ticket_statuses.label,
-      status_badge_color: ticket_statuses.badge_color,
+      id: tickets.id,
+      title: tickets.title,
+      description: tickets.description,
+      location: tickets.location,
+      status_id: tickets.status_id,
+      status: ticket_statuses.value,
+      category_id: tickets.category_id,
+      subcategory_id: tickets.subcategory_id,
+      sub_subcategory_id: tickets.sub_subcategory_id,
+      created_by: tickets.created_by,
+      assigned_to: tickets.assigned_to,
+      group_id: tickets.group_id,
+      escalation_level: tickets.escalation_level,
+      acknowledgement_due_at: tickets.acknowledgement_due_at,
+      resolution_due_at: tickets.resolution_due_at,
+      metadata: tickets.metadata,
+      created_at: tickets.created_at,
+      updated_at: tickets.updated_at,
       category_name: categories.name,
       creator_id: users.id,
-      creator_first_name: users.first_name,
-      creator_last_name: users.last_name,
+      creator_full_name: users.full_name,
       creator_email: users.email,
     })
     .from(tickets)
-    .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
     .leftJoin(categories, eq(tickets.category_id, categories.id))
     .leftJoin(users, eq(tickets.created_by, users.id))
+    .leftJoin(ticket_statuses, eq(ticket_statuses.id, tickets.status_id))
     .where(baseConditions)
     .orderBy(desc(tickets.created_at))
     .limit(1000); // Reasonable limit for admin view
 
   // Transform to include all fields in a flat structure
-  return ticketRows.map(row => ({
-    ...row.ticket,
-    status_value: row.status_value,
-    status_label: row.status_label,
-    status_badge_color: row.status_badge_color,
-    category_name: row.category_name,
-    creator_id: row.creator_id,
-    creator_first_name: row.creator_first_name,
-    creator_last_name: row.creator_last_name,
-    creator_email: row.creator_email,
-  }));
+  return ticketRows.map((row) => {
+    const fallbackStatus = row.status ?? "open";
+    let statusDisplay: { value: string; label: string; badge_color: string };
+    
+    try {
+      const builtDisplay = fallbackStatus ? buildStatusDisplay(fallbackStatus) : null;
+      statusDisplay = builtDisplay && typeof builtDisplay === 'object' && 'value' in builtDisplay
+        ? {
+            value: builtDisplay.value || fallbackStatus,
+            label: builtDisplay.label || fallbackStatus,
+            badge_color: builtDisplay.badge_color || "default",
+          }
+        : {
+            value: fallbackStatus,
+            label: fallbackStatus,
+            badge_color: "default",
+          };
+    } catch (error) {
+      console.error('[getCachedAdminTickets] Error building status display:', error);
+      statusDisplay = {
+        value: fallbackStatus,
+        label: fallbackStatus,
+        badge_color: "default",
+      };
+    }
+
+    return {
+      ...row,
+      status_value: row.status ?? statusDisplay.value,
+      status_label: statusDisplay.label,
+      status_badge_color: statusDisplay.badge_color,
+      status: row.status ?? statusDisplay.value,
+    };
+  });
 });
 

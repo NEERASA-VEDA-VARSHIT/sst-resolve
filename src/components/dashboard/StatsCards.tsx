@@ -153,7 +153,7 @@ export function StatsCards({ stats }: StatsCardsProps) {
     },
     {
       key: "awaitingStudent",
-      label: "Awaiting Student",
+      label: "Awaiting Student Response",
       value: stats.awaitingStudent,
       icon: MessageSquare,
       color: "purple",

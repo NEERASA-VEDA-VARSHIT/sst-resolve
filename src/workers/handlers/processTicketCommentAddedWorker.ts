@@ -10,6 +10,7 @@ import { tickets } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { postThreadReplyToChannel } from "@/lib/integration/slack";
 import { sendEmail, getCommentAddedEmail } from "@/lib/integration/email";
+import { logNotification } from "@/workers/utils";
 
 type CommentAddedPayload = {
   ticketId: number;
@@ -58,12 +59,21 @@ export async function processTicketCommentAddedWorker(payload: CommentAddedPaylo
     if (slackMessageTs && slackChannel) {
       try {
         const authorLabel = author_role === "student" ? "Student" : "Admin";
-        await postThreadReplyToChannel(
+        const slackResult = await postThreadReplyToChannel(
           slackChannel,
           slackMessageTs,
           `💬 *New Comment by ${author_name}* (${authorLabel})\n${comment_text}`
         );
         console.log(`[Worker] Posted comment to Slack thread ${slackMessageTs}`);
+        const replyTs = typeof slackResult?.ts === "string" ? slackResult.ts : undefined;
+        await logNotification({
+          userId: null,
+          ticketId: ticket_id,
+          channel: "slack",
+          notificationType: "ticket.comment",
+          slackMessageId: replyTs ?? slackMessageTs,
+          sentAt: new Date(),
+        });
       } catch (error) {
         console.error("[Worker] Failed to post to Slack thread:", error);
       }
@@ -78,24 +88,27 @@ export async function processTicketCommentAddedWorker(payload: CommentAddedPaylo
       // If admin commented -> Notify Student
       let recipientEmail = "";
       let recipientName = "";
+      let recipientUserId: string | null = null;
 
       if (author_role === "student") {
         // Notify assigned admin
-        type AssignedAdmin = { user?: { email?: string }; full_name?: string };
+        type AssignedAdmin = { user?: { email?: string; id?: string }; full_name?: string };
         const assignedAdmin = ticketData.assigned_admin as unknown as AssignedAdmin;
         if (assignedAdmin?.user?.email) {
           recipientEmail = assignedAdmin.user.email;
           recipientName = assignedAdmin.full_name || "Admin";
+          recipientUserId = typeof assignedAdmin.user.id === "string" ? assignedAdmin.user.id : null;
         }
       } else {
         // Notify student
-        type CreatedByUser = { email?: string; first_name?: string; last_name?: string };
+        type CreatedByUser = { email?: string; first_name?: string; last_name?: string; id?: string };
         const createdByUser = ticketData.created_by_user as unknown as CreatedByUser;
         if (createdByUser?.email) {
           recipientEmail = createdByUser.email;
           const firstName = createdByUser.first_name || "";
           const lastName = createdByUser.last_name || "";
           recipientName = [firstName, lastName].filter(Boolean).join(" ") || "Student";
+          recipientUserId = typeof createdByUser.id === "string" ? createdByUser.id : null;
         }
       }
 
@@ -109,7 +122,7 @@ export async function processTicketCommentAddedWorker(payload: CommentAddedPaylo
           typeof category?.name === 'string' ? category.name : "Unknown"
         );
 
-        await sendEmail({
+        const emailResult = await sendEmail({
           to: recipientEmail,
           subject: emailTemplate.subject,
           html: emailTemplate.html,
@@ -119,6 +132,17 @@ export async function processTicketCommentAddedWorker(payload: CommentAddedPaylo
         });
 
         console.log(`[Worker] Sent comment email to ${recipientName} (${recipientEmail})`);
+
+        if (emailResult) {
+          await logNotification({
+            userId: recipientUserId,
+            ticketId: ticket_id,
+            channel: "email",
+            notificationType: "ticket.comment",
+            emailMessageId: typeof emailResult.messageId === "string" ? emailResult.messageId : null,
+            sentAt: new Date(),
+          });
+        }
       } else {
         console.log("[Worker] No recipient email found for comment notification");
       }

@@ -4,7 +4,7 @@
  * Follows hierarchy: field > subcategory > category > escalation rules
  */
 
-import { db, users, roles, categories, domains, scopes } from "@/db";
+import { db, users, roles, categories, domains, scopes, admin_profiles } from "@/db";
 import { eq, and, sql } from "drizzle-orm";
 
 /**
@@ -45,7 +45,7 @@ export async function findSPOCForTicket(
             FROM category_fields 
             WHERE subcategory_id = ${subcategoryId}
               AND slug = ANY(${sql.raw(`ARRAY[${fieldSlugs.map(slug => `'${slug.replace(/'/g, "''")}'`).join(',')}]`)})
-              AND active = true
+              AND is_active = true
             LIMIT 1
           `);
 
@@ -55,20 +55,25 @@ export async function findSPOCForTicket(
             if (!adminId || typeof adminId !== 'string') return null;
             const adminUser = await db
               .select({
-                clerk_id: users.clerk_id,
+                external_id: users.external_id,
               })
               .from(users)
               .where(eq(users.id, adminId))
               .limit(1);
 
-            if (adminUser.length > 0 && adminUser[0].clerk_id) {
-              return adminUser[0].clerk_id;
+            if (adminUser.length > 0 && adminUser[0].external_id) {
+              return adminUser[0].external_id;
             }
           }
         }
       } catch (error) {
         // Column might not exist yet if migration hasn't been run
-        console.warn("Field-level assignment check failed (column may not exist):", error);
+        const errorMessage = error instanceof Error 
+          ? error.message 
+          : typeof error === 'string' 
+            ? error 
+            : 'Unknown error';
+        console.warn(`Field-level assignment check failed (column may not exist):`, errorMessage);
       }
     }
 
@@ -102,20 +107,25 @@ export async function findSPOCForTicket(
             if (!adminId || typeof adminId !== 'string') return null;
             const adminUser = await db
               .select({
-                clerk_id: users.clerk_id,
+                external_id: users.external_id,
               })
               .from(users)
               .where(eq(users.id, adminId))
               .limit(1);
 
-            if (adminUser.length > 0 && adminUser[0].clerk_id) {
-              return adminUser[0].clerk_id;
+            if (adminUser.length > 0 && adminUser[0].external_id) {
+              return adminUser[0].external_id;
             }
           }
         }
       } catch (error) {
         // Column might not exist yet if migration hasn't been run
-        console.warn("Subcategory-level assignment check failed (column may not exist):", error);
+        const errorMessage = error instanceof Error 
+          ? error.message 
+          : typeof error === 'string' 
+            ? error 
+            : 'Unknown error';
+        console.warn(`Subcategory-level assignment check failed (column may not exist):`, errorMessage);
       }
     }
 
@@ -135,12 +145,12 @@ export async function findSPOCForTicket(
 
         if (tableExists) {
           // Query category_assignments table
-          // Order by: is_primary DESC (true first), priority DESC (higher first), created_at ASC (oldest first)
+          // Order by: created_at ASC (oldest first) to get the first assignment
           const assignments = await db.execute(sql`
             SELECT user_id 
             FROM category_assignments 
             WHERE category_id = ${categoryId}
-            ORDER BY is_primary DESC, priority DESC, created_at ASC
+            ORDER BY created_at ASC
             LIMIT 1
           `);
 
@@ -150,19 +160,24 @@ export async function findSPOCForTicket(
             if (!adminId || typeof adminId !== 'string') return null;
             const adminUser = await db
               .select({
-                clerk_id: users.clerk_id,
+                external_id: users.external_id,
               })
               .from(users)
               .where(eq(users.id, adminId))
               .limit(1);
 
-            if (adminUser.length > 0 && adminUser[0].clerk_id) {
-              return adminUser[0].clerk_id;
+            if (adminUser.length > 0 && adminUser[0].external_id) {
+              return adminUser[0].external_id;
             }
           }
         }
       } catch (error) {
-        console.warn("Category-level assignment check failed:", error);
+        const errorMessage = error instanceof Error 
+          ? error.message 
+          : typeof error === 'string' 
+            ? error 
+            : 'Unknown error';
+        console.warn(`Category-level assignment check failed:`, errorMessage);
       }
     }
 
@@ -177,21 +192,27 @@ export async function findSPOCForTicket(
           .where(eq(categories.id, categoryId))
           .limit(1);
 
-        if (category?.default_admin_id) {
+        if (category && category.default_admin_id) {
           const adminUser = await db
             .select({
-              clerk_id: users.clerk_id,
+              external_id: users.external_id,
             })
             .from(users)
             .where(eq(users.id, category.default_admin_id))
             .limit(1);
 
-          if (adminUser.length > 0 && adminUser[0].clerk_id) {
-            return adminUser[0].clerk_id;
+          if (adminUser.length > 0 && adminUser[0]?.external_id) {
+            return adminUser[0].external_id;
           }
         }
       } catch (error) {
-        console.warn("Category default admin check failed:", error);
+        // Safe error logging - avoid Object.entries on error objects
+        const errorMessage = error instanceof Error 
+          ? error.message 
+          : typeof error === 'string' 
+            ? error 
+            : 'Unknown error';
+        console.warn(`Category default admin check failed for categoryId ${categoryId}:`, errorMessage);
       }
     }
 
@@ -209,13 +230,14 @@ export async function findSPOCForTicket(
     if (domain) {
       let query = db
         .select({
-          clerk_id: users.clerk_id,
+          external_id: users.external_id,
         })
         .from(users)
         .leftJoin(roles, eq(users.role_id, roles.id))
+        .leftJoin(admin_profiles, eq(admin_profiles.user_id, users.id))
         .where(
           and(
-            eq(users.primary_domain_id, domain.id),
+            eq(admin_profiles.primary_domain_id, domain.id),
             eq(roles.name, "admin")
           )
         );
@@ -231,14 +253,15 @@ export async function findSPOCForTicket(
         if (scope) {
           query = db
             .select({
-              clerk_id: users.clerk_id,
+              external_id: users.external_id,
             })
             .from(users)
             .leftJoin(roles, eq(users.role_id, roles.id))
+            .leftJoin(admin_profiles, eq(admin_profiles.user_id, users.id))
             .where(
               and(
-                eq(users.primary_domain_id, domain.id),
-                eq(users.primary_scope_id, scope.id),
+                eq(admin_profiles.primary_domain_id, domain.id),
+                eq(admin_profiles.primary_scope_id, scope.id),
                 eq(roles.name, "admin")
               )
             );
@@ -247,14 +270,22 @@ export async function findSPOCForTicket(
 
       const staffMembers = await query;
 
-      if (staffMembers.length > 0 && staffMembers[0].clerk_id) {
-        return staffMembers[0].clerk_id;
+      if (staffMembers.length > 0 && staffMembers[0].external_id) {
+        return staffMembers[0].external_id;
       }
     }
 
     return null;
   } catch (error) {
-    console.error("Error finding SPOC for ticket:", error);
+    const errorMessage = error instanceof Error 
+      ? error.message 
+      : typeof error === 'string' 
+        ? error 
+        : 'Unknown error';
+    console.error("Error finding SPOC for ticket:", errorMessage);
+    if (error instanceof Error && error.stack) {
+      console.error("Stack trace:", error.stack);
+    }
     return null;
   }
 }

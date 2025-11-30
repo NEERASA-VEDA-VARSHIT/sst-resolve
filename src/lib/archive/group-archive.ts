@@ -7,6 +7,7 @@
  */
 import { db, tickets, ticket_groups, ticket_statuses } from "@/db";
 import { eq } from "drizzle-orm";
+import { getTicketStatuses } from "@/lib/status/getTicketStatuses";
 
 export async function checkAndArchiveGroupIfAllTicketsClosed(groupId: number): Promise<boolean> {
   try {
@@ -25,16 +26,24 @@ export async function checkAndArchiveGroupIfAllTicketsClosed(groupId: number): P
     const allGroupTickets = await db
       .select({
         id: tickets.id,
-        status_id: tickets.status_id,
-        status_is_final: ticket_statuses.is_final,
+        status: ticket_statuses.value,
       })
       .from(tickets)
-      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
+      .leftJoin(ticket_statuses, eq(ticket_statuses.id, tickets.status_id))
       .where(eq(tickets.group_id, groupId));
+
+    // Get ticket statuses to check which are final
+    const ticketStatuses = await getTicketStatuses();
+    const finalStatusValues = new Set(
+      ticketStatuses.filter(s => s.is_final).map(s => s.value)
+    );
 
     // Check if all tickets have final status (closed/resolved)
     const allTicketsClosed = allGroupTickets.length > 0 && 
-      allGroupTickets.every(ticket => ticket.status_is_final === true);
+      allGroupTickets.every(ticket => {
+        const status = ticket.status;
+        return status && finalStatusValues.has(status);
+      });
 
     if (allTicketsClosed) {
       // Archive the group

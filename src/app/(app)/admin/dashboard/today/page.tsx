@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import type { TicketMetadata } from "@/db/types";
+import type { TicketMetadata } from "@/db/inferred-types";
 import { TicketCard } from "@/components/layout/TicketCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Calendar, AlertTriangle, CheckCircle2, ArrowLeft } from "lucide-react";
@@ -8,6 +8,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { getCachedAdminUser, getCachedAdminAssignment, getCachedTicketStatuses, getCachedAdminTickets } from "@/lib/cache/cached-queries";
 import { ticketMatchesAdminAssignment } from "@/lib/assignment/admin-assignment";
+import type { Ticket } from "@/db/types-only";
 
 // Revalidate every 30 seconds for fresh data
 export const revalidate = 30;
@@ -44,8 +45,11 @@ export default async function AdminTodayPendingPage() {
   // Transform to include status and category fields for compatibility
   let allTickets = allTicketRows.map(t => ({
     ...t,
+    status_id: (t as { status_id?: number | null }).status_id || null,
+    scope_id: null,
     status: t.status_value || null,
     category: t.category_name || null,
+    category_name: t.category_name || null,
     due_at: t.resolution_due_at,
   }));
 
@@ -276,9 +280,11 @@ export default async function AdminTodayPendingPage() {
                 <div key={t.id} className={isOverdue ? "ring-2 ring-orange-400 dark:ring-orange-500 rounded-lg" : ""}>
                   <TicketCard ticket={{
                     ...t,
+                    status_id: t.status_id || null,
+                    scope_id: null,
                     status: t.status_value || null,
                     category_name: t.category_name || null,
-                  }} basePath="/admin/dashboard" />
+                  } as unknown as Ticket & { status?: string | null; category_name?: string | null; creator_name?: string | null; creator_email?: string | null }} basePath="/admin/dashboard" />
                 </div>
               );
             })}

@@ -24,12 +24,21 @@ export async function DELETE(
             return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }
 
-        const { assignmentId } = await params;
-        const id = parseInt(assignmentId);
+        const { id: categoryIdStr, assignmentId } = await params;
+        const categoryId = parseInt(categoryIdStr);
+        const assignmentIdNum = parseInt(assignmentId);
+        
+        if (isNaN(categoryId) || categoryId <= 0) {
+            return NextResponse.json({ error: "Invalid category ID" }, { status: 400 });
+        }
+        
+        if (isNaN(assignmentIdNum) || assignmentIdNum <= 0) {
+            return NextResponse.json({ error: "Invalid assignment ID" }, { status: 400 });
+        }
 
         await db
             .delete(category_assignments)
-            .where(eq(category_assignments.id, id));
+            .where(eq(category_assignments.id, assignmentIdNum));
 
         return NextResponse.json({ success: true });
     } catch (error) {
@@ -60,28 +69,37 @@ export async function PATCH(
             return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }
 
-        const { id, assignmentId } = await params;
-        const categoryId = parseInt(id);
-        const assignId = parseInt(assignmentId);
+        const { id: categoryIdStr, assignmentId } = await params;
+        const categoryId = parseInt(categoryIdStr);
+        const assignmentIdNum = parseInt(assignmentId);
+        
+        if (isNaN(categoryId) || categoryId <= 0) {
+            return NextResponse.json({ error: "Invalid category ID" }, { status: 400 });
+        }
+        
+        if (isNaN(assignmentIdNum) || assignmentIdNum <= 0) {
+            return NextResponse.json({ error: "Invalid assignment ID" }, { status: 400 });
+        }
+        
         const body = await request.json();
-        const { is_primary, priority } = body;
+        const { assignment_type } = body;
 
-        // If setting as primary, unset other primary assignments
-        if (is_primary) {
-            await db
-                .update(category_assignments)
-                .set({ is_primary: false, updated_at: new Date() })
-                .where(eq(category_assignments.category_id, categoryId));
+        const updateData: { assignment_type?: string | null } = {};
+        if (assignment_type !== undefined) {
+            updateData.assignment_type = assignment_type || null;
+        }
+
+        if (Object.keys(updateData).length === 0) {
+            return NextResponse.json(
+                { error: "No fields to update" },
+                { status: 400 }
+            );
         }
 
         const updated = await db
             .update(category_assignments)
-            .set({
-                is_primary: is_primary !== undefined ? is_primary : undefined,
-                priority: priority !== undefined ? priority : undefined,
-                updated_at: new Date(),
-            })
-            .where(eq(category_assignments.id, assignId))
+            .set(updateData)
+            .where(eq(category_assignments.id, assignmentIdNum))
             .returning();
 
         return NextResponse.json({ assignment: updated[0] });

@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import { tickets, outbox, ticket_statuses } from "@/db/schema";
-import { eq, sql } from "drizzle-orm";
+import { tickets, outbox, ticket_committee_tags, committees, ticket_statuses } from "@/db/schema";
+import { getStatusIdByValue } from "@/lib/status/getTicketStatuses";
+import type { TicketInsert } from "@/db/inferred-types";
+import { eq, sql, and, inArray } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
-import { z } from "zod";
+import { UpdateTicketStatusSchema } from "@/schemas/business/ticket";
+import { TICKET_STATUS, getCanonicalStatus } from "@/conf/constants";
 
 /**
  * ============================================
@@ -21,18 +24,6 @@ import { z } from "zod";
  *   - Returns: 200 OK with updated ticket
  * ============================================
  */
-
-// Allowed statuses — enforce workflow from PRD v3
-const StatusSchema = z.object({
-  status: z.enum([
-    "OPEN",
-    "IN_PROGRESS",
-    "AWAITING_STUDENT",
-    "RESOLVED",
-    "REOPENED",
-    "ESCALATED",
-  ]),
-});
 
 export async function PATCH(
   request: NextRequest,
@@ -53,17 +44,9 @@ export async function PATCH(
 
     const body = await request.json();
     
-    // Normalize status value: convert frontend format to database format
-    let normalizedStatus = body.status;
-    if (typeof normalizedStatus === 'string') {
-      normalizedStatus = normalizedStatus.toUpperCase();
-      // Convert frontend format to database format
-      if (normalizedStatus === "AWAITING_STUDENT_RESPONSE") {
-        normalizedStatus = "AWAITING_STUDENT";
-      }
-    }
+    const canonicalStatus = typeof body.status === "string" ? getCanonicalStatus(body.status) : null;
     
-    const parsed = StatusSchema.safeParse({ status: normalizedStatus });
+    const parsed = UpdateTicketStatusSchema.safeParse({ status: canonicalStatus });
     if (!parsed.success) {
       return NextResponse.json(
         { error: "Invalid status", details: parsed.error.format() },
@@ -81,12 +64,12 @@ export async function PATCH(
       return NextResponse.json({ error: "User not found" }, { status: 404 });
 
     const role = await getUserRoleFromDB(userId);
-    const isAdmin =
-      role === "admin" || role === "super_admin";
+    const isAdmin = role === "admin" || role === "super_admin";
     const isStudent = role === "student";
+    const isCommittee = role === "committee";
 
     // -------------------------
-    // LOAD TICKET
+    // LOAD TICKET WITH STATUS
     // -------------------------
     const [ticket] = await db
       .select({
@@ -98,7 +81,7 @@ export async function PATCH(
         metadata: tickets.metadata,
       })
       .from(tickets)
-      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
+      .leftJoin(ticket_statuses, eq(ticket_statuses.id, tickets.status_id))
       .where(eq(tickets.id, ticketId))
       .limit(1);
 
@@ -111,10 +94,11 @@ export async function PATCH(
 
     // Students → can ONLY reopen their own resolved ticket
     if (isStudent) {
+      const currentStatus = getCanonicalStatus(ticket.status) || ticket.status?.toLowerCase();
       if (ticket.created_by !== localUser.id) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
-      if (ticket.status !== "RESOLVED" || newStatus !== "REOPENED") {
+      if (currentStatus !== TICKET_STATUS.RESOLVED || newStatus !== TICKET_STATUS.REOPENED) {
         return NextResponse.json(
           { error: "Students can only reopen resolved tickets" },
           { status: 403 }
@@ -122,16 +106,50 @@ export async function PATCH(
       }
     }
 
-    // Committee → cannot update status (except via committee dashboard rules)
-    if (role === "committee") {
-      return NextResponse.json(
-        { error: "Committee members cannot update status" },
-        { status: 403 }
-      );
+    // Committee → can only resolve tickets tagged to their committee
+    if (isCommittee) {
+      const committeeRecords = await db
+        .select({ id: committees.id })
+        .from(committees)
+        .where(eq(committees.head_id, localUser.id));
+
+      const committeeIds = committeeRecords.map((c) => c.id);
+
+      if (committeeIds.length === 0) {
+        return NextResponse.json(
+          { error: "Committee membership not found" },
+          { status: 403 }
+        );
+      }
+
+      const [tagRecord] = await db
+        .select({ ticket_id: ticket_committee_tags.ticket_id })
+        .from(ticket_committee_tags)
+        .where(
+          and(
+            eq(ticket_committee_tags.ticket_id, ticketId),
+            inArray(ticket_committee_tags.committee_id, committeeIds)
+          )
+        )
+        .limit(1);
+
+      if (!tagRecord) {
+        return NextResponse.json(
+          { error: "You can only update tickets tagged to your committee" },
+          { status: 403 }
+        );
+      }
+
+      if (newStatus !== TICKET_STATUS.RESOLVED) {
+        return NextResponse.json(
+          { error: "Committee members can only mark tickets as resolved" },
+          { status: 403 }
+        );
+      }
     }
 
     // Admin → can change status freely
-    if (!isAdmin && !isStudent) {
+    if (!isAdmin && !isStudent && !isCommittee) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -139,19 +157,13 @@ export async function PATCH(
     // STATUS TRANSITION RULES
     // -------------------------
 
-    // Get new status ID
-    const [newStatusRow] = await db.select({ id: ticket_statuses.id })
-      .from(ticket_statuses)
-      .where(eq(ticket_statuses.value, newStatus))
-      .limit(1);
-
-    if (!newStatusRow) {
-      return NextResponse.json({ error: "Invalid status value in database" }, { status: 500 });
-    }
-
     // Handle TAT pause when status changes to AWAITING_STUDENT
-    const metadata = (ticket.metadata as Record<string, unknown>) || {};
-    if (newStatus === "AWAITING_STUDENT" && ticket.status !== "AWAITING_STUDENT") {
+    let metadata: Record<string, unknown> = {};
+    if (ticket.metadata && typeof ticket.metadata === 'object' && !Array.isArray(ticket.metadata)) {
+      metadata = { ...ticket.metadata as Record<string, unknown> };
+    }
+    const currentStatusValue = ticket.status || "";
+    if (newStatus === TICKET_STATUS.AWAITING_STUDENT && currentStatusValue !== TICKET_STATUS.AWAITING_STUDENT) {
       // Pause TAT - record pause start time
       metadata.tatPauseStart = new Date().toISOString();
       // Initialize paused duration if not exists
@@ -160,20 +172,24 @@ export async function PATCH(
       }
     }
 
-    const updateData: Record<string, unknown> = {
-      status_id: newStatusRow.id,
-      updated_at: new Date(),
-      metadata: metadata,
-    };
-
-    // SET TIMESTAMPS
-    if (newStatus === "RESOLVED") {
-      updateData.resolved_at = new Date();
+    // Get status_id from status value
+    const newStatusId = await getStatusIdByValue(newStatus);
+    if (!newStatusId) {
+      return NextResponse.json(
+        { error: `Invalid status: ${newStatus}` },
+        { status: 400 }
+      );
     }
-    if (newStatus === "REOPENED") {
-      updateData.reopened_at = new Date();
-      // Increment reopen_count
-      updateData.reopen_count = sql`${tickets.reopen_count} + 1`;
+
+    // SET TIMESTAMPS - Update metadata for resolved_at and reopened_at
+    if (newStatus === TICKET_STATUS.RESOLVED) {
+      metadata.resolved_at = new Date().toISOString();
+    }
+    if (newStatus === TICKET_STATUS.REOPENED) {
+      metadata.reopened_at = new Date().toISOString();
+      // Increment reopen_count in metadata
+      const currentReopenCount = (metadata.reopen_count as number) || 0;
+      metadata.reopen_count = currentReopenCount + 1;
       // Reset TAT pause tracking for new TAT cycle
       metadata.tatPauseStart = undefined;
       metadata.tatPausedDuration = 0;
@@ -182,8 +198,14 @@ export async function PATCH(
       metadata.tatDate = undefined;
       metadata.tatSetAt = undefined;
       metadata.tatSetBy = undefined;
-      updateData.metadata = metadata;
     }
+
+    // Build update data
+    const updateData: Partial<TicketInsert> = {
+      status_id: newStatusId,
+      updated_at: new Date(),
+      metadata: metadata as unknown,
+    };
 
     // Admin taking action → assign the ticket to themselves automatically
     if (isAdmin) {
@@ -209,7 +231,7 @@ export async function PATCH(
         event_type: "ticket.status.updated",
         payload: {
           ticket_id: ticketId,
-          old_status: ticket.status,
+          old_status: currentStatusValue,
           new_status: newStatus,
           updated_by_clerk_id: userId,
         },

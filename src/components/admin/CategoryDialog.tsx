@@ -52,8 +52,7 @@ interface Scope {
 interface Admin {
   id: string;
   email: string;
-  first_name: string | null;
-  last_name: string | null;
+  full_name: string | null;
 }
 
 interface CategoryDialogProps {
@@ -119,11 +118,17 @@ export function CategoryDialog({ open, onClose, category }: CategoryDialogProps)
         return;
       }
 
+      // Check Content-Type before parsing JSON
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        console.error("[CategoryDialog] API returned non-JSON response");
+        return;
+      }
+
       const data = await response.json();
       console.log("[CategoryDialog] Fetched staff data:", data);
       
       // API already returns only admin and super_admin roles
-      // Parse fullName back to first_name and last_name for display
       type StaffMember = {
         fullName?: string;
         [key: string]: unknown;
@@ -134,8 +139,7 @@ export function CategoryDialog({ open, onClose, category }: CategoryDialogProps)
         const nameParts = fullName.split(" ");
         return {
           id: staff.id,
-          first_name: nameParts[0] || null,
-          last_name: nameParts.slice(1).join(" ") || null,
+          full_name: fullName || null,
           email: staff.email || "",
           fullName: fullName || staff.email || "Unknown",
         };
@@ -220,8 +224,14 @@ export function CategoryDialog({ open, onClose, category }: CategoryDialogProps)
         toast.success(category ? "Category updated successfully" : "Category created successfully");
         onClose(true);
       } else {
-        const error = await response.json();
-        toast.error(error.error || "Failed to save category");
+        // Check Content-Type before parsing JSON error
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const error = await response.json();
+          toast.error(error.error || "Failed to save category");
+        } else {
+          toast.error(`Failed to save category (${response.status} ${response.statusText})`);
+        }
       }
     } catch (error) {
       console.error("Error saving category:", error);
@@ -456,12 +466,11 @@ export function CategoryDialog({ open, onClose, category }: CategoryDialogProps)
                     admins.map((admin) => {
                       type AdminWithFullName = {
                         fullName?: string;
-                        first_name?: string | null;
-                        last_name?: string | null;
+                        full_name?: string | null;
                         [key: string]: unknown;
                       };
                       const adminWithFullName = admin as unknown as AdminWithFullName;
-                      const fullName = adminWithFullName.fullName || [admin.first_name, admin.last_name].filter(Boolean).join(' ').trim();
+                      const fullName = adminWithFullName.fullName || admin.full_name || null;
                       const displayName = fullName || admin.email || "Unknown";
                       return (
                         <SelectItem key={admin.id} value={admin.id}>

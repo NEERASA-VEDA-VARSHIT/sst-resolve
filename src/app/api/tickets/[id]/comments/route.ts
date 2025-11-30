@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { tickets, users, outbox, ticket_statuses } from "@/db/schema";
-import { eq } from "drizzle-orm";
-import { AddCommentSchema } from "@/schema/ticket.schema";
+import type { TicketInsert } from "@/db/inferred-types";
+import { eq, sql } from "drizzle-orm";
+import { AddCommentSchema } from "@/schemas/business/ticket";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
 import { auth } from "@clerk/nextjs/server";
-import type { TicketMetadata } from "@/db/types";
+import type { TicketMetadata } from "@/db/inferred-types";
+import { TICKET_STATUS, getCanonicalStatus } from "@/conf/constants";
+import { getStatusIdByValue } from "@/lib/status/getTicketStatuses";
 
 /**
  * ============================================
@@ -30,11 +33,11 @@ import type { TicketMetadata } from "@/db/types";
  */
 
 // Utility – Get local DB user
-async function getLocalUserId(clerkId: string) {
+async function getLocalUserId(externalId: string) {
   const [row] = await db
     .select({ id: users.id })
     .from(users)
-    .where(eq(users.clerk_id, clerkId))
+    .where(eq(users.external_id, externalId))
     .limit(1);
 
   return row?.id ?? null;
@@ -152,12 +155,11 @@ export async function POST(
         id: tickets.id,
         metadata: tickets.metadata,
         created_by: tickets.created_by,
-        status_value: ticket_statuses.value,
-        status_id: tickets.status_id,
+        status: ticket_statuses.value,
         category_id: tickets.category_id,
       })
       .from(tickets)
-      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
+      .leftJoin(ticket_statuses, eq(ticket_statuses.id, tickets.status_id))
       .where(eq(tickets.id, ticketId))
       .limit(1);
 
@@ -198,8 +200,7 @@ export async function POST(
     }
 
     // Build author name (prefer local user name if available)
-    const authorName = [localUser.first_name, localUser.last_name].filter(Boolean).join(' ').trim();
-    const author = authorName || localUser.email || "User";
+    const author = localUser.full_name || localUser.email || "User";
     // For admin super_admin note type, we may label differently in the worker / UI
 
     // Create comment object
@@ -219,11 +220,10 @@ export async function POST(
       const [freshTicket] = await tx
         .select({ 
           metadata: tickets.metadata,
-          status_id: tickets.status_id,
-          status_value: ticket_statuses.value,
+          status: ticket_statuses.value,
         })
         .from(tickets)
-        .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
+        .leftJoin(ticket_statuses, eq(ticket_statuses.id, tickets.status_id))
         .where(eq(tickets.id, ticketId))
         .limit(1);
 
@@ -233,14 +233,16 @@ export async function POST(
       if (!Array.isArray(metadata.comments)) metadata.comments = [];
       metadata.comments.push(commentObj);
 
-      const updateData: Record<string, unknown> = {
-        metadata,
+      const updateData: Partial<TicketInsert> = {
+        metadata: metadata as unknown,
         updated_at: new Date(),
       };
 
       // Check if student is replying to AWAITING_STUDENT status
-      const currentStatus = freshTicket.status_value;
-      const isAwaitingStudent = currentStatus === "AWAITING_STUDENT" || currentStatus === "AWAITING_STUDENT_RESPONSE";
+      const statusValue = freshTicket.status || null;
+      const currentStatus = statusValue ? (getCanonicalStatus(statusValue) || statusValue.toLowerCase()) : "";
+      const isAwaitingStudent =
+        currentStatus === TICKET_STATUS.AWAITING_STUDENT;
       
       if (isStudent && isAwaitingStudent) {
         // 1. Resume TAT - calculate paused duration and update TAT date
@@ -275,28 +277,25 @@ export async function POST(
         }
 
         // 2. Automatically change status to IN_PROGRESS
-        const [inProgressStatus] = await tx
-          .select({ id: ticket_statuses.id })
-          .from(ticket_statuses)
-          .where(eq(ticket_statuses.value, "IN_PROGRESS"))
-          .limit(1);
-
-        if (inProgressStatus) {
-          updateData.status_id = inProgressStatus.id;
-          
-          // Create status change event
-          await tx.insert(outbox).values({
-            event_type: "ticket.status.updated",
-            payload: {
-              ticket_id: ticketId,
-              old_status: currentStatus,
-              new_status: "IN_PROGRESS",
-              updated_by_clerk_id: userId,
-              auto_changed: true,
-              reason: "Student replied to awaiting question",
-            },
-          });
+        const inProgressStatusId = await getStatusIdByValue(TICKET_STATUS.IN_PROGRESS);
+        if (inProgressStatusId) {
+          updateData.status_id = inProgressStatusId;
+        } else {
+          console.error(`[Comments API] Failed to find status_id for "${TICKET_STATUS.IN_PROGRESS}"`);
         }
+        
+        // Create status change event
+        await tx.insert(outbox).values({
+          event_type: "ticket.status.updated",
+          payload: {
+            ticket_id: ticketId,
+            old_status: currentStatus ? currentStatus.toUpperCase() : currentStatus,
+            new_status: TICKET_STATUS.IN_PROGRESS.toUpperCase(),
+            updated_by_clerk_id: userId,
+            auto_changed: true,
+            reason: "Student replied to awaiting question",
+          },
+        });
       }
 
       // Update ticket

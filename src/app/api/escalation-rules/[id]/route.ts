@@ -41,6 +41,7 @@ export async function GET(
         scope_id: escalation_rules.scope_id,
         level: escalation_rules.level,
         user_id: escalation_rules.user_id,
+        tat_hours: escalation_rules.tat_hours,
         notify_channel: escalation_rules.notify_channel,
         created_at: escalation_rules.created_at,
         updated_at: escalation_rules.updated_at,
@@ -59,10 +60,9 @@ export async function GET(
       const [user] = await db
         .select({
           id: users.id,
-          first_name: users.first_name,
-          last_name: users.last_name,
+          full_name: users.full_name,
           email: users.email,
-          clerk_id: users.clerk_id,
+          external_id: users.external_id,
         })
         .from(users)
         .where(eq(users.id, rule.user_id))
@@ -70,7 +70,7 @@ export async function GET(
 
       userDetails = user ? {
         ...user,
-        name: [user.first_name, user.last_name].filter(Boolean).join(' ').trim() || null,
+        name: user.full_name || null,
       } : null;
     }
 
@@ -117,7 +117,7 @@ export async function PATCH(
     }
 
     const body = await request.json();
-    const { domain_id, scope_id, level, user_id, notify_channel } = body;
+    const { domain_id, scope_id, level, user_id, tat_hours, notify_channel } = body;
 
     // Verify rule exists
     const [existingRule] = await db
@@ -136,6 +136,7 @@ export async function PATCH(
       scope_id?: number | null;
       level?: number;
       user_id?: string | null;
+      tat_hours?: number;
       notify_channel?: string;
     } = {
       updated_at: new Date(),
@@ -174,6 +175,14 @@ export async function PATCH(
 
         updateData.user_id = user_id;
       }
+    }
+
+    if (tat_hours !== undefined) {
+      const tatHoursNum = parseInt(String(tat_hours), 10);
+      if (isNaN(tatHoursNum) || tatHoursNum < 1) {
+        return NextResponse.json({ error: "TAT hours must be a positive integer" }, { status: 400 });
+      }
+      updateData.tat_hours = tatHoursNum;
     }
 
     if (notify_channel !== undefined) {

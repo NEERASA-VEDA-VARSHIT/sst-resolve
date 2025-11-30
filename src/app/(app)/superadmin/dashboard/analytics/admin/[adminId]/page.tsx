@@ -1,7 +1,9 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect, notFound } from "next/navigation";
 import { db } from "@/db";
-import { tickets, categories, users, ticket_statuses, domains, scopes } from "@/db/schema";
+import { tickets, categories, users, domains, scopes, admin_profiles, ticket_statuses } from "@/db/schema";
+import type { TicketMetadata } from "@/db/inferred-types";
+import type { Ticket } from "@/db/types-only";
 import { eq, desc, inArray, gte, and } from "drizzle-orm";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { FileText, Clock, CheckCircle2, AlertCircle, TrendingUp, Users, ArrowLeft, Zap, Target, Activity, Mail, Phone } from "lucide-react";
@@ -13,6 +15,7 @@ import { normalizeStatusForComparison } from "@/lib/utils";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { TicketCard } from "@/components/layout/TicketCard";
+import { getTicketStatusByValue } from "@/lib/status/getTicketStatuses";
 
 export default async function AdminDetailPage({
   params,
@@ -47,8 +50,7 @@ export default async function AdminDetailPage({
   const [userRecord] = await db
     .select({
       id: users.id,
-      first_name: users.first_name,
-      last_name: users.last_name,
+      full_name: users.full_name,
       email: users.email,
       phone: users.phone,
       role_id: users.role_id,
@@ -56,8 +58,9 @@ export default async function AdminDetailPage({
       scope_name: scopes.name,
     })
     .from(users)
-    .leftJoin(domains, eq(users.primary_domain_id, domains.id))
-    .leftJoin(scopes, eq(users.primary_scope_id, scopes.id))
+    .leftJoin(admin_profiles, eq(admin_profiles.user_id, users.id))
+    .leftJoin(domains, eq(admin_profiles.primary_domain_id, domains.id))
+    .leftJoin(scopes, eq(admin_profiles.primary_scope_id, scopes.id))
     .where(eq(users.id, adminId))
     .limit(1);
 
@@ -71,7 +74,7 @@ export default async function AdminDetailPage({
     domain: userRecord.domain_name,
     scope: userRecord.scope_name,
     role: "Admin", // Simplified, could fetch role name from roles table
-    staff_name: [userRecord.first_name, userRecord.last_name].filter(Boolean).join(" "),
+    staff_name: userRecord.full_name || "",
     staff_email: userRecord.email,
     staff_phone: userRecord.phone,
   };
@@ -99,35 +102,25 @@ export default async function AdminDetailPage({
     category_id: number | null;
     subcategory_id: number | null;
     sub_subcategory_id: number | null;
-    created_by: string;
+    created_by: string | null;
     assigned_to: string | null;
-    acknowledged_by: string | null;
     group_id: number | null;
-    escalation_level: number;
-    tat_extended_count: number;
-    last_escalation_at: Date | null;
-    acknowledgement_tat_hours: number | null;
-    resolution_tat_hours: number | null;
+    escalation_level: number | null;
     acknowledgement_due_at: Date | null;
     resolution_due_at: Date | null;
-    acknowledged_at: Date | null;
-    reopened_at: Date | null;
-    sla_breached_at: Date | null;
-    reopen_count: number;
-    rating: number | null;
-    feedback_type: string | null;
-    rating_submitted: Date | null;
-    feedback: string | null;
-    is_public: boolean;
-    admin_link: string | null;
-    student_link: string | null;
-    slack_thread_id: string | null;
-    external_ref: string | null;
     metadata: unknown;
-    created_at: Date;
-    updated_at: Date;
-    resolved_at: Date | null;
-    status_value: string | null;
+    created_at: Date | null;
+    updated_at: Date | null;
+    status?: string | null;
+    resolved_at?: Date | null;
+    acknowledged_at?: Date | null;
+    reopened_at?: Date | null;
+    sla_breached_at?: Date | null;
+    reopen_count?: number | null;
+    rating?: number | null;
+    feedback_type?: string | null;
+    rating_submitted?: Date | null;
+    feedback?: string | null;
   }> = [];
 
   try {
@@ -138,38 +131,19 @@ export default async function AdminDetailPage({
         description: tickets.description,
         location: tickets.location,
         status_id: tickets.status_id,
+        status_value: ticket_statuses.value,
         category_id: tickets.category_id,
         subcategory_id: tickets.subcategory_id,
         sub_subcategory_id: tickets.sub_subcategory_id,
         created_by: tickets.created_by,
         assigned_to: tickets.assigned_to,
-        acknowledged_by: tickets.acknowledged_by,
         group_id: tickets.group_id,
         escalation_level: tickets.escalation_level,
-        tat_extended_count: tickets.tat_extended_count,
-        last_escalation_at: tickets.last_escalation_at,
-        acknowledgement_tat_hours: tickets.acknowledgement_tat_hours,
-        resolution_tat_hours: tickets.resolution_tat_hours,
         acknowledgement_due_at: tickets.acknowledgement_due_at,
         resolution_due_at: tickets.resolution_due_at,
-        acknowledged_at: tickets.acknowledged_at,
-        reopened_at: tickets.reopened_at,
-        sla_breached_at: tickets.sla_breached_at,
-        reopen_count: tickets.reopen_count,
-        rating: tickets.rating,
-        feedback_type: tickets.feedback_type,
-        rating_submitted: tickets.rating_submitted,
-        feedback: tickets.feedback,
-        is_public: tickets.is_public,
-        admin_link: tickets.admin_link,
-        student_link: tickets.student_link,
-        slack_thread_id: tickets.slack_thread_id,
-        external_ref: tickets.external_ref,
         metadata: tickets.metadata,
         created_at: tickets.created_at,
         updated_at: tickets.updated_at,
-        resolved_at: tickets.resolved_at,
-        status_value: ticket_statuses.value,
       })
       .from(tickets)
       .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
@@ -177,8 +151,49 @@ export default async function AdminDetailPage({
       .orderBy(desc(tickets.created_at))
       .limit(1000);
 
-    // Use rawTicketRows directly - they already have all the fields we need
-    ticketRows = rawTicketRows;
+    // Extract metadata fields and transform
+    ticketRows = rawTicketRows.map(t => {
+      let ticketMetadata: TicketMetadata = {};
+      if (t.metadata && typeof t.metadata === 'object' && !Array.isArray(t.metadata)) {
+        ticketMetadata = t.metadata as TicketMetadata;
+      }
+      const resolvedAt = ticketMetadata.resolved_at ? new Date(ticketMetadata.resolved_at) : null;
+      const acknowledgedAt = ticketMetadata.acknowledged_at ? new Date(ticketMetadata.acknowledged_at) : null;
+      const reopenedAt = ticketMetadata.reopened_at ? new Date(ticketMetadata.reopened_at) : null;
+      const slaBreachedAt = ticketMetadata.sla_breached_at ? new Date(ticketMetadata.sla_breached_at) : null;
+      const lastEscalationAt = ticketMetadata.last_escalation_at ? new Date(ticketMetadata.last_escalation_at) : null;
+      
+      return {
+        id: t.id,
+        title: t.title,
+        description: t.description,
+        location: t.location,
+        status_id: t.status_id || 0,
+        category_id: t.category_id,
+        subcategory_id: t.subcategory_id,
+        sub_subcategory_id: t.sub_subcategory_id,
+        created_by: t.created_by,
+        assigned_to: t.assigned_to,
+        group_id: t.group_id,
+        escalation_level: t.escalation_level,
+        acknowledgement_due_at: t.acknowledgement_due_at,
+        resolution_due_at: t.resolution_due_at,
+        metadata: t.metadata,
+        created_at: t.created_at,
+        updated_at: t.updated_at,
+        status: t.status_value || null,
+        resolved_at: resolvedAt,
+        acknowledged_at: acknowledgedAt,
+        reopened_at: reopenedAt,
+        sla_breached_at: slaBreachedAt,
+        last_escalation_at: lastEscalationAt,
+        reopen_count: (ticketMetadata.reopen_count as number | null) || null,
+        rating: (ticketMetadata.rating as number | null) || null,
+        feedback_type: (ticketMetadata.feedback_type as string | null) || null,
+        rating_submitted: ticketMetadata.rating_submitted ? new Date(ticketMetadata.rating_submitted) : null,
+        feedback: (ticketMetadata.feedback as string | null) || null,
+      };
+    });
   } catch (error) {
     console.error("[Super Admin Analytics Admin] Error fetching tickets:", error);
     // Continue with empty array
@@ -212,13 +227,12 @@ export default async function AdminDetailPage({
       const userData = await db
         .select({
           id: users.id,
-          first_name: users.first_name,
-          last_name: users.last_name,
+          full_name: users.full_name,
           email: users.email,
         })
         .from(users)
         .where(inArray(users.id, userIds));
-      userData.forEach(u => userMap.set(u.id, { name: [u.first_name, u.last_name].filter(Boolean).join(" "), email: u.email }));
+      userData.forEach(u => userMap.set(u.id, { name: u.full_name || null, email: u.email }));
     } catch (error) {
       console.error("Error fetching users:", error);
     }
@@ -230,7 +244,7 @@ export default async function AdminDetailPage({
     return {
       ...t,
       // Additional fields for TicketCard
-      status: t.status_value || null,
+      status: t.status || null,
       category_name: catInfo?.name || null,
       creator_name: t.created_by ? userMap.get(t.created_by)?.name || null : null,
       creator_email: t.created_by ? userMap.get(t.created_by)?.email || null : null,
@@ -293,6 +307,10 @@ export default async function AdminDetailPage({
   const resolvedToday = resolvedTickets.filter(t =>
     t.resolved_at && t.resolved_at >= startOfToday
   ).length;
+
+  // Fetch status labels from database
+  const awaitingStudentStatus = await getTicketStatusByValue("awaiting_student");
+  const awaitingStudentLabel = awaitingStudentStatus?.label || "Awaiting Student Response";
 
   // const resolvedThisWeek = resolvedTickets.filter(t =>
   //   t.resolved_at && t.resolved_at >= startOfWeek
@@ -555,7 +573,7 @@ export default async function AdminDetailPage({
                     <Users className="h-6 w-6 text-blue-600 dark:text-blue-400" />
                   </div>
                   <div>
-                    <p className="text-sm font-semibold">Awaiting Student</p>
+                    <p className="text-sm font-semibold">{awaitingStudentLabel}</p>
                     <p className="text-xs text-muted-foreground">Waiting for response</p>
                   </div>
                 </div>
@@ -609,7 +627,7 @@ export default async function AdminDetailPage({
       </Card>
 
       {/* Category Breakdown */}
-      {Object.keys(categoryBreakdown).length > 0 && (
+      {categoryBreakdown && typeof categoryBreakdown === 'object' && !Array.isArray(categoryBreakdown) && Object.keys(categoryBreakdown).length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle>Category Breakdown</CardTitle>
@@ -663,7 +681,11 @@ export default async function AdminDetailPage({
               {allTickets.map((ticket) => (
                 <TicketCard
                   key={ticket.id}
-                  ticket={ticket}
+                  ticket={{
+                    ...ticket,
+                    status_id: ticket.status_id || 0,
+                    scope_id: null,
+                  } as unknown as Ticket & { status?: string | null; category_name?: string | null; creator_name?: string | null; creator_email?: string | null }}
                   basePath="/superadmin/dashboard"
                 />
               ))}

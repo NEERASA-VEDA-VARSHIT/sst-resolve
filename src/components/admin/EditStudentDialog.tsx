@@ -33,9 +33,7 @@ interface StudentData {
     student_id: number;
     user_id: string;
     roll_no: string;
-    full_name?: string; // Constructed from first_name + last_name
-    first_name: string | null;
-    last_name: string | null;
+    full_name: string | null;
     email: string;
     phone: string | null;
     room_no: string | null;
@@ -117,11 +115,8 @@ export function EditStudentDialog({
                 throw new Error("Student data not found in response");
             }
             
-            // Construct full_name from first_name and last_name
-            const fullName = [student.first_name, student.last_name]
-                .filter(Boolean)
-                .join(" ")
-                .trim() || "";
+            // Use full_name directly
+            const fullName = (student.full_name || "").trim();
 
             // Set student data with full_name constructed
             setStudent({

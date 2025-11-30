@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { outbox } from "@/db/schema";
+import { notifications, outbox } from "@/db/schema";
 import { asc, eq, sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 
@@ -28,7 +28,7 @@ export async function claimNextOutboxRow(): Promise<OutboxRow | null> {
     await tx
       .update(outbox)
       .set({
-        attempts: row.attempts + 1,
+        attempts: (row.attempts || 0) + 1,
         next_retry_at: null,
       })
       .where(eq(outbox.id, row.id));
@@ -69,5 +69,45 @@ export async function markOutboxFailure(outboxId: number, reason?: string) {
       next_retry_at: nextRetry,
     })
     .where(eq(outbox.id, outboxId));
+}
+
+type LogNotificationParams = {
+  userId?: string | null;
+  ticketId?: number | null;
+  channel: string;
+  notificationType: string;
+  slackMessageId?: string | null;
+  emailMessageId?: string | null;
+  sentAt?: Date;
+};
+
+export async function logNotification({
+  userId,
+  ticketId,
+  channel,
+  notificationType,
+  slackMessageId,
+  emailMessageId,
+  sentAt,
+}: LogNotificationParams): Promise<void> {
+  try {
+    await db.insert(notifications).values({
+      user_id: userId ?? null,
+      ticket_id: ticketId ?? null,
+      channel,
+      notification_type: notificationType,
+      slack_message_id: slackMessageId ?? null,
+      email_message_id: emailMessageId ?? null,
+      sent_at: sentAt ?? new Date(),
+    });
+  } catch (error) {
+    console.error("[logNotification] Failed to record notification", {
+      error,
+      channel,
+      notificationType,
+      userId,
+      ticketId,
+    });
+  }
 }
 

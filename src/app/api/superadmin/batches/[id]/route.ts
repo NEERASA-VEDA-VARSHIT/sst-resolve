@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { batches, students } from "@/db/schema";
+import type { BatchInsert } from "@/db/inferred-types";
 import { eq } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
@@ -98,12 +99,10 @@ export async function PATCH(
 		}
 
 		const body = await request.json();
-		const { batch_year, display_name, is_active } = body;
+		const { batch_year, is_active } = body;
 
 		// Build update object
-		const updates: Record<string, unknown> = {
-			updated_at: new Date(),
-		};
+		const updates: Partial<BatchInsert> = {};
 
 		if (batch_year !== undefined) {
 			const year = parseInt(batch_year);
@@ -129,10 +128,6 @@ export async function PATCH(
 			}
 
 			updates.batch_year = year;
-		}
-
-		if (display_name !== undefined) {
-			updates.display_name = display_name?.trim() || null;
 		}
 
 		if (is_active !== undefined) {
@@ -218,7 +213,6 @@ export async function DELETE(
 			.update(batches)
 			.set({
 				is_active: false,
-				updated_at: new Date(),
 			})
 			.where(eq(batches.id, batchId))
 			.returning();

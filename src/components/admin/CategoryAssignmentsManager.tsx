@@ -28,41 +28,40 @@ import { toast } from "sonner";
 interface Assignment {
     id: number;
     category_id: number;
-    staff_id: number;
-    is_primary: boolean;
-    priority: number;
-    staff: {
-        id: number;
-        full_name: string;
-        email: string;
-        domain: string;
-        scope: string | null;
+    user_id: string; // UUID
+    assignment_type: string | null;
+    created_at: Date | string;
+    user: {
+        id: string; // UUID
+        full_name: string | null;
+        email: string | null;
+        external_id: string | null;
     };
 }
 
-interface Staff {
-    id: number;
-    full_name: string;
+interface Admin {
+    id: string; // Database UUID (matches category_assignments.user_id)
+    external_id?: string; // Clerk ID (optional, for display)
+    name: string;
     email: string;
-    domain: string;
+    domain: string | null;
     scope: string | null;
 }
 
 export function CategoryAssignmentsManager({ categoryId }: { categoryId: number }) {
     const [assignments, setAssignments] = useState<Assignment[]>([]);
-    const [staff, setStaff] = useState<Staff[]>([]);
+    const [admins, setAdmins] = useState<Admin[]>([]);
     const [isAdding, setIsAdding] = useState(false);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
 
     // Form state
-    const [selectedStaffId, setSelectedStaffId] = useState<number | null>(null);
-    const [isPrimary, setIsPrimary] = useState(false);
-    const [priority, setPriority] = useState(0);
+    const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+    const [assignmentType, setAssignmentType] = useState<string>("");
 
     useEffect(() => {
         fetchAssignments();
-        fetchStaff();
+        fetchAdmins();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [categoryId]);
 
@@ -71,8 +70,15 @@ export function CategoryAssignmentsManager({ categoryId }: { categoryId: number 
             setLoading(true);
             const response = await fetch(`/api/admin/categories/${categoryId}/assignments`);
             if (response.ok) {
-                const data = await response.json();
-                setAssignments(data.assignments || []);
+                const contentType = response.headers.get("content-type");
+                if (contentType && contentType.includes("application/json")) {
+                    const data = await response.json();
+                    setAssignments(data.assignments || []);
+                } else {
+                    console.error("Server returned non-JSON response when fetching assignments");
+                }
+            } else {
+                toast.error("Failed to load assignments");
             }
         } catch (error) {
             console.error("Error fetching assignments:", error);
@@ -82,20 +88,25 @@ export function CategoryAssignmentsManager({ categoryId }: { categoryId: number 
         }
     }
 
-    async function fetchStaff() {
+    async function fetchAdmins() {
         try {
-            const response = await fetch("/api/admin/master-data");
+            const response = await fetch("/api/admin/list");
             if (response.ok) {
-                const data = await response.json();
-                setStaff(data.staff || []);
+                const contentType = response.headers.get("content-type");
+                if (contentType && contentType.includes("application/json")) {
+                    const data = await response.json();
+                    setAdmins(data.admins || []);
+                } else {
+                    console.error("Server returned non-JSON response when fetching admins");
+                }
             }
         } catch (error) {
-            console.error("Error fetching staff:", error);
+            console.error("Error fetching admins:", error);
         }
     }
 
     async function handleAddAssignment() {
-        if (!selectedStaffId) {
+        if (!selectedUserId) {
             toast.error("Please select an admin");
             return;
         }
@@ -106,22 +117,25 @@ export function CategoryAssignmentsManager({ categoryId }: { categoryId: number 
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    staff_id: selectedStaffId,
-                    is_primary: isPrimary,
-                    priority,
+                    user_id: selectedUserId,
+                    assignment_type: assignmentType || null,
                 }),
             });
 
             if (response.ok) {
                 toast.success("Admin assigned successfully");
                 setIsAdding(false);
-                setSelectedStaffId(null);
-                setIsPrimary(false);
-                setPriority(0);
+                setSelectedUserId(null);
+                setAssignmentType("");
                 await fetchAssignments();
             } else {
-                const error = await response.json();
-                toast.error(error.error || "Failed to add assignment");
+                const contentType = response.headers.get("content-type");
+                if (contentType && contentType.includes("application/json")) {
+                    const error = await response.json();
+                    toast.error(error.error || "Failed to add assignment");
+                } else {
+                    toast.error(`Failed to add assignment (${response.status} ${response.statusText})`);
+                }
             }
         } catch (error) {
             console.error("Error adding assignment:", error);
@@ -146,7 +160,13 @@ export function CategoryAssignmentsManager({ categoryId }: { categoryId: number 
                 toast.success("Assignment removed");
                 await fetchAssignments();
             } else {
-                toast.error("Failed to remove assignment");
+                const contentType = response.headers.get("content-type");
+                if (contentType && contentType.includes("application/json")) {
+                    const error = await response.json();
+                    toast.error(error.error || "Failed to remove assignment");
+                } else {
+                    toast.error(`Failed to remove assignment (${response.status} ${response.statusText})`);
+                }
             }
         } catch (error) {
             console.error("Error removing assignment:", error);
@@ -154,34 +174,9 @@ export function CategoryAssignmentsManager({ categoryId }: { categoryId: number 
         }
     }
 
-    async function handleTogglePrimary(assignment: Assignment) {
-        try {
-            const response = await fetch(
-                `/api/admin/categories/${categoryId}/assignments/${assignment.id}`,
-                {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        is_primary: !assignment.is_primary,
-                    }),
-                }
-            );
-
-            if (response.ok) {
-                toast.success(assignment.is_primary ? "Primary status removed" : "Set as primary admin");
-                await fetchAssignments();
-            } else {
-                toast.error("Failed to update assignment");
-            }
-        } catch (error) {
-            console.error("Error updating assignment:", error);
-            toast.error("Failed to update assignment");
-        }
-    }
-
-    // Filter out already assigned staff
-    const availableStaff = staff.filter(
-        (s) => !assignments.some((a) => a.staff_id === s.id)
+    // Filter out already assigned admins
+    const availableAdmins = admins.filter(
+        (a) => !assignments.some((assignment) => assignment.user_id === a.id)
     );
 
     return (
@@ -213,63 +208,57 @@ export function CategoryAssignmentsManager({ categoryId }: { categoryId: number 
                         </div>
                     ) : (
                         <div className="space-y-3">
-                            {assignments.map((assignment) => (
-                                <div
-                                    key={assignment.id}
-                                    className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent/50 transition-colors"
-                                >
-                                    <div className="flex items-center gap-3 flex-1">
-                                        <Avatar>
-                                            <AvatarFallback>
-                                                {assignment.staff.full_name.charAt(0).toUpperCase()}
-                                            </AvatarFallback>
-                                        </Avatar>
-                                        <div className="flex-1">
-                                            <div className="flex items-center gap-2">
-                                                <p className="font-medium">{assignment.staff.full_name}</p>
-                                                {assignment.is_primary && (
-                                                    <Badge variant="default" className="gap-1">
-                                                        <Star className="w-3 h-3 fill-current" />
-                                                        Primary
-                                                    </Badge>
+                            {assignments.map((assignment) => {
+                                // Find matching admin for domain/scope display
+                                const matchingAdmin = admins.find(a => a.id === assignment.user_id);
+                                const userName = assignment.user.full_name || assignment.user.email || "Unknown";
+                                const userEmail = assignment.user.email || "";
+                                
+                                return (
+                                    <div
+                                        key={assignment.id}
+                                        className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent/50 transition-colors"
+                                    >
+                                        <div className="flex items-center gap-3 flex-1">
+                                            <Avatar>
+                                                <AvatarFallback>
+                                                    {userName.charAt(0).toUpperCase()}
+                                                </AvatarFallback>
+                                            </Avatar>
+                                            <div className="flex-1">
+                                                <div className="flex items-center gap-2">
+                                                    <p className="font-medium">{userName}</p>
+                                                    {assignment.assignment_type && (
+                                                        <Badge variant="outline" className="text-xs">
+                                                            {assignment.assignment_type}
+                                                        </Badge>
+                                                    )}
+                                                </div>
+                                                <p className="text-sm text-muted-foreground">
+                                                    {userEmail}
+                                                </p>
+                                                {matchingAdmin && (matchingAdmin.domain || matchingAdmin.scope) && (
+                                                    <div className="flex items-center gap-2 mt-1">
+                                                        <Badge variant="outline" className="text-xs">
+                                                            {matchingAdmin.domain || ""}
+                                                            {matchingAdmin.scope && ` - ${matchingAdmin.scope}`}
+                                                        </Badge>
+                                                    </div>
                                                 )}
                                             </div>
-                                            <p className="text-sm text-muted-foreground">
-                                                {assignment.staff.email}
-                                            </p>
-                                            <div className="flex items-center gap-2 mt-1">
-                                                <Badge variant="outline" className="text-xs">
-                                                    {assignment.staff.domain}
-                                                    {assignment.staff.scope && ` - ${assignment.staff.scope}`}
-                                                </Badge>
-                                                <Badge variant="secondary" className="text-xs">
-                                                    Priority: {assignment.priority}
-                                                </Badge>
-                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => handleRemoveAssignment(assignment.id)}
+                                            >
+                                                <Trash2 className="w-4 h-4 text-destructive" />
+                                            </Button>
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => handleTogglePrimary(assignment)}
-                                            title={assignment.is_primary ? "Remove primary status" : "Set as primary"}
-                                        >
-                                            <Star
-                                                className={`w-4 h-4 ${assignment.is_primary ? "fill-current text-yellow-500" : ""
-                                                    }`}
-                                            />
-                                        </Button>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => handleRemoveAssignment(assignment.id)}
-                                        >
-                                            <Trash2 className="w-4 h-4 text-destructive" />
-                                        </Button>
-                                    </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     )}
                 </CardContent>
@@ -287,21 +276,21 @@ export function CategoryAssignmentsManager({ categoryId }: { categoryId: number 
                         <div className="space-y-2">
                             <Label>Select Admin</Label>
                             <Select
-                                value={selectedStaffId?.toString()}
-                                onValueChange={(value) => setSelectedStaffId(parseInt(value))}
+                                value={selectedUserId || ""}
+                                onValueChange={(value) => setSelectedUserId(value)}
                             >
                                 <SelectTrigger>
                                     <SelectValue placeholder="Choose an admin..." />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    {availableStaff.length === 0 ? (
+                                    {availableAdmins.length === 0 ? (
                                         <div className="p-2 text-sm text-muted-foreground">
                                             All admins are already assigned
                                         </div>
                                     ) : (
-                                        availableStaff.map((s) => (
-                                            <SelectItem key={s.id} value={s.id.toString()}>
-                                                {s.full_name} - {s.email}
+                                        availableAdmins.map((admin) => (
+                                            <SelectItem key={admin.id} value={admin.id}>
+                                                {admin.name} - {admin.email}
                                             </SelectItem>
                                         ))
                                     )}
@@ -309,30 +298,17 @@ export function CategoryAssignmentsManager({ categoryId }: { categoryId: number 
                             </Select>
                         </div>
 
-                        <div className="flex items-center gap-2">
-                            <Checkbox
-                                id="primary"
-                                checked={isPrimary}
-                                onCheckedChange={(checked: boolean) => setIsPrimary(checked)}
-                            />
-                            <Label htmlFor="primary" className="cursor-pointer">
-                                Set as primary admin (gets tickets by default)
-                            </Label>
-                        </div>
-
                         <div className="space-y-2">
-                            <Label htmlFor="priority">Priority (0-100)</Label>
+                            <Label htmlFor="assignment_type">Assignment Type (Optional)</Label>
                             <Input
-                                id="priority"
-                                type="number"
-                                min="0"
-                                max="100"
-                                value={priority}
-                                onChange={(e) => setPriority(parseInt(e.target.value) || 0)}
-                                placeholder="0"
+                                id="assignment_type"
+                                type="text"
+                                value={assignmentType}
+                                onChange={(e) => setAssignmentType(e.target.value)}
+                                placeholder="e.g., primary, backup, escalation"
                             />
                             <p className="text-xs text-muted-foreground">
-                                Higher priority admins are preferred for ticket assignment
+                                Optional label for this assignment (e.g., &quot;primary&quot;, &quot;backup&quot;)
                             </p>
                         </div>
 
@@ -340,7 +316,7 @@ export function CategoryAssignmentsManager({ categoryId }: { categoryId: number 
                             <Button variant="outline" onClick={() => setIsAdding(false)}>
                                 Cancel
                             </Button>
-                            <Button onClick={handleAddAssignment} disabled={saving || !selectedStaffId}>
+                            <Button onClick={handleAddAssignment} disabled={saving || !selectedUserId}>
                                 {saving ? (
                                     <>
                                         <Loader2 className="w-4 h-4 mr-2 animate-spin" />

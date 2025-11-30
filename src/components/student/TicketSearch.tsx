@@ -86,6 +86,9 @@ export default function TicketSearch({
     setSortBy(searchParams.get("sort") || currentSort);
   }, [searchParams, currentSort]);
 
+  // Safety check for dynamicFilters - define early so it can be used throughout the component
+  const safeDynamicFilters = dynamicFilters && typeof dynamicFilters === 'object' && !Array.isArray(dynamicFilters) ? dynamicFilters : {};
+
   const applyFilters = (
     search: string,
     status: string,
@@ -107,7 +110,9 @@ export default function TicketSearch({
     if (sort && sort !== "newest") params.set("sort", sort);
 
     // Add dynamic filters
-    Object.entries(dynFilters).forEach(([key, value]) => {
+    // Safety check: ensure dynFilters is a valid object before calling Object.entries
+    const safeDynFilters = dynFilters && typeof dynFilters === 'object' && !Array.isArray(dynFilters) ? dynFilters : {};
+    Object.entries(safeDynFilters).forEach(([key, value]) => {
       if (value && value !== "all") {
         params.set(`f_${key}`, value);
       }
@@ -120,7 +125,7 @@ export default function TicketSearch({
   };
 
   const handleSearch = () => {
-    applyFilters(searchQuery, statusFilter, categoryFilter, subcategoryFilter, subSubcategoryFilter, sortBy, dynamicFilters);
+    applyFilters(searchQuery, statusFilter, categoryFilter, subcategoryFilter, subSubcategoryFilter, sortBy, safeDynamicFilters);
   };
 
   const handleClear = () => {
@@ -140,7 +145,7 @@ export default function TicketSearch({
     (subcategoryFilter && subcategoryFilter !== "all") ||
     (subSubcategoryFilter && subSubcategoryFilter !== "all") ||
     (sortBy && sortBy !== "newest") ||
-    Object.keys(dynamicFilters).length > 0;
+    (safeDynamicFilters && Object.keys(safeDynamicFilters).length > 0);
 
   // Find selected category and subcategory objects
   const selectedCategory = categories.find(c => c.value === categoryFilter);
@@ -188,7 +193,7 @@ export default function TicketSearch({
             const newValue = value === "all" ? "" : value.toLowerCase();
             setStatusFilter(newValue);
             // Apply filters which will update URL and sync with stats cards
-            applyFilters(searchQuery, newValue, categoryFilter, subcategoryFilter, subSubcategoryFilter, sortBy, dynamicFilters);
+            applyFilters(searchQuery, newValue, categoryFilter, subcategoryFilter, subSubcategoryFilter, sortBy, safeDynamicFilters);
           }}
         >
           <SelectTrigger className="w-full sm:w-[180px] h-9 sm:h-10 text-xs sm:text-sm">
@@ -266,7 +271,7 @@ export default function TicketSearch({
           <Select value={subSubcategoryFilter || "all"} onValueChange={(value) => {
             const newValue = value === "all" ? "" : value;
             setSubSubcategoryFilter(newValue);
-            applyFilters(searchQuery, statusFilter, categoryFilter, subcategoryFilter, newValue, sortBy, dynamicFilters);
+            applyFilters(searchQuery, statusFilter, categoryFilter, subcategoryFilter, newValue, sortBy, safeDynamicFilters);
           }}>
             <SelectTrigger className="w-full sm:w-[180px] h-9 sm:h-10 text-xs sm:text-sm">
               <SelectValue placeholder="All Types" />
@@ -290,10 +295,10 @@ export default function TicketSearch({
           return (
             <Select
               key={field.id}
-              value={dynamicFilters[field.slug] || "all"}
+              value={safeDynamicFilters[field.slug] || "all"}
               onValueChange={(value) => {
                 const newValue = value === "all" ? "" : value;
-                const newFilters = { ...dynamicFilters, [field.slug]: newValue };
+                const newFilters = { ...safeDynamicFilters, [field.slug]: newValue };
                 if (!newValue) delete newFilters[field.slug];
                 setDynamicFilters(newFilters);
                 applyFilters(searchQuery, statusFilter, categoryFilter, subcategoryFilter, subSubcategoryFilter, sortBy, newFilters);
@@ -322,7 +327,7 @@ export default function TicketSearch({
           <span className="flex-shrink-0">Sort:</span>
           <Select value={sortBy} onValueChange={(value) => {
             setSortBy(value);
-            applyFilters(searchQuery, statusFilter, categoryFilter, subcategoryFilter, subSubcategoryFilter, value, dynamicFilters);
+            applyFilters(searchQuery, statusFilter, categoryFilter, subcategoryFilter, subSubcategoryFilter, value, safeDynamicFilters);
           }}>
             <SelectTrigger className="w-full sm:w-[180px] h-9 sm:h-10 text-xs sm:text-sm">
               <SelectValue placeholder="Sort By" />

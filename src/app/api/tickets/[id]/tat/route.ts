@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import { tickets, categories, users, ticket_statuses } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { tickets, categories, users } from "@/db/schema";
+import type { TicketInsert } from "@/db/inferred-types";
+import { eq, sql } from "drizzle-orm";
 import { sendEmail, getTATSetEmail } from "@/lib/integration/email";
-import { SetTATSchema } from "@/schema/ticket.schema";
+import { SetTATSchema } from "@/schemas/business/ticket";
+import { TICKET_STATUS } from "@/conf/constants";
 import { calculateTATDate } from "@/utils";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
-import type { TicketMetadata } from "@/db/types";
+import type { TicketMetadata } from "@/db/inferred-types";
+import { getStatusIdByValue } from "@/lib/status/getTicketStatuses";
 
 /**
  * ============================================
@@ -52,6 +55,7 @@ export async function POST(
 		// Validate input using Zod schema
 		const validationResult = SetTATSchema.safeParse(body);
 		if (!validationResult.success) {
+			console.error("TAT validation failed:", validationResult.error.issues);
 			return NextResponse.json(
 				{ error: "Validation failed", details: validationResult.error.issues },
 				{ status: 400 }
@@ -144,20 +148,20 @@ export async function POST(
 		// Update ticket with TAT and optionally mark as in_progress
 		// Also assign ticket to the admin taking action
 		const dbUser = await getOrCreateUser(userId);
-		const updateData: { metadata: TicketMetadata; updated_at: Date; assigned_to: string; status_id?: number } = {
-			metadata: metadata,
+		const updateData: Partial<TicketInsert> = {
+			metadata: metadata as unknown,
 			updated_at: new Date(),
 			assigned_to: dbUser.id,
 		};
 
 		if (markInProgress) {
-			const [statusRow] = await db.select({ id: ticket_statuses.id })
-				.from(ticket_statuses)
-				.where(eq(ticket_statuses.value, "IN_PROGRESS"))
-				.limit(1);
-
-			if (statusRow) {
-				updateData.status_id = statusRow.id;
+			// Get the status_id for "in_progress" status
+			const statusId = await getStatusIdByValue(TICKET_STATUS.IN_PROGRESS);
+			if (statusId) {
+				updateData.status_id = statusId;
+			} else {
+				console.error(`[TAT API] Failed to find status_id for "${TICKET_STATUS.IN_PROGRESS}"`);
+				// Continue without status update if status_id lookup fails
 			}
 		}
 

@@ -15,7 +15,6 @@ import {
   sub_subcategories,
   category_fields, 
   field_options,
-  category_profile_fields 
 } from "@/db/schema";
 import { eq, and, asc, inArray } from "drizzle-orm";
 
@@ -29,7 +28,7 @@ export async function getSubcategories(categoryId: number) {
     .where(
       and(
         eq(subcategories.category_id, categoryId),
-        eq(subcategories.active, true)
+        eq(subcategories.is_active, true)
       )
     )
     .orderBy(asc(subcategories.display_order), asc(subcategories.created_at));
@@ -46,7 +45,7 @@ export async function getSubcategoryById(subcategoryId: number, categoryId: numb
       and(
         eq(subcategories.id, subcategoryId),
         eq(subcategories.category_id, categoryId),
-        eq(subcategories.active, true)
+        eq(subcategories.is_active, true)
       )
     )
     .limit(1);
@@ -64,7 +63,7 @@ export async function getSubSubcategories(subcategoryId: number) {
     .where(
       and(
         eq(sub_subcategories.subcategory_id, subcategoryId),
-        eq(sub_subcategories.active, true)
+        eq(sub_subcategories.is_active, true)
       )
     )
     .orderBy(asc(sub_subcategories.display_order));
@@ -81,7 +80,7 @@ export async function getSubSubcategoryById(subSubcategoryId: number, subcategor
       and(
         eq(sub_subcategories.id, subSubcategoryId),
         eq(sub_subcategories.subcategory_id, subcategoryId),
-        eq(sub_subcategories.active, true)
+        eq(sub_subcategories.is_active, true)
       )
     )
     .limit(1);
@@ -101,7 +100,7 @@ export async function getSubSubcategoriesForSubcategories(subcategoryIds: number
     .where(
       and(
         inArray(sub_subcategories.subcategory_id, subcategoryIds),
-        eq(sub_subcategories.active, true)
+        eq(sub_subcategories.is_active, true)
       )
     )
     .orderBy(asc(sub_subcategories.display_order));
@@ -157,13 +156,10 @@ export async function getFieldOptionsForFields(fieldIds: number[]) {
 
 /**
  * Get category profile field configuration
+ * NOTE: Always returns empty array - all student details are fetched every time
  */
 export async function getCategoryProfileFields(categoryId: number) {
-  return await db
-    .select()
-    .from(category_profile_fields)
-    .where(eq(category_profile_fields.category_id, categoryId))
-    .orderBy(asc(category_profile_fields.display_order));
+  return [];
 }
 
 /**
@@ -186,7 +182,7 @@ export async function getCategoryById(categoryId: number) {
 export async function getCategorySchema(categoryId: number) {
   // Fetch category
   const category = await getCategoryById(categoryId);
-  if (!category || !category.active) {
+  if (!category || !category.is_active) {
     return null;
   }
 
@@ -234,7 +230,7 @@ export async function getCategorySchema(categoryId: number) {
       name: subcat.name,
       slug: subcat.slug,
       description: subcat.description,
-      active: subcat.active,
+      active: subcat.is_active, // Map is_active to active for frontend compatibility
       display_order: subcat.display_order,
       created_at: subcat.created_at,
       updated_at: subcat.updated_at,
@@ -254,7 +250,7 @@ export async function getCategorySchema(categoryId: number) {
           help_text: field.help_text,
           validation_rules: field.validation_rules,
           display_order: field.display_order,
-          active: field.active,
+          active: field.is_active, // Map is_active to active for frontend compatibility
           created_at: field.created_at,
           updated_at: field.updated_at,
           options: optionsData.filter((opt) => opt.field_id === field.id),

@@ -30,7 +30,7 @@ interface AddSingleStudentDialogProps {
 
 interface MasterData {
 	hostels: Array<{ id: number; name: string }>;
-	batches: Array<{ id: number; batch_year: number; display_name: string }>;
+	batches: Array<{ id: number; batch_year: number }>;
 	sections: Array<{ id: number; name: string }>;
 }
 
@@ -52,6 +52,10 @@ interface FormErrors {
 	user_number?: string;
 	mobile?: string;
 	room_number?: string;
+	hostel_id?: string;
+	batch_id?: string;
+	class_section_id?: string;
+	department?: string;
 }
 
 export function AddSingleStudentDialog({
@@ -138,7 +142,7 @@ export function AddSingleStudentDialog({
 
 	const validateMobile = (mobile: string): string | undefined => {
 		if (!mobile.trim()) {
-			return undefined; // Mobile is optional
+			return "Mobile number is required";
 		}
 		const cleaned = mobile.replace(/\D/g, "");
 		if (cleaned.length !== 10) {
@@ -152,12 +156,55 @@ export function AddSingleStudentDialog({
 
 	const validateRoomNumber = (roomNo: string): string | undefined => {
 		if (!roomNo.trim()) {
-			return undefined; // Room number is optional
+			return "Room number is required";
 		}
 		if (roomNo.trim().length > 16) {
 			return "Room number must not exceed 16 characters";
 		}
 		return undefined;
+	};
+
+	const validateHostel = (hostelId: string): string | undefined => {
+		if (!hostelId || !hostelId.trim()) {
+			return "Hostel is required";
+		}
+		return undefined;
+	};
+
+	const validateBatch = (batchId: string): string | undefined => {
+		if (!batchId || !batchId.trim()) {
+			return "Batch year is required";
+		}
+		return undefined;
+	};
+
+	const validateClassSection = (sectionId: string): string | undefined => {
+		if (!sectionId || !sectionId.trim()) {
+			return "Class section is required";
+		}
+		return undefined;
+	};
+
+	const validateDepartment = (department: string): string | undefined => {
+		if (!department.trim()) {
+			return "Department is required";
+		}
+		if (department.trim().length > 120) {
+			return "Department must not exceed 120 characters";
+		}
+		return undefined;
+	};
+
+	const setFieldError = (fieldName: keyof FormErrors, error?: string) => {
+		setErrors((prev) => {
+			const next = { ...prev };
+			if (error) {
+				next[fieldName] = error;
+			} else {
+				delete next[fieldName];
+			}
+			return next;
+		});
 	};
 
 	const validateField = (fieldName: keyof FormErrors, value: string) => {
@@ -178,11 +225,20 @@ export function AddSingleStudentDialog({
 			case "room_number":
 				error = validateRoomNumber(value);
 				break;
+			case "hostel_id":
+				error = validateHostel(value);
+				break;
+			case "batch_id":
+				error = validateBatch(value);
+				break;
+			case "class_section_id":
+				error = validateClassSection(value);
+				break;
+			case "department":
+				error = validateDepartment(value);
+				break;
 		}
-		setErrors((prev) => ({
-			...prev,
-			[fieldName]: error,
-		}));
+		setFieldError(fieldName, error);
 	};
 
 	const validateAllFields = (): boolean => {
@@ -210,7 +266,15 @@ export function AddSingleStudentDialog({
 	// Check if form is complete and valid
 	const isFormValid = (): boolean => {
 		// Check required fields are filled
-		if (!formData.email.trim() || !formData.full_name.trim() || !formData.user_number.trim()) {
+		if (!formData.email.trim() || 
+			!formData.full_name.trim() || 
+			!formData.user_number.trim() ||
+			!formData.mobile.trim() ||
+			!formData.room_number.trim() ||
+			!formData.hostel_id ||
+			!formData.batch_id ||
+			!formData.class_section_id ||
+			!formData.department.trim()) {
 			return false;
 		}
 
@@ -220,37 +284,57 @@ export function AddSingleStudentDialog({
 		const rollError = validateRollNumber(formData.user_number);
 		const mobileError = validateMobile(formData.mobile);
 		const roomError = validateRoomNumber(formData.room_number);
+		const hostelError = validateHostel(formData.hostel_id);
+		const batchError = validateBatch(formData.batch_id);
+		const sectionError = validateClassSection(formData.class_section_id);
+		const departmentError = validateDepartment(formData.department);
 
 		// Form is valid if no errors
-		return !emailError && !nameError && !rollError && !mobileError && !roomError;
+		return !emailError && !nameError && !rollError && !mobileError && !roomError && 
+			!hostelError && !batchError && !sectionError && !departmentError;
 	};
 
 	const fetchMasterData = async () => {
 		setFetching(true);
 		try {
-			// Fetch hostels
-			const hostelsRes = await fetch("/api/master/hostels");
+			// Fetch hostels (active only)
+			const hostelsRes = await fetch("/api/superadmin/hostels?active=true");
 			if (hostelsRes.ok) {
-				const hostelsData = await hostelsRes.json();
-				setMasterData((prev) => ({ ...prev, hostels: hostelsData.hostels || [] }));
+				const contentType = hostelsRes.headers.get("content-type");
+				if (contentType && contentType.includes("application/json")) {
+					const hostelsData = await hostelsRes.json();
+					setMasterData((prev) => ({ ...prev, hostels: hostelsData.hostels || [] }));
+				} else {
+					console.error("Server returned non-JSON response when fetching hostels");
+				}
 			} else {
 				console.error("Failed to fetch hostels:", hostelsRes.status, hostelsRes.statusText);
 			}
 
-			// Fetch batches
-			const batchesRes = await fetch("/api/master/batches");
+			// Fetch batches (active only)
+			const batchesRes = await fetch("/api/superadmin/batches?active=true");
 			if (batchesRes.ok) {
-				const batchesData = await batchesRes.json();
-				setMasterData((prev) => ({ ...prev, batches: batchesData.batches || [] }));
+				const contentType = batchesRes.headers.get("content-type");
+				if (contentType && contentType.includes("application/json")) {
+					const batchesData = await batchesRes.json();
+					setMasterData((prev) => ({ ...prev, batches: batchesData.batches || [] }));
+				} else {
+					console.error("Server returned non-JSON response when fetching batches");
+				}
 			} else {
 				console.error("Failed to fetch batches:", batchesRes.status, batchesRes.statusText);
 			}
 
-			// Fetch sections
-			const sectionsRes = await fetch("/api/master/class-sections");
+			// Fetch sections (active only)
+			const sectionsRes = await fetch("/api/superadmin/class-sections?active=true");
 			if (sectionsRes.ok) {
-				const sectionsData = await sectionsRes.json();
-				setMasterData((prev) => ({ ...prev, sections: sectionsData.sections || [] }));
+				const contentType = sectionsRes.headers.get("content-type");
+				if (contentType && contentType.includes("application/json")) {
+					const sectionsData = await sectionsRes.json();
+					setMasterData((prev) => ({ ...prev, sections: sectionsData.class_sections || [] }));
+				} else {
+					console.error("Server returned non-JSON response when fetching sections");
+				}
 			} else {
 				console.error("Failed to fetch sections:", sectionsRes.status, sectionsRes.statusText);
 			}
@@ -279,18 +363,24 @@ export function AddSingleStudentDialog({
 				headers: {
 					"Content-Type": "application/json",
 				},
-				body: JSON.stringify({
-					email: formData.email.trim().toLowerCase(),
-					full_name: formData.full_name.trim(),
-					user_number: formData.user_number.trim(),
-					hostel_id: formData.hostel_id ? parseInt(formData.hostel_id) : null,
-					room_number: formData.room_number.trim() || null,
-					class_section_id: formData.class_section_id ? parseInt(formData.class_section_id) : null,
-					batch_id: formData.batch_id ? parseInt(formData.batch_id) : null,
-					mobile: formData.mobile ? formData.mobile.replace(/\D/g, "") : null,
-					department: formData.department.trim() || null,
-				}),
+					body: JSON.stringify({
+						email: formData.email.trim().toLowerCase(),
+						full_name: formData.full_name.trim(),
+						user_number: formData.user_number.trim(),
+						hostel_id: parseInt(formData.hostel_id),
+						room_number: formData.room_number.trim(),
+						class_section_id: parseInt(formData.class_section_id),
+						batch_id: parseInt(formData.batch_id),
+						mobile: formData.mobile.replace(/\D/g, ""),
+						department: formData.department.trim(),
+					}),
 			});
+
+			// Check Content-Type before parsing JSON
+			const contentType = response.headers.get("content-type");
+			if (!contentType || !contentType.includes("application/json")) {
+				throw new Error(`Server returned non-JSON response (${response.status} ${response.statusText})`);
+			}
 
 			const data = await response.json();
 
@@ -332,9 +422,7 @@ export function AddSingleStudentDialog({
 								value={formData.email}
 								onChange={(e) => {
 									setFormData({ ...formData, email: e.target.value });
-									if (errors.email) {
-										validateField("email", e.target.value);
-									}
+									validateField("email", e.target.value);
 								}}
 								onBlur={(e) => validateField("email", e.target.value)}
 								placeholder="student@example.com"
@@ -355,9 +443,7 @@ export function AddSingleStudentDialog({
 								value={formData.full_name}
 								onChange={(e) => {
 									setFormData({ ...formData, full_name: e.target.value });
-									if (errors.full_name) {
-										validateField("full_name", e.target.value);
-									}
+									validateField("full_name", e.target.value);
 								}}
 								onBlur={(e) => validateField("full_name", e.target.value)}
 								placeholder="John Doe"
@@ -378,9 +464,7 @@ export function AddSingleStudentDialog({
 								value={formData.user_number}
 								onChange={(e) => {
 									setFormData({ ...formData, user_number: e.target.value });
-									if (errors.user_number) {
-										validateField("user_number", e.target.value);
-									}
+									validateField("user_number", e.target.value);
 								}}
 								onBlur={(e) => validateField("user_number", e.target.value)}
 								placeholder="24bcs10005"
@@ -393,7 +477,9 @@ export function AddSingleStudentDialog({
 						</div>
 
 						<div>
-							<Label htmlFor="mobile">Mobile Number</Label>
+							<Label htmlFor="mobile">
+								Mobile Number <span className="text-red-500">*</span>
+							</Label>
 							<Input
 								id="mobile"
 								type="tel"
@@ -410,6 +496,7 @@ export function AddSingleStudentDialog({
 								placeholder="9876543210"
 								maxLength={10}
 								className={errors.mobile ? "border-red-500" : ""}
+								required
 							/>
 							{errors.mobile && (
 								<p className="text-sm text-red-500 mt-1">{errors.mobile}</p>
@@ -417,18 +504,21 @@ export function AddSingleStudentDialog({
 						</div>
 					</div>
 
-					{/* Optional Fields */}
+					{/* Required Fields */}
 					<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 						<div>
-							<Label htmlFor="hostel_id">Hostel</Label>
+							<Label htmlFor="hostel_id">
+								Hostel <span className="text-red-500">*</span>
+							</Label>
 							<Select
 								value={formData.hostel_id || undefined}
-								onValueChange={(value) =>
-									setFormData({ ...formData, hostel_id: value })
-								}
+								onValueChange={(value) => {
+									setFormData({ ...formData, hostel_id: value });
+									validateField("hostel_id", value);
+								}}
 							>
-								<SelectTrigger>
-									<SelectValue placeholder="Select hostel (optional)" />
+								<SelectTrigger className={errors.hostel_id ? "border-red-500" : ""}>
+									<SelectValue placeholder="Select hostel" />
 								</SelectTrigger>
 								<SelectContent>
 									{masterData.hostels.map((hostel) => (
@@ -438,10 +528,15 @@ export function AddSingleStudentDialog({
 									))}
 								</SelectContent>
 							</Select>
+							{errors.hostel_id && (
+								<p className="text-sm text-red-500 mt-1">{errors.hostel_id}</p>
+							)}
 						</div>
 
 						<div>
-							<Label htmlFor="room_number">Room Number</Label>
+							<Label htmlFor="room_number">
+								Room Number <span className="text-red-500">*</span>
+							</Label>
 							<Input
 								id="room_number"
 								value={formData.room_number}
@@ -454,6 +549,7 @@ export function AddSingleStudentDialog({
 								onBlur={(e) => validateField("room_number", e.target.value)}
 								placeholder="205"
 								className={errors.room_number ? "border-red-500" : ""}
+								required
 							/>
 							{errors.room_number && (
 								<p className="text-sm text-red-500 mt-1">{errors.room_number}</p>
@@ -461,36 +557,45 @@ export function AddSingleStudentDialog({
 						</div>
 
 						<div>
-							<Label htmlFor="batch_id">Batch Year</Label>
+							<Label htmlFor="batch_id">
+								Batch Year <span className="text-red-500">*</span>
+							</Label>
 							<Select
 								value={formData.batch_id || undefined}
-								onValueChange={(value) =>
-									setFormData({ ...formData, batch_id: value })
-								}
+								onValueChange={(value) => {
+									setFormData({ ...formData, batch_id: value });
+									validateField("batch_id", value);
+								}}
 							>
-								<SelectTrigger>
-									<SelectValue placeholder="Select batch year (optional)" />
+								<SelectTrigger className={errors.batch_id ? "border-red-500" : ""}>
+									<SelectValue placeholder="Select batch year" />
 								</SelectTrigger>
 								<SelectContent>
 									{masterData.batches.map((batch) => (
 										<SelectItem key={batch.id} value={batch.id.toString()}>
-											{batch.display_name || batch.batch_year}
+											Batch {batch.batch_year}
 										</SelectItem>
 									))}
 								</SelectContent>
 							</Select>
+							{errors.batch_id && (
+								<p className="text-sm text-red-500 mt-1">{errors.batch_id}</p>
+							)}
 						</div>
 
 						<div>
-							<Label htmlFor="class_section_id">Class Section</Label>
+							<Label htmlFor="class_section_id">
+								Class Section <span className="text-red-500">*</span>
+							</Label>
 							<Select
 								value={formData.class_section_id || undefined}
-								onValueChange={(value) =>
-									setFormData({ ...formData, class_section_id: value })
-								}
+								onValueChange={(value) => {
+									setFormData({ ...formData, class_section_id: value });
+									validateField("class_section_id", value);
+								}}
 							>
-								<SelectTrigger>
-									<SelectValue placeholder="Select class section (optional)" />
+								<SelectTrigger className={errors.class_section_id ? "border-red-500" : ""}>
+									<SelectValue placeholder="Select class section" />
 								</SelectTrigger>
 								<SelectContent>
 									{masterData.sections.map((section) => (
@@ -500,18 +605,32 @@ export function AddSingleStudentDialog({
 									))}
 								</SelectContent>
 							</Select>
+							{errors.class_section_id && (
+								<p className="text-sm text-red-500 mt-1">{errors.class_section_id}</p>
+							)}
 						</div>
 
 						<div className="md:col-span-2">
-							<Label htmlFor="department">Department</Label>
+							<Label htmlFor="department">
+								Department <span className="text-red-500">*</span>
+							</Label>
 							<Input
 								id="department"
 								value={formData.department}
-								onChange={(e) =>
-									setFormData({ ...formData, department: e.target.value })
-								}
+								onChange={(e) => {
+									setFormData({ ...formData, department: e.target.value });
+									if (errors.department) {
+										validateField("department", e.target.value);
+									}
+								}}
+								onBlur={(e) => validateField("department", e.target.value)}
 								placeholder="Computer Science"
+								className={errors.department ? "border-red-500" : ""}
+								required
 							/>
+							{errors.department && (
+								<p className="text-sm text-red-500 mt-1">{errors.department}</p>
+							)}
 						</div>
 					</div>
 

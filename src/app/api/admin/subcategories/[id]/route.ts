@@ -37,7 +37,7 @@ export async function PATCH(
     if (body.slug !== undefined) updateData.slug = body.slug;
     if (body.description !== undefined) updateData.description = body.description;
     if (body.display_order !== undefined) updateData.display_order = body.display_order;
-    if (body.active !== undefined) updateData.active = body.active;
+    if (body.active !== undefined) updateData.is_active = body.active;
     if (body.assigned_admin_id !== undefined) {
       updateData.assigned_admin_id = body.assigned_admin_id === null || body.assigned_admin_id === "" ? null : String(body.assigned_admin_id);
     }
@@ -94,7 +94,7 @@ export async function DELETE(
 
     const [updated] = await db
       .update(subcategories)
-      .set({ active: false, updated_at: new Date() })
+      .set({ is_active: false, updated_at: new Date() })
       .where(eq(subcategories.id, subcategoryId))
       .returning();
 

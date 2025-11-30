@@ -89,27 +89,84 @@ export function DynamicFieldRenderer({
           />
         );
 
-      case "select":
+      case "select": {
+        // Filter valid options
+        const validOptions = (field.options ?? [])
+          .filter(option => option && option.value && typeof option.value === 'string' && option.value.trim() !== "");
+        
+        // Deduplicate by ID first (if available), then by value+label combination
+        // This allows options with the same value but different labels to both appear
+        const seen = new Set<string>();
+        const uniqueOptions = validOptions.filter(option => {
+          // Create unique key: prefer ID if available, otherwise use value+label
+          const optionId = (option as { id?: number }).id;
+          const key = optionId ? `id:${optionId}` : `val:${option.value}|label:${option.label || option.value}`;
+          
+          if (seen.has(key)) {
+            return false; // Skip duplicate
+          }
+          seen.add(key);
+          return true;
+        });
+        
+        // Normalize the current value to match option values
+        // Convert value to string and trim, then find matching option
+        const normalizedValue = value != null ? String(value).trim() : "";
+        const matchingOption = uniqueOptions.find(opt => {
+          // Try exact match first
+          if (opt.value === normalizedValue) return true;
+          // Try case-insensitive match
+          if (opt.value.toLowerCase() === normalizedValue.toLowerCase()) return true;
+          // Try trimmed match
+          if (opt.value.trim() === normalizedValue) return true;
+          return false;
+        });
+        const selectValue = matchingOption ? matchingOption.value : "";
+        
         return (
-          <Select value={typeof value === 'string' ? value : ""} onValueChange={onChange}>
+          <Select value={selectValue} onValueChange={(newValue) => {
+            // Ensure we store the exact option value
+            onChange(newValue);
+          }}>
             <SelectTrigger className={cn(error && "border-destructive")}>
               <SelectValue placeholder={placeholder || "Select"} />
             </SelectTrigger>
             <SelectContent>
-              {(field.options ?? [])
-                .filter(option => option.value && option.value.trim() !== "")
-                .map((option, idx) => {
-                  // Use id if available, otherwise create a stable key from field.id + index
-                  const uniqueKey = option.id ? `opt-${option.id}` : `${field.id}-opt-${idx}`;
-                  return (
-                    <SelectItem key={uniqueKey} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  );
-                })}
+              {uniqueOptions.map((option, idx) => {
+                // Generate a truly unique key that cannot be misinterpreted
+                // Priority: Use option.id if available (most reliable), otherwise use field.id + index + value
+                const fieldId = String(field?.id ?? 0);
+                const optionId = (option as { id?: number }).id;
+                
+                // Create a unique key: prefer option ID, fallback to composite key with index
+                // Always use index as part of the key to ensure uniqueness even if IDs are missing
+                let uniqueKey: string;
+                if (optionId !== undefined && optionId !== null) {
+                  // Use option ID as primary key (most reliable)
+                  uniqueKey = `opt-${fieldId}-${optionId}`;
+                } else {
+                  // Fallback: use field ID + index + value for uniqueness
+                  // Index ensures uniqueness even if values are the same
+                  const valueSafe = option.value ? String(option.value).replace(/[^a-zA-Z0-9]/g, '_').slice(0, 30) : `val${idx}`;
+                  uniqueKey = `opt-${fieldId}-idx${idx}-${valueSafe}`;
+                }
+                
+                // Ensure key is always a valid non-empty string
+                if (!uniqueKey || typeof uniqueKey !== 'string' || uniqueKey.trim().length === 0) {
+                  // Last resort: use field ID + index + timestamp
+                  uniqueKey = `opt-${fieldId}-idx${idx}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+                }
+                
+                return (
+                  <SelectItem key={uniqueKey} value={option.value}>
+                    {option.label || option.value}
+                  </SelectItem>
+                );
+              })}
             </SelectContent>
           </Select>
         );
+      }
 
       case "date": {
         const formatted = (() => {

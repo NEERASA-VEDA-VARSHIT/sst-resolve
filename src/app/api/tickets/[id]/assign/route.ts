@@ -3,9 +3,9 @@ import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { tickets, users, outbox } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { z } from "zod";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
+import { AssignTicketSchema } from "@/schemas/business/ticket";
 
 /**
  * ============================================
@@ -29,10 +29,6 @@ import { getOrCreateUser } from "@/lib/auth/user-sync";
  * Passing null unassigns the ticket:
  * { "staffClerkId": null }
  */
-const AssignSchema = z.object({
-  staffClerkId: z.string().nullable(), // null → unassign
-});
-
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -44,7 +40,7 @@ export async function PATCH(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const body = await request.json();
-    const parsed = AssignSchema.safeParse(body);
+    const parsed = AssignTicketSchema.safeParse(body);
 
     if (!parsed.success) {
       return NextResponse.json(
@@ -93,11 +89,11 @@ export async function PATCH(
     let assignedUserId: string | null = null;
 
     if (staffClerkId !== null) {
-      // Find DB user with the given clerkId
+      // Find DB user with the given external_id
       const [staffUser] = await db
         .select({ id: users.id })
         .from(users)
-        .where(eq(users.clerk_id, staffClerkId))
+        .where(eq(users.external_id, staffClerkId))
         .limit(1);
 
       if (!staffUser) {

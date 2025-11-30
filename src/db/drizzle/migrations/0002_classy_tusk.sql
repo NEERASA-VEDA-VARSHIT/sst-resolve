@@ -1,0 +1,1 @@
+ALTER TABLE "escalation_rules" ADD COLUMN "tat_hours" integer DEFAULT 48;

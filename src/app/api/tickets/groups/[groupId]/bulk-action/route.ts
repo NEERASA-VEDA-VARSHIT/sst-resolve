@@ -4,6 +4,8 @@ import { db, tickets, ticket_groups, outbox, ticket_statuses } from "@/db";
 import { eq } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
+import { getCanonicalStatus, TICKET_STATUS } from "@/conf/constants";
+import { getStatusIdByValue } from "@/lib/status/getTicketStatuses";
 
 // POST - Perform bulk actions on grouped tickets (comment, close, etc.)
 export async function POST(
@@ -135,23 +137,33 @@ export async function POST(
       }
     } else if (action === "close") {
       // Close all tickets
-      const { getStatusIdByValue } = await import("@/lib/status/status-helpers");
-      const newStatusValue = (status || "RESOLVED").toUpperCase();
-      const newStatusId = await getStatusIdByValue(newStatusValue);
-
-      if (!newStatusId) {
-        return NextResponse.json({ error: `Status ${newStatusValue} not found` }, { status: 400 });
-      }
+      const newStatusValue = getCanonicalStatus(status || TICKET_STATUS.RESOLVED) || TICKET_STATUS.RESOLVED;
 
       for (const ticket of groupTickets) {
         try {
-          const oldStatusValue = ticket.status_value;
+          const oldStatusValue = ticket.status_value || "";
+
+          // Get status ID for new status
+          const newStatusId = await getStatusIdByValue(newStatusValue);
+          if (!newStatusId) {
+            console.error(`Status ID not found for: ${newStatusValue}`);
+            continue;
+          }
+
+          // Update metadata with resolved_at
+          let metadata: Record<string, unknown> = {};
+          if (ticket.metadata && typeof ticket.metadata === 'object' && !Array.isArray(ticket.metadata)) {
+            metadata = { ...ticket.metadata as Record<string, unknown> };
+          }
+          if (newStatusValue === TICKET_STATUS.RESOLVED) {
+            metadata.resolved_at = new Date().toISOString();
+          }
 
           await db
             .update(tickets)
             .set({
               status_id: newStatusId,
-              resolved_at: new Date(),
+              metadata: metadata as unknown,
               updated_at: new Date(),
             })
             .where(eq(tickets.id, ticket.id));

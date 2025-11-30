@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db, tickets, users, categories, outbox } from "@/db";
+import type { TicketInsert } from "@/db/inferred-types";
 import { eq } from "drizzle-orm";
+import { ReassignTicketSchema } from "@/schemas/business/ticket";
 import { postThreadReply } from "@/lib/integration/slack";
 import { sendEmail } from "@/lib/integration/email";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
@@ -52,17 +54,19 @@ export async function POST(
 
 		const body = await request.json();
 		
-		// Validate input - assignedTo should be a UUID string or "unassigned"
-		const { assignedTo } = body;
-		if (!assignedTo || (typeof assignedTo !== "string")) {
+		// Validate input using schema
+		const parsed = ReassignTicketSchema.safeParse(body);
+		if (!parsed.success) {
 			return NextResponse.json(
-				{ error: "Validation failed", details: "assignedTo is required and must be a string (UUID or 'unassigned')" },
+				{ error: "Validation failed", details: parsed.error.format() },
 				{ status: 400 }
 			);
 		}
 		
+		const { assigned_to } = parsed.data;
+		
 		// Convert "unassigned" to null, otherwise it should be a database user UUID
-		const normalizedAssignedTo = assignedTo === "unassigned" ? null : assignedTo;
+		const normalizedAssignedTo = assigned_to === "unassigned" ? null : assigned_to;
  
 		// Get current ticket with category info
 		const [ticket] = await db
@@ -106,7 +110,7 @@ export async function POST(
 		let adminName = "Admin";
 		let databaseUserId: string | null = null;
 		
-		if (normalizedAssignedTo) {
+		if (normalizedAssignedTo && normalizedAssignedTo !== "unassigned") {
 			// Check if it's a Clerk ID (starts with "user_") or a UUID
 			const isClerkId = normalizedAssignedTo.startsWith("user_");
 			
@@ -117,14 +121,13 @@ export async function POST(
 					return NextResponse.json({ error: "Selected user not found in database" }, { status: 400 });
 				}
 				databaseUserId = dbUser.id;
-				adminName = [dbUser.first_name, dbUser.last_name].filter(Boolean).join(' ').trim() || dbUser.email || "Admin";
+     adminName = dbUser.full_name?.trim() || dbUser.email || "Admin";
 			} else {
 				// It's already a database UUID, verify the user exists
 				const [targetUser] = await db
 					.select({
 						id: users.id,
-						first_name: users.first_name,
-						last_name: users.last_name,
+						full_name: users.full_name,
 						email: users.email,
 					})
 					.from(users)
@@ -136,7 +139,7 @@ export async function POST(
 				}
 
 				databaseUserId = targetUser.id;
-				adminName = [targetUser.first_name, targetUser.last_name].filter(Boolean).join(' ').trim() || targetUser.email || "Admin";
+				adminName = targetUser.full_name?.trim() || targetUser.email || "Admin";
 			}
 		} else {
 			adminName = "Unassigned";
@@ -147,26 +150,27 @@ export async function POST(
 		if (ticket.assigned_to) {
 			const [prevUser] = await db
 				.select({
-					first_name: users.first_name,
-					last_name: users.last_name,
+					full_name: users.full_name,
 					email: users.email,
 				})
 				.from(users)
-				.where(eq(users.id, ticket.assigned_to))
+				.where(eq(users.id, ticket.assigned_to!))
 				.limit(1);
 			if (prevUser) {
-				previousAssigneeName = [prevUser.first_name, prevUser.last_name].filter(Boolean).join(' ').trim() || prevUser.email || "Unknown";
+				previousAssigneeName = prevUser.full_name?.trim() || prevUser.email || "Unknown";
 			}
 		}
 
 		// Update ticket with database user ID and create outbox event for notifications
 		await db.transaction(async (tx) => {
+			const updateData: Partial<TicketInsert> = {
+				assigned_to: databaseUserId,
+				updated_at: new Date(),
+			};
+			
 			await tx
 				.update(tickets)
-				.set({
-					assigned_to: databaseUserId,
-					updated_at: new Date(),
-				})
+				.set(updateData)
 				.where(eq(tickets.id, ticketId));
 
 			// Create outbox event for reassignment notifications (decoupled)
@@ -210,11 +214,10 @@ export async function POST(
 			const [studentUser] = await db
 				.select({
 					email: users.email,
-					first_name: users.first_name,
-					last_name: users.last_name,
+					full_name: users.full_name,
 				})
 				.from(users)
-				.where(eq(users.id, ticket.created_by))
+				.where(eq(users.id, ticket.created_by!))
 				.limit(1);
 
 			const studentEmail = studentUser?.email;

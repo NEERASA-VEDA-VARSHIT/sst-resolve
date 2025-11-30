@@ -24,17 +24,23 @@ export default async function SuperAdminUsersPage() {
   }
 
   // Fetch all users from database with their roles
-  const dbUsers = await db
+  const dbUsersRaw = await db
     .select({
       id: users.id,
-      clerkId: users.clerk_id,
-      firstName: users.first_name,
-      lastName: users.last_name,
+      clerkId: users.external_id,
+      fullName: users.full_name,
       email: users.email,
       roleName: roles.name,
     })
     .from(users)
     .leftJoin(roles, eq(users.role_id, roles.id));
+
+  // Map to split full_name into firstName and lastName
+  const dbUsers = dbUsersRaw.map(u => ({
+    ...u,
+    firstName: u.fullName?.split(' ')[0] || null,
+    lastName: u.fullName?.split(' ').slice(1).join(' ') || null,
+  }));
 
   // Get Clerk user details for email addresses
   // Optimize: Only fetch Clerk data when needed (missing email or name), and batch with concurrency limit

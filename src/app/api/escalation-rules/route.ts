@@ -32,6 +32,7 @@ export async function GET() {
         scope_id: escalation_rules.scope_id,
         level: escalation_rules.level,
         user_id: escalation_rules.user_id,
+        tat_hours: escalation_rules.tat_hours,
         notify_channel: escalation_rules.notify_channel,
         created_at: escalation_rules.created_at,
         updated_at: escalation_rules.updated_at,
@@ -60,9 +61,8 @@ export async function GET() {
         ? db.select({
           id: users.id,
           email: users.email,
-          first_name: users.first_name,
-          last_name: users.last_name,
-          clerk_id: users.clerk_id,
+          full_name: users.full_name,
+          external_id: users.external_id,
         }).from(users).where(inArray(users.id, userIds as string[]))
         : Promise.resolve([]),
     ]);
@@ -71,7 +71,7 @@ export async function GET() {
     const scopeMap = new Map(scopesList.map(s => [s.id, s]));
     const userMap = new Map(usersList.map(u => [u.id, {
       ...u,
-      name: [u.first_name, u.last_name].filter(Boolean).join(' ').trim() || null,
+      name: u.full_name || null,
     }]));
 
     // Enrich rules with domain, scope, and user data
@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { domain_id, scope_id, level, user_id, notify_channel } = body;
+    const { domain_id, scope_id, level, user_id, tat_hours, notify_channel } = body;
 
     if (!domain_id || !level) {
       return NextResponse.json({ error: "domain_id and level are required" }, { status: 400 });
@@ -160,6 +160,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Validate tat_hours (optional, defaults to 48)
+    const tatHoursNum = tat_hours ? parseInt(String(tat_hours), 10) : 48;
+    if (isNaN(tatHoursNum) || tatHoursNum < 1) {
+      return NextResponse.json({ error: "TAT hours must be a positive integer" }, { status: 400 });
+    }
+
     // Create the rule
     const [newRule] = await db
       .insert(escalation_rules)
@@ -168,6 +174,7 @@ export async function POST(request: NextRequest) {
         scope_id: scope_id || null,
         level: levelNum,
         user_id: user_id || null,
+        tat_hours: tatHoursNum,
         notify_channel: channel,
       })
       .returning();

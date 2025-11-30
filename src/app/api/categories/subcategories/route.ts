@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
         name: subcategories.name,
         slug: subcategories.slug,
         description: subcategories.description,
-        active: subcategories.active,
+        active: subcategories.is_active,
         display_order: subcategories.display_order,
         created_at: subcategories.created_at,
         updated_at: subcategories.updated_at,
@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
       .where(
         and(
           eq(subcategories.category_id, category.id),
-          eq(subcategories.active, true)
+          eq(subcategories.is_active, true)
         )
       )
       .orderBy(asc(subcategories.display_order), desc(subcategories.created_at));
@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
           .where(
             and(
               eq(sub_subcategories.subcategory_id, subcat.id),
-              eq(sub_subcategories.active, true)
+              eq(sub_subcategories.is_active, true)
             )
           )
           .orderBy(asc(sub_subcategories.display_order), desc(sub_subcategories.created_at));
@@ -91,7 +91,7 @@ export async function GET(request: NextRequest) {
             help_text: category_fields.help_text,
             validation_rules: category_fields.validation_rules,
             display_order: category_fields.display_order,
-            active: category_fields.active,
+            active: category_fields.is_active,
             created_at: category_fields.created_at,
             updated_at: category_fields.updated_at,
           })
@@ -99,7 +99,7 @@ export async function GET(request: NextRequest) {
           .where(
             and(
               eq(category_fields.subcategory_id, subcat.id),
-              eq(category_fields.active, true)
+              eq(category_fields.is_active, true)
             )
           )
           .orderBy(asc(category_fields.display_order), desc(category_fields.created_at));
@@ -114,7 +114,7 @@ export async function GET(request: NextRequest) {
                 .where(
                   and(
                     eq(field_options.field_id, field.id),
-                    eq(field_options.active, true)
+                    eq(field_options.is_active, true)
                   )
                 )
                 .orderBy(asc(field_options.display_order), desc(field_options.created_at));

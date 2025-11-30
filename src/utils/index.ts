@@ -3,8 +3,16 @@
  * Centralized helper functions for common operations
  */
 
+import { STATUS_ALIASES, TICKET_STATUS } from "@/conf/constants";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+
+// Safely create VALID_STATUS_SET with defensive checks
+const VALID_STATUS_SET = new Set<string>(
+  TICKET_STATUS && typeof TICKET_STATUS === 'object' && !Array.isArray(TICKET_STATUS)
+    ? Object.values(TICKET_STATUS)
+    : []
+);
 
 /**
  * Merge Tailwind CSS classes
@@ -191,17 +199,15 @@ export function formatStatus(status: string | null | undefined): string {
  */
 export function normalizeStatusForComparison(status: string | null | undefined): string {
   if (!status) return "";
-  const upper = status.toUpperCase();
-  const mapping: Record<string, string> = {
-    "OPEN": "open",
-    "IN_PROGRESS": "in_progress",
-    "AWAITING_STUDENT": "awaiting_student_response",
-    "AWAITING_STUDENT_RESPONSE": "awaiting_student_response",
-    "REOPENED": "reopened",
-    "ESCALATED": "escalated",
-    "RESOLVED": "resolved",
-  };
-  return mapping[upper] || status.toLowerCase();
+  const normalized = status.toLowerCase().trim();
+  // Defensive check for STATUS_ALIASES
+  if (STATUS_ALIASES && typeof STATUS_ALIASES === 'object' && !Array.isArray(STATUS_ALIASES) && STATUS_ALIASES[normalized]) {
+    return STATUS_ALIASES[normalized];
+  }
+  if (VALID_STATUS_SET.has(normalized)) {
+    return normalized;
+  }
+  return normalized;
 }
 
 /**
@@ -284,5 +290,18 @@ export function formatPhone(phone: string): string {
     return `(${cleaned.slice(0, 3)}) ${cleaned.slice(3, 6)}-${cleaned.slice(6)}`;
   }
   return phone;
+}
+
+/**
+ * Safely parse JSON from a Response object
+ * Checks Content-Type header before parsing to avoid HTML error pages
+ */
+export async function safeResponseJson<T = unknown>(response: Response): Promise<T> {
+  const contentType = response.headers.get("content-type");
+  if (!contentType || !contentType.includes("application/json")) {
+    const statusText = response.statusText || "Unknown";
+    throw new Error(`Server returned non-JSON response (${response.status} ${statusText})`);
+  }
+  return response.json() as Promise<T>;
 }
 

@@ -86,9 +86,17 @@ export async function GET(
 
     type TicketMetadata = {
       comments?: Array<{ [key: string]: unknown }>;
+      resolved_at?: string;
+      reopened_at?: string;
+      last_escalation_at?: string;
       [key: string]: unknown;
     };
     const metadata = (ticket.metadata as TicketMetadata) || {};
+
+    // Extract timestamps from metadata
+    const resolvedAt = metadata.resolved_at ? new Date(metadata.resolved_at) : null;
+    const reopenedAt = metadata.reopened_at ? new Date(metadata.reopened_at) : null;
+    const lastEscalationAt = metadata.last_escalation_at ? new Date(metadata.last_escalation_at) : null;
 
     // 1. COMMENTS
     if (Array.isArray(metadata.comments)) {
@@ -132,33 +140,33 @@ export async function GET(
       });
     }
 
-    if (ticket.resolved_at) {
+    if (resolvedAt) {
       timeline.push({
         type: "status_change",
-        timestamp: ticket.resolved_at,
+        timestamp: resolvedAt,
         oldStatus: "IN_PROGRESS",
         newStatus: "RESOLVED",
-        at: ticket.resolved_at,
+        at: resolvedAt,
       });
     }
 
-    if (ticket.reopened_at) {
+    if (reopenedAt) {
       timeline.push({
         type: "status_change",
-        timestamp: ticket.reopened_at,
+        timestamp: reopenedAt,
         oldStatus: "RESOLVED",
         newStatus: "REOPENED",
-        at: ticket.reopened_at,
+        at: reopenedAt,
       });
     }
 
     // 3. ESCALATION EVENTS
-    if (ticket.last_escalation_at) {
+    if (lastEscalationAt) {
       timeline.push({
         type: "escalation",
-        timestamp: ticket.last_escalation_at,
+        timestamp: lastEscalationAt,
         level: ticket.escalation_level || 1,
-        at: ticket.last_escalation_at,
+        at: lastEscalationAt,
       });
     }
 

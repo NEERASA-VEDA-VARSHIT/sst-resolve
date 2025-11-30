@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth, clerkClient } from "@clerk/nextjs/server";
-import { db, committees, committee_members, users } from "@/db";
+import { db, committees, users } from "@/db";
 import { eq } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
@@ -26,14 +26,22 @@ export async function GET() {
     // Ensure user exists and get user_id
     const user = await getOrCreateUser(userId);
 
-    // Find the committee this user belongs to (using user_id FK)
-    const memberRecords = await db
-      .select({ committee_id: committee_members.committee_id })
-      .from(committee_members)
-      .where(eq(committee_members.user_id, user.id))
+    // Find the committee this user is the head of (using head_id)
+    const [committee] = await db
+      .select({
+        id: committees.id,
+        name: committees.name,
+        description: committees.description,
+        contact_email: committees.contact_email,
+        head_id: committees.head_id,
+        created_at: committees.created_at,
+        updated_at: committees.updated_at,
+      })
+      .from(committees)
+      .where(eq(committees.head_id, user.id))
       .limit(1);
 
-    if (memberRecords.length === 0) {
+    if (!committee) {
       return NextResponse.json({ 
         error: "No committee assigned",
         committee: null,
@@ -41,79 +49,72 @@ export async function GET() {
       });
     }
 
-    const committeeId = memberRecords[0].committee_id;
-
-    // Get committee details
-    const [committee] = await db
-      .select()
-      .from(committees)
-      .where(eq(committees.id, committeeId))
-      .limit(1);
-
-    if (!committee) {
-      return NextResponse.json({ error: "Committee not found" }, { status: 404 });
+    // Get the single member (head) of this committee
+    let member = null;
+    if (committee.head_id) {
+      const [memberData] = await db
+        .select({
+          id: users.id,
+          external_id: users.external_id,
+          full_name: users.full_name,
+          email: users.email,
+        })
+        .from(users)
+        .where(eq(users.id, committee.head_id))
+        .limit(1);
+      member = memberData || null;
     }
 
-    // Get all members of this committee (join with users to get clerk_id)
-    const allMembers = await db
-      .select({
-        id: committee_members.id,
-        committee_id: committee_members.committee_id,
-        user_id: committee_members.user_id,
-        role: committee_members.role,
-        created_at: committee_members.created_at,
-        updated_at: committee_members.updated_at,
-        clerk_id: users.clerk_id,
-      })
-      .from(committee_members)
-      .innerJoin(users, eq(committee_members.user_id, users.id))
-      .where(eq(committee_members.committee_id, committeeId));
-
-    // Fetch user details from Clerk for each member
+    // Fetch user details from Clerk for the member
     const client = await clerkClient();
-    const membersWithDetails = await Promise.all(
-      allMembers.map(async (member) => {
-        try {
-          const clerkUser = await client.users.getUser(member.clerk_id);
-          return {
-            id: member.id,
-            committee_id: member.committee_id,
-            user_id: member.user_id,
-            role: member.role,
-            created_at: member.created_at,
-            updated_at: member.updated_at,
-            user: {
-              firstName: clerkUser.firstName,
-              lastName: clerkUser.lastName,
-              emailAddresses: Array.isArray(clerkUser.emailAddresses)
-                ? clerkUser.emailAddresses.map((email: { emailAddress?: string }) => ({
-                    emailAddress: typeof email?.emailAddress === 'string' ? email.emailAddress : ''
-                  }))
-                : [],
-            },
-          };
-        } catch (error) {
-          console.error(`Error fetching user ${member.clerk_id}:`, error);
-          return {
-            id: member.id,
-            committee_id: member.committee_id,
-            user_id: member.user_id,
-            role: member.role,
-            created_at: member.created_at,
-            updated_at: member.updated_at,
-            user: undefined,
-          };
-        }
-      })
-    );
+    let memberWithDetails;
+    
+    if (member && member.external_id) {
+      try {
+        const clerkUser = await client.users.getUser(member.external_id);
+        memberWithDetails = {
+          id: member.id,
+          committee_id: committee.id,
+          user_id: member.id,
+          role: "head",
+          created_at: committee.created_at,
+          updated_at: committee.updated_at,
+          user: {
+            fullName: member.full_name || (clerkUser.firstName || clerkUser.lastName ? `${clerkUser.firstName || ''} ${clerkUser.lastName || ''}`.trim() : null),
+            emailAddresses: Array.isArray(clerkUser.emailAddresses)
+              ? clerkUser.emailAddresses.map((email: { emailAddress?: string }) => ({
+                  emailAddress: typeof email?.emailAddress === 'string' ? email.emailAddress : ''
+                }))
+              : [],
+          },
+        };
+      } catch (error) {
+        console.error(`Error fetching user ${member.external_id}:`, error);
+        memberWithDetails = {
+          id: member.id,
+          committee_id: committee.id,
+          user_id: member.id,
+          role: "head",
+          created_at: committee.created_at,
+          updated_at: committee.updated_at,
+          user: undefined,
+        };
+      }
+    }
 
     return NextResponse.json({
-      committee,
-      members: membersWithDetails,
+      committee: {
+        id: committee.id,
+        name: committee.name,
+        description: committee.description,
+        contact_email: committee.contact_email,
+        created_at: committee.created_at,
+        updated_at: committee.updated_at,
+      },
+      members: memberWithDetails ? [memberWithDetails] : [],
     });
   } catch (error) {
     console.error("Error fetching committee profile:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }
-

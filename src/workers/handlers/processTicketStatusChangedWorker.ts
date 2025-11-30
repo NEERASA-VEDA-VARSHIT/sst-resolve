@@ -10,6 +10,7 @@ import { tickets } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { postThreadReplyToChannel } from "@/lib/integration/slack";
 import { sendEmail, getStatusUpdateEmail } from "@/lib/integration/email";
+import { logNotification } from "@/workers/utils";
 import { STATUS_DISPLAY } from "@/conf/constants";
 
 type StatusChangedPayload = {
@@ -77,12 +78,21 @@ export async function processTicketStatusChangedWorker(payload: StatusChangedPay
                     .filter(Boolean)
                     .join("\n");
 
-                await postThreadReplyToChannel(
+                const slackResult = await postThreadReplyToChannel(
                     slackChannel,
                     slackMessageTs,
                     slackMessage
                 );
                 console.log(`[Worker] Posted status change to Slack thread ${slackMessageTs}`);
+                const replyTs = typeof slackResult?.ts === "string" ? slackResult.ts : undefined;
+                await logNotification({
+                    userId: null,
+                    ticketId: ticket_id,
+                    channel: "slack",
+                    notificationType: "ticket.status_changed",
+                    slackMessageId: replyTs ?? slackMessageTs,
+                    sentAt: new Date(),
+                });
             } catch (error) {
                 console.error("[Worker] Failed to post to Slack thread:", error);
             }
@@ -93,7 +103,7 @@ export async function processTicketStatusChangedWorker(payload: StatusChangedPay
         // 2. Send email to student (threaded)
         try {
             type Category = { name?: string; [key: string]: unknown };
-            type User = { email?: string; [key: string]: unknown };
+            type User = { email?: string; id?: string; [key: string]: unknown };
             const category = ticketData.category as unknown as Category;
             const createdByUser = ticketData.created_by_user as unknown as User;
             const emailTemplate = getStatusUpdateEmail(
@@ -104,7 +114,7 @@ export async function processTicketStatusChangedWorker(payload: StatusChangedPay
 
             const userEmail = typeof createdByUser?.email === 'string' ? createdByUser.email : undefined;
             if (userEmail) {
-                await sendEmail({
+                const emailResult = await sendEmail({
                     to: userEmail,
                     subject: emailTemplate.subject,
                     html: emailTemplate.html,
@@ -114,6 +124,17 @@ export async function processTicketStatusChangedWorker(payload: StatusChangedPay
                 });
 
                 console.log(`[Worker] Sent status change email to ${createdByUser.email}`);
+
+                if (emailResult) {
+                    await logNotification({
+                        userId: typeof createdByUser.id === "string" ? createdByUser.id : null,
+                        ticketId: ticket_id,
+                        channel: "email",
+                        notificationType: "ticket.status_changed",
+                        emailMessageId: typeof emailResult.messageId === "string" ? emailResult.messageId : null,
+                        sentAt: new Date(),
+                    });
+                }
             }
         } catch (error) {
             console.error("[Worker] Failed to send status change email:", error);

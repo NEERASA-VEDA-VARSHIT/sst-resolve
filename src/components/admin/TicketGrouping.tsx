@@ -24,12 +24,15 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Users, Plus, X, MessageSquare, Loader2, Archive, RotateCcw, Search } from "lucide-react";
+import { Users, Plus, X, MessageSquare, Loader2, Archive, RotateCcw, Search, Settings } from "lucide-react";
+import { ManageGroupTicketsDialog } from "./ManageGroupTicketsDialog";
 
 interface Ticket {
   id: number;
   status: string | null;
   description: string | null;
+  location?: string | null;
+  created_at: Date | string;
   // Legacy fields kept for backward compatibility with API responses
   user_number?: string | null;
   category?: string | null;
@@ -63,6 +66,8 @@ export function TicketGrouping({ selectedTicketIds, onGroupCreated }: TicketGrou
   const [bulkAction, setBulkAction] = useState<"comment" | "close">("comment");
   const [bulkComment, setBulkComment] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [isManageTicketsDialogOpen, setIsManageTicketsDialogOpen] = useState(false);
+  const [selectedGroupForManagement, setSelectedGroupForManagement] = useState<TicketGroup | null>(null);
   const [stats, setStats] = useState<{
     totalGroups: number;
     activeGroups: number;
@@ -80,9 +85,14 @@ export function TicketGrouping({ selectedTicketIds, onGroupCreated }: TicketGrou
       setLoading(true);
       const response = await fetch("/api/tickets/groups", { cache: "no-store" });
       if (response.ok) {
-        const data = await response.json();
-        setGroups(data.groups || []);
-        setStats(data.stats || null);
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const data = await response.json();
+          setGroups(data.groups || []);
+          setStats(data.stats || null);
+        } else {
+          toast.error("Server returned invalid response format");
+        }
       } else {
         toast.error("Failed to load groups. Please try again.");
       }
@@ -120,8 +130,13 @@ export function TicketGrouping({ selectedTicketIds, onGroupCreated }: TicketGrou
         fetchGroups();
         onGroupCreated?.();
       } else {
-        const error = await response.json();
-        toast.error(error.error || "Failed to create group");
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const error = await response.json();
+          toast.error(error.error || "Failed to create group");
+        } else {
+          toast.error(`Failed to create group (${response.status} ${response.statusText})`);
+        }
       }
     } catch (error) {
       console.error("Error creating group:", error);
@@ -155,18 +170,28 @@ export function TicketGrouping({ selectedTicketIds, onGroupCreated }: TicketGrou
       });
 
       if (response.ok) {
-        const data = await response.json();
-        toast.success(
-          `Bulk action completed: ${data.summary.successful} successful, ${data.summary.failed} failed`
-        );
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const data = await response.json();
+          toast.success(
+            `Bulk action completed: ${data.summary.successful} successful, ${data.summary.failed} failed`
+          );
+        } else {
+          toast.error("Server returned invalid response format");
+        }
         setBulkComment("");
         setIsBulkActionDialogOpen(false);
         setSelectedGroupId(null);
         fetchGroups();
         onGroupCreated?.();
       } else {
-        const error = await response.json();
-        toast.error(error.error || "Failed to perform bulk action");
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const error = await response.json();
+          toast.error(error.error || "Failed to perform bulk action");
+        } else {
+          toast.error(`Failed to perform bulk action (${response.status} ${response.statusText})`);
+        }
       }
     } catch (error) {
       console.error("Error performing bulk action:", error);
@@ -192,8 +217,13 @@ export function TicketGrouping({ selectedTicketIds, onGroupCreated }: TicketGrou
         fetchGroups();
         onGroupCreated?.();
       } else {
-        const error = await response.json();
-        toast.error(error.error || "Failed to delete group");
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const error = await response.json();
+          toast.error(error.error || "Failed to delete group");
+        } else {
+          toast.error(`Failed to delete group (${response.status} ${response.statusText})`);
+        }
       }
     } catch (error) {
       console.error("Error deleting group:", error);
@@ -534,18 +564,32 @@ export function TicketGrouping({ selectedTicketIds, onGroupCreated }: TicketGrou
                     )}
                   </div>
                   {!group.is_archived && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full"
-                      onClick={() => {
-                        setSelectedGroupId(group.id);
-                        setIsBulkActionDialogOpen(true);
-                      }}
-                    >
-                      <MessageSquare className="w-4 h-4 mr-2" />
-                      Manage Group
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1"
+                        onClick={() => {
+                          setSelectedGroupForManagement(group);
+                          setIsManageTicketsDialogOpen(true);
+                        }}
+                      >
+                        <Settings className="w-4 h-4 mr-2" />
+                        Manage Tickets
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1"
+                        onClick={() => {
+                          setSelectedGroupId(group.id);
+                          setIsBulkActionDialogOpen(true);
+                        }}
+                      >
+                        <MessageSquare className="w-4 h-4 mr-2" />
+                        Bulk Actions
+                      </Button>
+                    </div>
                   )}
                   {group.is_archived && (
                     <div className="text-xs text-center text-muted-foreground py-2">
@@ -559,6 +603,22 @@ export function TicketGrouping({ selectedTicketIds, onGroupCreated }: TicketGrou
         </div>
         </div>
       )}
+
+      {/* Manage Group Tickets Dialog */}
+      <ManageGroupTicketsDialog
+        group={selectedGroupForManagement}
+        open={isManageTicketsDialogOpen}
+        onOpenChange={(open) => {
+          setIsManageTicketsDialogOpen(open);
+          if (!open) {
+            setSelectedGroupForManagement(null);
+          }
+        }}
+        onSuccess={() => {
+          fetchGroups();
+          onGroupCreated?.();
+        }}
+      />
     </div>
   );
 }

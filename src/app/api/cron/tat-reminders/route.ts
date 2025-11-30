@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { tickets, notification_settings, users, categories } from "@/db/schema";
+import { tickets, users, categories, ticket_statuses } from "@/db/schema";
 import { and, gte, lt, ne, eq, aliasedTable } from "drizzle-orm";
 import { sendEmail } from "@/lib/integration/email";
 import { postToSlackChannel } from "@/lib/integration/slack";
-import { getStatusIdByValue } from "@/lib/status/status-helpers";
+import { TICKET_STATUS } from "@/conf/constants";
 import { verifyCronAuth } from "@/lib/cron-auth";
 import { logger } from "@/lib/logger";
+import { getStatusIdByValue } from "@/lib/status/getTicketStatuses";
+
+const envEnabled = (value: string | undefined) => value === undefined || value !== "false";
 
 /**
  * TAT Reminder Cron Job
@@ -30,13 +33,9 @@ export async function GET(request: NextRequest) {
 
     logger.info("[TAT Cron] Starting TAT reminder job");
 
-    // Fetch notification settings
-    const [settings] = await db.select().from(notification_settings).limit(1);
-
-    // Default to enabled if no settings found (fail safe)
-    const tatEnabled = settings ? settings.tat_reminders_enabled : true;
-    const slackEnabled = settings ? settings.slack_enabled : true;
-    const emailEnabled = settings ? settings.email_enabled : true;
+    const tatEnabled = envEnabled(process.env.ENABLE_TAT_REMINDERS);
+    const slackEnabled = envEnabled(process.env.ENABLE_SLACK_NOTIFICATIONS);
+    const emailEnabled = envEnabled(process.env.ENABLE_EMAIL_NOTIFICATIONS);
 
     if (!tatEnabled) {
       logger.info("[TAT Cron] TAT reminders are disabled in settings. Skipping.");
@@ -54,82 +53,58 @@ export async function GET(request: NextRequest) {
       end: tomorrow.toISOString(),
     });
 
-    // Find tickets due today that are not resolved
-    const resolvedStatusId = await getStatusIdByValue("RESOLVED");
-    const statusFilter = resolvedStatusId 
-      ? ne(tickets.status_id, resolvedStatusId)
-      : undefined;
-
     // Use regular joins instead of relational query API
     const assignedUser = aliasedTable(users, "assigned_user");
     
+    const resolvedStatusId = await getStatusIdByValue(TICKET_STATUS.RESOLVED);
+    const whereConditions = [
+      gte(tickets.resolution_due_at, today),
+      lt(tickets.resolution_due_at, tomorrow),
+    ];
+    if (resolvedStatusId) {
+      whereConditions.push(ne(tickets.status_id, resolvedStatusId));
+    }
+
     const dueTicketRows = await db
       .select({
         id: tickets.id,
-        title: tickets.title,
         description: tickets.description,
         location: tickets.location,
-        status_id: tickets.status_id,
+        status: ticket_statuses.value,
         category_id: tickets.category_id,
         subcategory_id: tickets.subcategory_id,
         sub_subcategory_id: tickets.sub_subcategory_id,
         created_by: tickets.created_by,
         assigned_to: tickets.assigned_to,
-        acknowledged_by: tickets.acknowledged_by,
-        group_id: tickets.group_id,
         escalation_level: tickets.escalation_level,
-        tat_extended_count: tickets.tat_extended_count,
-        last_escalation_at: tickets.last_escalation_at,
-        acknowledgement_tat_hours: tickets.acknowledgement_tat_hours,
-        resolution_tat_hours: tickets.resolution_tat_hours,
         acknowledgement_due_at: tickets.acknowledgement_due_at,
         resolution_due_at: tickets.resolution_due_at,
-        acknowledged_at: tickets.acknowledged_at,
-        reopened_at: tickets.reopened_at,
-        sla_breached_at: tickets.sla_breached_at,
-        reopen_count: tickets.reopen_count,
-        rating: tickets.rating,
-        feedback_type: tickets.feedback_type,
-        rating_submitted: tickets.rating_submitted,
-        feedback: tickets.feedback,
-        is_public: tickets.is_public,
-        admin_link: tickets.admin_link,
-        student_link: tickets.student_link,
-        slack_thread_id: tickets.slack_thread_id,
-        external_ref: tickets.external_ref,
         metadata: tickets.metadata,
         created_at: tickets.created_at,
         updated_at: tickets.updated_at,
-        resolved_at: tickets.resolved_at,
         category_name: categories.name,
         assigned_user_id: assignedUser.id,
         assigned_user_email: assignedUser.email,
-        assigned_user_first_name: assignedUser.first_name,
-        assigned_user_last_name: assignedUser.last_name,
+        assigned_user_full_name: assignedUser.full_name,
       })
       .from(tickets)
+      .leftJoin(ticket_statuses, eq(ticket_statuses.id, tickets.status_id))
       .leftJoin(categories, eq(tickets.category_id, categories.id))
       .leftJoin(assignedUser, eq(tickets.assigned_to, assignedUser.id))
-      .where(
-        and(
-          gte(tickets.resolution_due_at, today),
-          lt(tickets.resolution_due_at, tomorrow),
-          statusFilter
-        )
-      );
+      .where(and(...whereConditions));
 
     // Transform to match expected structure
     const dueTickets = dueTicketRows.map(t => ({
       ...t,
       category: t.category_name ? { name: t.category_name } : null,
       assigned_admin: t.assigned_user_id ? {
-        full_name: [t.assigned_user_first_name, t.assigned_user_last_name].filter(Boolean).join(' ').trim() || null,
+        full_name: t.assigned_user_full_name || null,
         user: {
           email: t.assigned_user_email || null,
         },
       } : null,
       due_at: t.resolution_due_at,
-      assigned_to: t.assigned_to, // Keep for grouping
+      assigned_to: t.assigned_to,
     }));
 
     console.log(`[TAT Cron] Found ${dueTickets.length} tickets due today`);
@@ -222,7 +197,7 @@ export async function GET(request: NextRequest) {
 
 interface TATReminderTicket {
   id: number;
-  title?: string | null;
+  description?: string | null;
   category?: { name?: string | null } | null;
   due_at?: Date | string | null;
   resolution_due_at?: Date | string | null;
@@ -233,7 +208,7 @@ function renderTATReminderEmail(tickets: TATReminderTicket[], adminName: string)
       (t) => `
       <div class="ticket">
         <strong>Ticket #${t.id}</strong><br>
-        ${t.title || "No title"}<br>
+        ${t.description ? (typeof t.description === 'string' ? t.description.substring(0, 50) : 'Ticket') : "No description"}<br>
         <span class="category">Category: ${t.category?.name || "Unknown"}</span><br>
         <span class="due">Due: ${(t.due_at || t.resolution_due_at ? new Date(t.due_at || t.resolution_due_at || '').toLocaleString() : 'N/A')}</span>
       </div>
@@ -309,8 +284,8 @@ function renderTATReminderEmail(tickets: TATReminderTicket[], adminName: string)
 }
 
 interface SlackTATReminderTicket {
+  description?: string | null;
   id: number;
-  title?: string | null;
   assigned_admin?: { full_name?: string | null } | null;
 }
 function formatSlackTATReminder(tickets: SlackTATReminderTicket[], categoryName: string): string {
@@ -337,7 +312,8 @@ function formatSlackTATReminder(tickets: SlackTATReminderTicket[], categoryName:
     message += `\n👤 *${adminName}*\n`;
     adminTickets.forEach((t: SlackTATReminderTicket) => {
       const ticketUrl = `${baseUrl}/admin/dashboard/ticket/${t.id}`;
-      message += ` • <${ticketUrl}|#${t.id}> - ${t.title || "No title"}\n`;
+      const ticketDesc = t.description ? (typeof t.description === 'string' ? t.description.substring(0, 50) : 'Ticket') : "No description";
+      message += ` • <${ticketUrl}|#${t.id}> - ${ticketDesc}\n`;
     });
   }
 

@@ -32,28 +32,28 @@ export async function findSPOCForTicket(
     if (subcategoryId) {
       const [subcategory] = await db
         .select({
-          clerk_id: users.clerk_id
+          external_id: users.external_id
         })
         .from(subcategories)
         .leftJoin(users, eq(subcategories.assigned_admin_id, users.id))
         .where(eq(subcategories.id, subcategoryId))
         .limit(1);
 
-      if (subcategory?.clerk_id) return subcategory.clerk_id;
+      if (subcategory?.external_id) return subcategory.external_id;
     }
 
     // Fallback to category default authority
     if (categoryId) {
       const [category] = await db
         .select({
-          clerk_id: users.clerk_id
+          external_id: users.external_id
         })
         .from(categories)
         .leftJoin(users, eq(categories.default_admin_id, users.id))
         .where(eq(categories.id, categoryId))
         .limit(1);
 
-      if (category?.clerk_id) return category.clerk_id;
+      if (category?.external_id) return category.external_id;
     }
 
     return null;

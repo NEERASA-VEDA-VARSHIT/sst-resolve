@@ -45,7 +45,7 @@ export default async function CategoriesPage() {
     updated_at: Date | null;
   }> = [];
   try {
-    allCategories = await db
+    const categoriesData = await db
       .select({
         id: categories.id,
         name: categories.name,
@@ -57,22 +57,31 @@ export default async function CategoriesPage() {
         domain_id: categories.domain_id,
         scope_id: categories.scope_id,
         default_admin_id: categories.default_admin_id,
-        committee_id: categories.committee_id,
         parent_category_id: categories.parent_category_id,
-        active: categories.active,
+        is_active: categories.is_active,
         display_order: categories.display_order,
         created_at: categories.created_at,
         updated_at: categories.updated_at,
       })
       .from(categories)
-      .where(eq(categories.active, true))
+      .where(eq(categories.is_active, true))
       .orderBy(asc(categories.display_order), desc(categories.created_at));
     
-    // Transform to match Category interface (sla_hours and display_order must be numbers)
-    allCategories = allCategories.map(cat => ({
-      ...cat,
+    // Transform to match Category interface (map is_active to active, ensure numbers)
+    allCategories = categoriesData.map(cat => ({
+      id: cat.id,
+      name: cat.name,
+      slug: cat.slug,
+      description: cat.description,
+      icon: cat.icon,
+      color: cat.color,
       sla_hours: cat.sla_hours ?? 48,
       display_order: cat.display_order ?? 0,
+      active: cat.is_active,
+      default_authority: null, // Note: default_admin_id is UUID, but interface expects number
+      domain_id: cat.domain_id ?? null,
+      created_at: cat.created_at,
+      updated_at: cat.updated_at,
     }));
   } catch (error) {
     console.error('[Super Admin Categories] Error fetching categories:', error);

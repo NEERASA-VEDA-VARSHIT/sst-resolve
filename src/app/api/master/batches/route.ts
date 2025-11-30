@@ -12,7 +12,6 @@ export async function GET() {
 			.select({
 				id: batches.id,
 				batch_year: batches.batch_year,
-				display_name: batches.display_name,
 			})
 			.from(batches)
 			.where(eq(batches.is_active, true))

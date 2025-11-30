@@ -1,13 +1,15 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect, notFound } from "next/navigation";
 import { db } from "@/db";
-import { tickets, categories, ticket_statuses, users } from "@/db/schema";
+import { tickets, categories, users, ticket_statuses } from "@/db/schema";
+import type { TicketMetadata } from "@/db/inferred-types";
 import { eq, desc, isNull, inArray } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { normalizeStatusForComparison } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { getTicketStatusByValue } from "@/lib/status/getTicketStatuses";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import {
@@ -90,6 +92,7 @@ export default async function CategoryAnalyticsDetailPage({
   const rawTickets = await db
     .select({
       id: tickets.id,
+      status_id: tickets.status_id,
       status_value: ticket_statuses.value,
       description: tickets.description,
       location: tickets.location,
@@ -99,13 +102,10 @@ export default async function CategoryAnalyticsDetailPage({
       metadata: tickets.metadata,
       created_at: tickets.created_at,
       updated_at: tickets.updated_at,
-      resolved_at: tickets.resolved_at,
       due_at: tickets.resolution_due_at,
       escalation_level: tickets.escalation_level,
-      rating: tickets.rating,
       assigned_to: tickets.assigned_to,
-      assigned_first_name: assignedUsers.first_name,
-      assigned_last_name: assignedUsers.last_name,
+      assigned_full_name: assignedUsers.full_name,
       assigned_email: assignedUsers.email,
     })
     .from(tickets)
@@ -135,8 +135,7 @@ export default async function CategoryAnalyticsDetailPage({
     const creators = await db
       .select({
         id: users.id,
-        first_name: users.first_name,
-        last_name: users.last_name,
+        full_name: users.full_name,
         email: users.email,
       })
       .from(users)
@@ -144,17 +143,22 @@ export default async function CategoryAnalyticsDetailPage({
 
     creators.forEach((creator) => {
       creatorMap.set(creator.id, {
-        name: [creator.first_name, creator.last_name].filter(Boolean).join(" ") || null,
+        name: creator.full_name || null,
         email: creator.email,
       });
     });
   }
 
   const allTickets = rawTickets.map((ticket) => {
-    const assignedName = [ticket.assigned_first_name, ticket.assigned_last_name]
-      .filter(Boolean)
-      .join(" ")
-      .trim();
+    // Extract metadata fields
+    let ticketMetadata: TicketMetadata = {};
+    if (ticket.metadata && typeof ticket.metadata === 'object' && !Array.isArray(ticket.metadata)) {
+      ticketMetadata = ticket.metadata as TicketMetadata;
+    }
+    const resolvedAt = ticketMetadata.resolved_at ? new Date(ticketMetadata.resolved_at) : null;
+    const rating = (ticketMetadata.rating as number | null) || null;
+
+    const assignedName = ticket.assigned_full_name || ticket.assigned_email || "Unassigned";
 
     const creator = ticket.created_by ? creatorMap.get(ticket.created_by) : undefined;
 
@@ -163,7 +167,8 @@ export default async function CategoryAnalyticsDetailPage({
 
     return {
       id: ticket.id,
-      status: ticket.status_value,
+      status_id: ticket.status_id || 0,
+      status: ticket.status_value || null,
       description: ticket.description,
       location: ticket.location,
       created_by: ticket.created_by,
@@ -172,12 +177,12 @@ export default async function CategoryAnalyticsDetailPage({
       metadata: ticket.metadata,
       created_at: ticket.created_at,
       updated_at: ticket.updated_at,
-      resolved_at: ticket.resolved_at,
+      resolved_at: resolvedAt,
       due_at: ticket.due_at,
       escalation_level: ticket.escalation_level,
-      rating: ticket.rating,
+      rating,
       assigned_to: ticket.assigned_to,
-      assigned_name: assignedName || (ticket.assigned_email ?? "Unassigned"),
+      assigned_name: assignedName,
       assigned_email: ticket.assigned_email,
       creator_name: creator?.name ?? null,
       creator_email: creator?.email ?? null,
@@ -227,6 +232,10 @@ export default async function CategoryAnalyticsDetailPage({
   // const resolvedThisWeek = resolvedTickets.filter(
   //   (ticket) => ticket.resolved_at && ticket.resolved_at >= startOfWeek,
   // ).length;
+
+  // Fetch status labels from database
+  const awaitingStudentStatus = await getTicketStatusByValue("awaiting_student");
+  const awaitingStudentLabel = awaitingStudentStatus?.label || "Awaiting Student Response";
 
   const resolutionRate = totalTickets > 0 ? Math.round((resolvedTickets.length / totalTickets) * 100) : 0;
   const openRate = totalTickets > 0 ? Math.round((openTickets.length / totalTickets) * 100) : 0;
@@ -427,7 +436,7 @@ export default async function CategoryAnalyticsDetailPage({
                   <Users className="h-6 w-6 text-blue-600 dark:text-blue-400" />
                 </div>
                 <div>
-                  <p className="text-sm font-semibold">Awaiting Student</p>
+                  <p className="text-sm font-semibold">{awaitingStudentLabel}</p>
                   <p className="text-xs text-muted-foreground">Waiting on student response</p>
                 </div>
               </div>
@@ -525,21 +534,21 @@ export default async function CategoryAnalyticsDetailPage({
           ) : (
             <div className="space-y-4">
               {allTickets.map((ticket) => {
-                // Map to full Ticket type with required fields
                 const ticketForCard = {
                   id: ticket.id,
                   title: null,
                   description: ticket.description,
                   location: ticket.location,
-                  status_id: 0, // Will be set from status_value if needed
+                  status_id: ticket.status_id ?? 0,
                   category_id: ticket.category_id,
                   subcategory_id: null,
                   sub_subcategory_id: null,
+                  scope_id: null,
                   created_by: ticket.created_by,
                   assigned_to: ticket.assigned_to,
                   acknowledged_by: null,
                   group_id: null,
-                  escalation_level: ticket.escalation_level,
+                  escalation_level: ticket.escalation_level ?? 0,
                   tat_extended_count: 0,
                   last_escalation_at: null,
                   acknowledgement_tat_hours: null,

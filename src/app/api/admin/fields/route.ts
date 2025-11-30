@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
         help_text: category_fields.help_text,
         validation_rules: category_fields.validation_rules,
         display_order: category_fields.display_order,
-        active: category_fields.active,
+        is_active: category_fields.is_active,
         created_at: category_fields.created_at,
         updated_at: category_fields.updated_at,
       })
@@ -133,7 +133,7 @@ export async function POST(request: NextRequest) {
 
     // If an active field exists with the same slug, generate a unique slug
     let finalSlug = slug;
-    if (existingField && existingField.active) {
+    if (existingField && existingField.is_active) {
       // Find all fields with slugs starting with the base slug to generate a unique one
       const allFields = await db
         .select({ slug: category_fields.slug })
@@ -151,7 +151,7 @@ export async function POST(request: NextRequest) {
     }
 
     let newField;
-    if (existingField && !existingField.active) {
+    if (existingField && !existingField.is_active) {
       // Reactivate the existing inactive item
       [newField] = await db
         .update(category_fields)
@@ -165,7 +165,7 @@ export async function POST(request: NextRequest) {
           validation_rules: validation_rules || null,
           display_order: display_order || 0,
           assigned_admin_id: assigned_admin_id === null || assigned_admin_id === "" ? null : String(assigned_admin_id),
-          active: true,
+          is_active: true,
           updated_at: new Date(),
         })
         .where(eq(category_fields.id, existingField.id))
@@ -188,7 +188,7 @@ export async function POST(request: NextRequest) {
           validation_rules: validation_rules || null,
           display_order: display_order || 0,
           assigned_admin_id: assigned_admin_id === null || assigned_admin_id === "" ? null : String(assigned_admin_id),
-          active: true,
+          is_active: true,
         })
         .returning();
     }
@@ -196,16 +196,37 @@ export async function POST(request: NextRequest) {
     // Create options if field_type is "select" and options are provided
     type FieldOption = { label?: string; value: string; display_order?: number };
     if (field_type === "select" && Array.isArray(options) && options.length > 0) {
+      // Validate for duplicate values (case-insensitive)
+      const valueSet = new Set<string>();
+      const duplicates: string[] = [];
+      for (const opt of options) {
+        const normalizedValue = opt.value.trim().toLowerCase();
+        if (valueSet.has(normalizedValue)) {
+          duplicates.push(opt.value);
+        }
+        valueSet.add(normalizedValue);
+      }
+      
+      if (duplicates.length > 0) {
+        return NextResponse.json({ 
+          error: `Duplicate option values detected: ${duplicates.join(", ")}. Each option must have a unique value (case-insensitive).` 
+        }, { status: 400 });
+      }
+
       const optionValues = options.map((opt: FieldOption, index: number) => ({
         field_id: newField.id,
         label: opt.label || opt.value,
-        value: opt.value,
+        value: opt.value.trim(), // Trim whitespace
         display_order: opt.display_order || index,
-        active: true,
+        is_active: true,
       }));
 
       await db.insert(field_options).values(optionValues);
     }
+
+    // Transform is_active to active for frontend compatibility
+    const { is_active, ...fieldRest } = newField;
+    const transformedField = { ...fieldRest, active: is_active };
 
     // Fetch the field with options
     if (field_type === "select") {
@@ -215,14 +236,14 @@ export async function POST(request: NextRequest) {
         .where(eq(field_options.field_id, newField.id))
         .orderBy(asc(field_options.display_order));
       return NextResponse.json({ 
-        ...newField, 
+        ...transformedField, 
         options: fieldOptions,
         slug_auto_generated: finalSlug !== slug // Indicate if slug was auto-generated
       }, { status: 201 });
     }
 
     return NextResponse.json({ 
-      ...newField, 
+      ...transformedField, 
       options: [],
       slug_auto_generated: finalSlug !== slug // Indicate if slug was auto-generated
     }, { status: 201 });

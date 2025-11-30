@@ -217,6 +217,11 @@ export function extractDynamicFields(
     return [];
   }
   
+  // Guard against null/undefined categorySchema
+  if (!categorySchema || typeof categorySchema !== 'object' || Array.isArray(categorySchema)) {
+    return [];
+  }
+  
   const dynamicFields: DynamicField[] = [];
   
   try {

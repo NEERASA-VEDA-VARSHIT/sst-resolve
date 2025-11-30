@@ -89,7 +89,7 @@ export async function GET(request: Request) {
                 .where(
                   and(
                     eq(field_options.field_id, vendorField.id),
-                    eq(field_options.active, true)
+                    eq(field_options.is_active, true)
                   )
                 )
                 .orderBy(asc(field_options.display_order), asc(field_options.label));

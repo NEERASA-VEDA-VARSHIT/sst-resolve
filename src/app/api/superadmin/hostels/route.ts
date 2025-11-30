@@ -32,21 +32,20 @@ export async function GET(request: NextRequest) {
 		const { searchParams } = new URL(request.url);
 		const activeOnly = searchParams.get("active") === "true";
 
-	const query = db.select({
-		id: hostels.id,
-		name: hostels.name,
-		code: hostels.code,
-		capacity: hostels.capacity,
-		is_active: hostels.is_active,
-		created_at: hostels.created_at,
-		updated_at: hostels.updated_at,
-	}).from(hostels);
+		const query = db
+			.select({
+				id: hostels.id,
+				name: hostels.name,
+				is_active: hostels.is_active,
+				created_at: hostels.created_at,
+			})
+			.from(hostels);
 
-	const hostelList = activeOnly
-		? await query.where(eq(hostels.is_active, true)).orderBy(hostels.name)
-		: await query.orderBy(hostels.name);
+		const hostelList = activeOnly
+			? await query.where(eq(hostels.is_active, true)).orderBy(hostels.name)
+			: await query.orderBy(hostels.name);
 
-	return NextResponse.json({ hostels: hostelList }, { status: 200 });
+		return NextResponse.json({ hostels: hostelList }, { status: 200 });
 	} catch (error: unknown) {
 		console.error("Fetch hostels error:", error);
 		const errorMessage = error instanceof Error ? error.message : "Failed to fetch hostels";
@@ -73,7 +72,7 @@ export async function POST(request: NextRequest) {
 		}
 
 		const body = await request.json();
-		const { name, code, capacity } = body;
+		const { name } = body;
 
 		// Validate required fields
 		if (!name || typeof name !== "string" || name.trim().length === 0) {
@@ -102,8 +101,6 @@ export async function POST(request: NextRequest) {
 			.insert(hostels)
 			.values({
 				name: name.trim(),
-				code: code?.trim() || null,
-				capacity: capacity ? parseInt(capacity) : null,
 				is_active: true,
 			})
 			.returning();

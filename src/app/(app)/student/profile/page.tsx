@@ -15,27 +15,7 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { User, Save, Loader2, Lock, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
-
-interface StudentProfile {
-  id: number;
-  user_number: string;
-  full_name: string;
-  email: string;
-  room_number: string | null;
-  mobile: string | null;
-  hostel: string | null;
-  hostel_id: number | null;
-  class_section: string | null;
-  batch_year: number | null;
-  department: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-interface Hostel {
-  id: number;
-  name: string;
-}
+import type { StudentProfile, Hostel } from "@/db/types-only";
 
 export default function StudentProfilePage() {
   const { user, isLoaded } = useUser();
@@ -372,14 +352,15 @@ export default function StudentProfilePage() {
 }
 
 /* Helper component for readonly fields */
-function ReadonlyField({ label, value }: { label: string; value: string }) {
+function ReadonlyField({ label, value }: { label: string; value: string | null | undefined }) {
+  const displayValue = value ?? "Not Assigned";
   return (
     <div>
       <Label className="text-muted-foreground flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm">
         <Lock className="w-3 h-3 flex-shrink-0" /> <span className="truncate">{label}</span>
       </Label>
       <Input
-        value={value}
+        value={displayValue}
         readOnly
         disabled
         className="bg-muted cursor-not-allowed mt-1 text-sm sm:text-base h-9 sm:h-10"

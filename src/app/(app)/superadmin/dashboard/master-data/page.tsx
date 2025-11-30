@@ -30,22 +30,12 @@ import {
 	Trash2,
 	Loader2,
 	AlertCircle,
-	Settings2
+	Settings2,
+	Shield
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
-
-interface ClassSection {
-	id: number;
-	name: string;
-	created_at: string;
-}
-
-interface Batch {
-	id: number;
-	batch_year: number;
-	created_at: string;
-}
+import type { ClassSection, Batch, Hostel } from "@/db/types-only";
 
 export default function MasterDataPage() {
 	// State for sections
@@ -58,9 +48,16 @@ export default function MasterDataPage() {
 	// State for batches
 	const [batches, setBatches] = useState<Batch[]>([]);
 	const [batchDialog, setBatchDialog] = useState(false);
-	const [batchForm, setBatchForm] = useState({ batch_year: "" });
+	const [batchForm, setBatchForm] = useState({ batch_year: "", is_active: true });
 	const [editingBatch, setEditingBatch] = useState<Batch | null>(null);
 	const [batchLoading, setBatchLoading] = useState(false);
+
+	// State for hostels
+	const [hostels, setHostels] = useState<Hostel[]>([]);
+	const [hostelDialog, setHostelDialog] = useState(false);
+	const [hostelForm, setHostelForm] = useState({ name: "", is_active: true });
+	const [editingHostel, setEditingHostel] = useState<Hostel | null>(null);
+	const [hostelLoading, setHostelLoading] = useState(false);
 
 	const [deleteDialog, setDeleteDialog] = useState(false);
 	const [deleteItem, setDeleteItem] = useState<{ type: string; id: number; name: string } | null>(null);
@@ -69,6 +66,7 @@ export default function MasterDataPage() {
 	useEffect(() => {
 		fetchSections();
 		fetchBatches();
+		fetchHostels();
 	}, []);
 
 	// ==================== SECTIONS ====================
@@ -82,6 +80,109 @@ export default function MasterDataPage() {
 		} catch (error) {
 			console.error("Error fetching sections:", error);
 		}
+	};
+
+	// ==================== HOSTELS ====================
+	const fetchHostels = async () => {
+		try {
+			const res = await fetch("/api/superadmin/hostels");
+			if (res.ok) {
+				const data = await res.json();
+				setHostels(data.hostels || []);
+			}
+		} catch (error) {
+			console.error("Error fetching hostels:", error);
+		}
+	};
+
+	const handleHostelSubmit = async () => {
+		if (!hostelForm.name.trim()) {
+			toast.error("Please enter hostel name");
+			return;
+		}
+
+		setHostelLoading(true);
+		try {
+			if (editingHostel) {
+				const res = await fetch(`/api/superadmin/hostels/${editingHostel.id}`, {
+					method: "PATCH",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						name: hostelForm.name.trim(),
+						is_active: hostelForm.is_active,
+					}),
+				});
+
+				if (res.ok) {
+					toast.success("Hostel updated successfully");
+					fetchHostels();
+					closeHostelDialog();
+				} else {
+					const error = await res.json();
+					toast.error(error.error || "Failed to update hostel");
+				}
+			} else {
+				const res = await fetch("/api/superadmin/hostels", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						name: hostelForm.name.trim(),
+						// backend defaults to true; we explicitly set it from form for clarity
+						is_active: hostelForm.is_active,
+					}),
+				});
+
+				if (res.ok) {
+					toast.success("Hostel created successfully");
+					fetchHostels();
+					closeHostelDialog();
+				} else {
+					const error = await res.json();
+					toast.error(error.error || "Failed to create hostel");
+				}
+			}
+		} catch {
+			toast.error("An error occurred");
+		} finally {
+			setHostelLoading(false);
+		}
+	};
+
+	const handleDeleteHostel = async (id: number) => {
+		try {
+			const res = await fetch(`/api/superadmin/hostels/${id}`, {
+				method: "DELETE",
+			});
+
+			if (res.ok) {
+				toast.success("Hostel deleted successfully");
+				fetchHostels();
+				setDeleteDialog(false);
+				setDeleteItem(null);
+			} else {
+				const error = await res.json();
+				toast.error(error.error || "Failed to delete hostel");
+			}
+		} catch {
+			toast.error("An error occurred");
+		}
+	};
+
+	const openHostelDialog = (hostel?: Hostel) => {
+		if (hostel) {
+			setEditingHostel(hostel);
+			setHostelForm({ name: hostel.name, is_active: true });
+		} else {
+			setEditingHostel(null);
+			setHostelForm({ name: "", is_active: true });
+		}
+		setHostelDialog(true);
+	};
+
+	const closeHostelDialog = () => {
+		setHostelDialog(false);
+		setEditingHostel(null);
+		setHostelForm({ name: "", is_active: true });
 	};
 
 	const handleSectionSubmit = async () => {
@@ -195,7 +296,10 @@ export default function MasterDataPage() {
 				const res = await fetch(`/api/superadmin/batches/${editingBatch.id}`, {
 					method: "PATCH",
 					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ batch_year: year }),
+					body: JSON.stringify({
+						batch_year: year,
+						is_active: batchForm.is_active,
+					}),
 				});
 
 				if (res.ok) {
@@ -210,7 +314,10 @@ export default function MasterDataPage() {
 				const res = await fetch("/api/superadmin/batches", {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ batch_year: year }),
+					body: JSON.stringify({
+						batch_year: year,
+						is_active: batchForm.is_active,
+					}),
 				});
 
 				if (res.ok) {
@@ -252,7 +359,10 @@ export default function MasterDataPage() {
 	const openBatchDialog = (batch?: Batch) => {
 		if (batch) {
 			setEditingBatch(batch);
-			setBatchForm({ batch_year: batch.batch_year.toString() });
+			setBatchForm({ batch_year: batch.batch_year.toString(), is_active: true });
+		} else {
+			setEditingBatch(null);
+			setBatchForm({ batch_year: "", is_active: true });
 		}
 		setBatchDialog(true);
 	};
@@ -260,7 +370,7 @@ export default function MasterDataPage() {
 	const closeBatchDialog = () => {
 		setBatchDialog(false);
 		setEditingBatch(null);
-		setBatchForm({ batch_year: "" });
+		setBatchForm({ batch_year: "", is_active: true });
 	};
 
 	// ==================== DELETE CONFIRMATION ====================
@@ -279,28 +389,97 @@ export default function MasterDataPage() {
 			case "batch":
 				handleDeleteBatch(deleteItem.id);
 				break;
+			case "hostel":
+				handleDeleteHostel(deleteItem.id);
+				break;
 		}
 	};
 
 	return (
-		<div className="container mx-auto py-8 space-y-6">
-			<div className="flex items-center justify-between">
+		<div className="container mx-auto py-8 space-y-8">
+			{/* PAGE HEADER */}
+			<div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
 				<div>
 					<h1 className="text-3xl font-bold">Master Data Management</h1>
 					<p className="text-muted-foreground">
-						Manage class sections and batches for students
+						Central hub for students, admins, domains &amp; scopes, and committees.
 					</p>
 				</div>
-				<Button asChild>
-					<Link href="/superadmin/dashboard/domains">
-						<Settings2 className="w-4 w-4 mr-2" />
-						Manage Domains & Scopes
-					</Link>
-				</Button>
+			</div>
+
+			{/* HIGH-LEVEL MASTER DATA HUB */}
+			<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+				<Card>
+					<CardHeader>
+						<CardTitle className="flex items-center gap-2">
+							<Users className="h-4 w-4" />
+							Students
+						</CardTitle>
+						<CardDescription>
+							Add, edit, deactivate and bulk-manage student records.
+						</CardDescription>
+					</CardHeader>
+					<CardContent className="flex justify-end">
+						<Button asChild size="sm">
+							<Link href="/superadmin/students">Open Students</Link>
+						</Button>
+					</CardContent>
+				</Card>
+
+				<Card>
+					<CardHeader>
+						<CardTitle className="flex items-center gap-2">
+							<Shield className="h-4 w-4" />
+							Admins
+						</CardTitle>
+						<CardDescription>
+							Manage admin and super admin staff profiles and roles.
+						</CardDescription>
+					</CardHeader>
+					<CardContent className="flex justify-end">
+						<Button asChild size="sm">
+							<Link href="/superadmin/dashboard/staff">Open Admins</Link>
+						</Button>
+					</CardContent>
+				</Card>
+
+				<Card>
+					<CardHeader>
+						<CardTitle className="flex items-center gap-2">
+							<Settings2 className="h-4 w-4" />
+							Domains &amp; Scopes
+						</CardTitle>
+						<CardDescription>
+							Configure operational domains and their scopes (e.g., Hostel, College).
+						</CardDescription>
+					</CardHeader>
+					<CardContent className="flex justify-end">
+						<Button asChild size="sm">
+							<Link href="/superadmin/dashboard/domains">Open Domains &amp; Scopes</Link>
+						</Button>
+					</CardContent>
+				</Card>
+
+				<Card>
+					<CardHeader>
+						<CardTitle className="flex items-center gap-2">
+							<Users className="h-4 w-4" />
+							Committees
+						</CardTitle>
+						<CardDescription>
+							Manage committees and their committee heads.
+						</CardDescription>
+					</CardHeader>
+					<CardContent className="flex justify-end">
+						<Button asChild size="sm">
+							<Link href="/superadmin/dashboard/committees">Open Committees</Link>
+						</Button>
+					</CardContent>
+				</Card>
 			</div>
 
 			<Tabs defaultValue="sections" className="w-full">
-				<TabsList className="grid w-full grid-cols-2">
+				<TabsList className="grid w-full grid-cols-3">
 					<TabsTrigger value="sections" className="flex items-center gap-2">
 						<Users className="h-4 w-4" />
 						Class Sections
@@ -308,6 +487,10 @@ export default function MasterDataPage() {
 					<TabsTrigger value="batches" className="flex items-center gap-2">
 						<Calendar className="h-4 w-4" />
 						Batches
+					</TabsTrigger>
+					<TabsTrigger value="hostels" className="flex items-center gap-2">
+						<Users className="h-4 w-4" />
+						Hostels
 					</TabsTrigger>
 				</TabsList>
 
@@ -406,7 +589,12 @@ export default function MasterDataPage() {
 										batches.sort((a, b) => b.batch_year - a.batch_year).map((batch) => (
 											<TableRow key={batch.id}>
 												<TableCell>{batch.id}</TableCell>
-												<TableCell className="font-medium">{batch.batch_year}</TableCell>
+											<TableCell className="font-medium">
+												{batch.batch_year}
+												{batch.is_active === false && (
+													<span className="ml-2 text-xs text-muted-foreground">(inactive)</span>
+												)}
+											</TableCell>
 												<TableCell>{new Date(batch.created_at).toLocaleDateString()}</TableCell>
 												<TableCell className="text-right space-x-2">
 													<Button
@@ -420,6 +608,67 @@ export default function MasterDataPage() {
 														variant="ghost"
 														size="sm"
 														onClick={() => confirmDelete("batch", batch.id, batch.batch_year.toString())}
+													>
+														<Trash2 className="h-4 w-4 text-destructive" />
+													</Button>
+												</TableCell>
+											</TableRow>
+										))
+									)}
+								</TableBody>
+							</Table>
+						</CardContent>
+					</Card>
+				</TabsContent>
+
+				{/* ==================== HOSTELS TAB ==================== */}
+				<TabsContent value="hostels">
+					<Card>
+						<CardHeader className="flex flex-row items-center justify-between">
+							<div>
+								<CardTitle>Hostels</CardTitle>
+								<CardDescription>Manage hostel information</CardDescription>
+							</div>
+							<Button onClick={() => openHostelDialog()}>
+								<Plus className="h-4 w-4 mr-2" />
+								Add Hostel
+							</Button>
+						</CardHeader>
+						<CardContent>
+							<Table>
+								<TableHeader>
+									<TableRow>
+										<TableHead>ID</TableHead>
+										<TableHead>Name</TableHead>
+										<TableHead>Created At</TableHead>
+										<TableHead className="text-right">Actions</TableHead>
+									</TableRow>
+								</TableHeader>
+								<TableBody>
+									{hostels.length === 0 ? (
+										<TableRow>
+											<TableCell colSpan={4} className="text-center text-muted-foreground">
+												No hostels found
+											</TableCell>
+										</TableRow>
+									) : (
+										hostels.map((hostel) => (
+											<TableRow key={hostel.id}>
+												<TableCell>{hostel.id}</TableCell>
+												<TableCell className="font-medium">{hostel.name}</TableCell>
+												<TableCell>{new Date(hostel.created_at).toLocaleDateString()}</TableCell>
+												<TableCell className="text-right space-x-2">
+													<Button
+														variant="ghost"
+														size="sm"
+														onClick={() => openHostelDialog(hostel)}
+													>
+														<Pencil className="h-4 w-4" />
+													</Button>
+													<Button
+														variant="ghost"
+														size="sm"
+														onClick={() => confirmDelete("hostel", hostel.id, hostel.name)}
 													>
 														<Trash2 className="h-4 w-4 text-destructive" />
 													</Button>
@@ -482,11 +731,23 @@ export default function MasterDataPage() {
 								id="batch-year"
 								type="number"
 								value={batchForm.batch_year}
-								onChange={(e) => setBatchForm({ batch_year: e.target.value })}
+								onChange={(e) => setBatchForm({ ...batchForm, batch_year: e.target.value })}
 								placeholder="e.g., 2028"
 								min="2000"
 								max="2100"
 							/>
+						</div>
+						<div className="flex items-center space-x-2">
+							<input
+								id="batch-active"
+								type="checkbox"
+								checked={batchForm.is_active}
+								onChange={(e) =>
+									setBatchForm((prev) => ({ ...prev, is_active: e.target.checked }))
+								}
+								className="h-4 w-4"
+							/>
+							<Label htmlFor="batch-active">Active</Label>
 						</div>
 					</div>
 					<DialogFooter>
@@ -496,6 +757,50 @@ export default function MasterDataPage() {
 						<Button onClick={handleBatchSubmit} disabled={batchLoading}>
 							{batchLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
 							{editingBatch ? "Update" : "Create"}
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+
+			{/* ==================== HOSTEL DIALOG ==================== */}
+			<Dialog open={hostelDialog} onOpenChange={setHostelDialog}>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>{editingHostel ? "Edit Hostel" : "Add Hostel"}</DialogTitle>
+						<DialogDescription>
+							{editingHostel ? "Update hostel details" : "Create a new hostel"}
+						</DialogDescription>
+					</DialogHeader>
+					<div className="space-y-4">
+						<div>
+							<Label htmlFor="hostel-name">Hostel Name</Label>
+							<Input
+								id="hostel-name"
+								value={hostelForm.name}
+								onChange={(e) => setHostelForm({ ...hostelForm, name: e.target.value })}
+								placeholder="e.g., Hostel A"
+							/>
+						</div>
+						<div className="flex items-center space-x-2">
+							<input
+								id="hostel-active"
+								type="checkbox"
+								checked={hostelForm.is_active}
+								onChange={(e) =>
+									setHostelForm((prev) => ({ ...prev, is_active: e.target.checked }))
+								}
+								className="h-4 w-4"
+							/>
+							<Label htmlFor="hostel-active">Active</Label>
+						</div>
+					</div>
+					<DialogFooter>
+						<Button variant="outline" onClick={closeHostelDialog}>
+							Cancel
+						</Button>
+						<Button onClick={handleHostelSubmit} disabled={hostelLoading}>
+							{hostelLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+							{editingHostel ? "Update" : "Create"}
 						</Button>
 					</DialogFooter>
 				</DialogContent>

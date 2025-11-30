@@ -4,6 +4,7 @@ import { tickets, ticket_statuses } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { postThreadReply } from "@/lib/integration/slack";
 import { sendEmail, getTATReminderEmail } from "@/lib/integration/email";
+import { getCanonicalStatus, TICKET_STATUS } from "@/conf/constants";
 
 /**
  * ============================================
@@ -37,7 +38,8 @@ export async function GET() {
 				id: tickets.id,
 				metadata: tickets.metadata,
 				category_id: tickets.category_id,
-				status_value: ticket_statuses.value,
+    status_id: tickets.status_id,
+    status_value: ticket_statuses.value,
 				created_by: tickets.created_by,
 			})
 			.from(tickets)
@@ -79,8 +81,9 @@ export async function GET() {
 						}
 					}
 
-					// Only send reminder for open or in_progress tickets
-					if (ticket.status_value !== "RESOLVED" && ticket.status_value !== "CLOSED") {
+					// Only send reminder for open/in-progress tickets
+					const statusValue = getCanonicalStatus(ticket.status_value || "");
+					if (statusValue !== TICKET_STATUS.RESOLVED) {
 						// Get category name (we need to fetch it or assume from metadata if stored)
 						// For now, let's assume we can get it or just use "Ticket"
 						// Actually, we should probably join categories table too, but let's see if we can do without for now.
@@ -124,7 +127,7 @@ export async function GET() {
 							const { users } = await import("@/db/schema");
 							const [creator] = await db.select({ email: users.email })
 								.from(users)
-								.where(eq(users.id, ticket.created_by))
+        .where(eq(users.id, ticket.created_by!))
 								.limit(1);
 
 							const studentEmail = creator?.email;

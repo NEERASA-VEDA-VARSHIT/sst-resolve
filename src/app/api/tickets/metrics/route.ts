@@ -4,7 +4,8 @@ import { db } from "@/db";
 import { tickets, categories, ticket_statuses } from "@/db/schema";
 import { eq, inArray, sql, gte, and, ne } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
-import { getStatusIdByValue } from "@/lib/status/status-helpers";
+import { TICKET_STATUS } from "@/conf/constants";
+import { getStatusIdByValue } from "@/lib/status/getTicketStatuses";
 
 /**
  * ============================================
@@ -48,13 +49,20 @@ export async function GET() {
     .from(tickets);
 
   const statusList = [
-    "OPEN",
-    "IN_PROGRESS",
-    "AWAITING_STUDENT",
-    "RESOLVED",
-    "ESCALATED",
-    "REOPENED",
+    TICKET_STATUS.OPEN,
+    TICKET_STATUS.IN_PROGRESS,
+    TICKET_STATUS.AWAITING_STUDENT,
+    TICKET_STATUS.RESOLVED,
+    TICKET_STATUS.ESCALATED,
+    TICKET_STATUS.REOPENED,
   ];
+
+  // Get status IDs for the status list
+  const statusIds: number[] = [];
+  for (const statusValue of statusList) {
+    const statusId = await getStatusIdByValue(statusValue);
+    if (statusId) statusIds.push(statusId);
+  }
 
   const statusCountsQuery = await db
     .select({
@@ -63,11 +71,13 @@ export async function GET() {
     })
     .from(tickets)
     .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
-    .where(inArray(ticket_statuses.value, statusList))
+    .where(inArray(tickets.status_id, statusIds))
     .groupBy(ticket_statuses.value);
 
   const statusCounts = Object.fromEntries(
-    statusCountsQuery.map((row) => [row.status, row.count])
+    statusCountsQuery
+      .filter((row) => row.status)
+      .map((row) => [row.status!, row.count])
   );
 
   // -------------------------------
@@ -86,19 +96,25 @@ export async function GET() {
   // -------------------------------
   // SLA METRICS
   // -------------------------------
-  // Average resolution time (in hours)
+  // Average resolution time (in hours) - extract from metadata
+  // Note: This is a simplified calculation. For production, you may want to query metadata JSONB
   const [{ avgResolutionHours }] = await db
     .select({
       avgResolutionHours: sql<number>`
-          AVG(EXTRACT(EPOCH FROM (resolved_at - created_at)) / 3600)
+          AVG(
+            CASE 
+              WHEN metadata->>'resolved_at' IS NOT NULL AND created_at IS NOT NULL
+              THEN EXTRACT(EPOCH FROM ((metadata->>'resolved_at')::timestamp - created_at)) / 3600
+              ELSE NULL
+            END
+          )
         `,
     })
     .from(tickets)
-    .where(sql`resolved_at IS NOT NULL`);
+    .where(sql`metadata->>'resolved_at' IS NOT NULL`);
 
   // Overdue tickets: updated_at > 48h OR SLA custom logic
-  // Get RESOLVED status ID to exclude resolved tickets
-  const resolvedStatusId = await getStatusIdByValue("RESOLVED");
+  const resolvedStatusId = await getStatusIdByValue(TICKET_STATUS.RESOLVED);
   const overdueWhere = resolvedStatusId
     ? and(
         ne(tickets.status_id, resolvedStatusId),
@@ -113,18 +129,15 @@ export async function GET() {
     .from(tickets)
     .where(overdueWhere);
 
-  // Reopened tickets count
-  const reopenedStatusId = await getStatusIdByValue("REOPENED");
-  const reopenedWhere = reopenedStatusId
-    ? eq(tickets.status_id, reopenedStatusId)
-    : sql`1 = 0`; // Return 0 if status doesn't exist
-
-  const [{ reopened }] = await db
-    .select({
-      reopened: sql<number>`COUNT(*)`,
-    })
-    .from(tickets)
-    .where(reopenedWhere);
+  const reopenedStatusId = await getStatusIdByValue(TICKET_STATUS.REOPENED);
+  const [{ reopened }] = reopenedStatusId
+    ? await db
+        .select({
+          reopened: sql<number>`COUNT(*)`,
+        })
+        .from(tickets)
+        .where(eq(tickets.status_id, reopenedStatusId))
+    : [{ reopened: 0 }];
 
   // -------------------------------
   // TODAY'S METRICS
@@ -139,31 +152,33 @@ export async function GET() {
     .from(tickets)
     .where(gte(tickets.created_at, todayStartSQL));
 
-  const resolvedStatusIdForToday = await getStatusIdByValue("RESOLVED");
-  const resolvedTodayWhere = resolvedStatusIdForToday
-    ? and(
-        eq(tickets.status_id, resolvedStatusIdForToday),
-        gte(tickets.resolved_at, todayStartSQL)
-      )
-    : sql`1 = 0`; // Return 0 if status doesn't exist
+  const resolvedStatusIdForToday = await getStatusIdByValue(TICKET_STATUS.RESOLVED);
+  const [{ resolvedToday }] = resolvedStatusIdForToday
+    ? await db
+        .select({ resolvedToday: sql<number>`COUNT(*)` })
+        .from(tickets)
+        .where(
+          and(
+            eq(tickets.status_id, resolvedStatusIdForToday),
+            sql`metadata->>'resolved_at' IS NOT NULL`,
+            sql`(metadata->>'resolved_at')::timestamp >= ${todayStartSQL}`
+          )
+        )
+    : [{ resolvedToday: 0 }];
 
-  const [{ resolvedToday }] = await db
-    .select({ resolvedToday: sql<number>`COUNT(*)` })
-    .from(tickets)
-    .where(resolvedTodayWhere);
-
-  const escalatedStatusId = await getStatusIdByValue("ESCALATED");
-  const escalatedTodayWhere = escalatedStatusId
-    ? and(
-        eq(tickets.status_id, escalatedStatusId),
-        gte(tickets.last_escalation_at, todayStartSQL)
-      )
-    : sql`1 = 0`; // Return 0 if status doesn't exist
-
-  const [{ escalatedToday }] = await db
-    .select({ escalatedToday: sql<number>`COUNT(*)` })
-    .from(tickets)
-    .where(escalatedTodayWhere);
+  const escalatedStatusId = await getStatusIdByValue(TICKET_STATUS.ESCALATED);
+  const [{ escalatedToday }] = escalatedStatusId
+    ? await db
+        .select({ escalatedToday: sql<number>`COUNT(*)` })
+        .from(tickets)
+        .where(
+          and(
+            eq(tickets.status_id, escalatedStatusId),
+            sql`metadata->>'last_escalation_at' IS NOT NULL`,
+            sql`(metadata->>'last_escalation_at')::timestamp >= ${todayStartSQL}`
+          )
+        )
+    : [{ escalatedToday: 0 }];
 
   // -------------------------------
   // FINAL RESPONSE

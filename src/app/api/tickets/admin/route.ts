@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { tickets, users, categories, ticket_statuses } from "@/db/schema";
 import { desc, eq, and, isNull, or, sql, aliasedTable } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
+import { getCanonicalStatus } from "@/conf/constants";
 
 /**
  * ============================================
@@ -50,15 +51,19 @@ export async function GET(request: NextRequest) {
     // Build filters
     const filters = [];
 
-    // Only allow known ticket status enum values to satisfy Drizzle's typing
-    const allowedStatuses = ['OPEN', 'IN_PROGRESS', 'AWAITING_STUDENT', 'REOPENED', 'ESCALATED', 'RESOLVED'] as const;
-
     // Alias for assigned user
     const assignedUser = aliasedTable(users, "assigned_user");
 
-    if (status && (allowedStatuses as readonly string[]).includes(status)) {
-      // Join with ticket_statuses to filter by value
-      filters.push(eq(ticket_statuses.value, status));
+    if (status) {
+      const canonicalStatus = getCanonicalStatus(status);
+      if (canonicalStatus) {
+        // Join ticket_statuses for status filtering
+        filters.push(sql`EXISTS (
+          SELECT 1 FROM ticket_statuses ts 
+          WHERE ts.id = ${tickets.status_id} 
+          AND ts.value = ${canonicalStatus}
+        )`);
+      }
     }
     if (category) filters.push(eq(tickets.category_id, Number(category)));
 
@@ -80,7 +85,7 @@ export async function GET(request: NextRequest) {
       const [userRow] = await db
         .select({ id: users.id })
         .from(users)
-        .where(eq(users.clerk_id, userId))
+        .where(eq(users.external_id, userId))
         .limit(1);
 
       if (!userRow) return NextResponse.json({ error: "User not found" }, { status: 404 });
@@ -103,19 +108,17 @@ export async function GET(request: NextRequest) {
       .select({
         // Ticket fields
         id: tickets.id,
-        status: ticket_statuses.value, // Get status value from joined table
+        status: ticket_statuses.value,
         description: tickets.description,
         location: tickets.location,
         created_at: tickets.created_at,
         updated_at: tickets.updated_at,
-        due_at: tickets.resolution_due_at, // Map to resolution_due_at
+        due_at: tickets.resolution_due_at,
         escalation_level: tickets.escalation_level,
         metadata: tickets.metadata,
-        // attachments: tickets.attachments, // Attachments are in a separate table now
 
         // Creator info
-        creator_first_name: users.first_name,
-        creator_last_name: users.last_name,
+        creator_full_name: users.full_name,
         creator_email: users.email,
 
         // Category info
@@ -123,15 +126,14 @@ export async function GET(request: NextRequest) {
         category_slug: categories.slug,
 
         // Assigned staff info (from aliased users table)
-        assigned_first_name: assignedUser.first_name,
-        assigned_last_name: assignedUser.last_name,
+        assigned_full_name: assignedUser.full_name,
         assigned_email: assignedUser.email,
       })
       .from(tickets)
       .leftJoin(users, eq(users.id, tickets.created_by))
       .leftJoin(categories, eq(categories.id, tickets.category_id))
-      .leftJoin(ticket_statuses, eq(ticket_statuses.id, tickets.status_id))
       .leftJoin(assignedUser, eq(assignedUser.id, tickets.assigned_to))
+      .leftJoin(ticket_statuses, eq(ticket_statuses.id, tickets.status_id))
       .where(whereClause ?? undefined)
       .orderBy(desc(tickets.created_at))
       .limit(limit)
@@ -143,7 +145,6 @@ export async function GET(request: NextRequest) {
         total: sql<number>`COUNT(*)`,
       })
       .from(tickets)
-      .leftJoin(ticket_statuses, eq(ticket_statuses.id, tickets.status_id)) // Join needed if filtering by status
       .where(whereClause ?? undefined);
 
     // Transform data for frontend
@@ -157,23 +158,17 @@ export async function GET(request: NextRequest) {
       due_at: ticket.due_at,
       escalation_level: ticket.escalation_level,
       metadata: ticket.metadata,
-      attachments: [], // Placeholder as attachments are separate now
+      attachments: [],
       creator: {
-        name: [ticket.creator_first_name, ticket.creator_last_name]
-          .filter(Boolean)
-          .join(' ')
-          .trim() || null,
+        name: ticket.creator_full_name?.trim() || null,
         email: ticket.creator_email,
       },
       category: {
         name: ticket.category_name,
         slug: ticket.category_slug,
       },
-      assigned_to: (ticket.assigned_first_name || ticket.assigned_last_name) ? {
-        name: [ticket.assigned_first_name, ticket.assigned_last_name]
-          .filter(Boolean)
-          .join(' ')
-          .trim(),
+      assigned_to: ticket.assigned_full_name ? {
+        name: ticket.assigned_full_name.trim(),
         email: ticket.assigned_email,
       } : null,
     }));

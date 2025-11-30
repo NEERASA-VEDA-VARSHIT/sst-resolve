@@ -24,7 +24,7 @@ export async function GET() {
         const [domainsList, scopesList, categoriesList, committeesList, hostelsList, batchesList, classSectionsList, rolesList] = await Promise.all([
             db.select().from(domains),
             db.select().from(scopes),
-            db.select().from(categories).where(eq(categories.active, true)),
+            db.select().from(categories).where(eq(categories.is_active, true)),
             db.select().from(committees),
             db.select().from(hostels),
             db.select().from(batches),

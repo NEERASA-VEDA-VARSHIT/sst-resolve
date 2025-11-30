@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { db, committees, committee_members } from "@/db";
+import { db, committees, users, roles } from "@/db";
 import { eq } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
@@ -37,13 +37,14 @@ export async function PATCH(
     const body = await request.json();
     const { name, description, contact_email } = body;
 
-    // Verify committee exists
+    // Verify committee exists and get current head_id
     const [committee] = await db
       .select({
         id: committees.id,
         name: committees.name,
         description: committees.description,
         contact_email: committees.contact_email,
+        head_id: committees.head_id,
         created_at: committees.created_at,
         updated_at: committees.updated_at,
       })
@@ -55,7 +56,13 @@ export async function PATCH(
       return NextResponse.json({ error: "Committee not found" }, { status: 404 });
     }
 
-    const updateData: { name?: string; description?: string | null; contact_email?: string | null; updated_at: Date } = {
+    const updateData: {
+      name?: string;
+      description?: string | null;
+      contact_email?: string | null;
+      head_id?: string | null;
+      updated_at: Date;
+    } = {
       updated_at: new Date(),
     };
 
@@ -87,14 +94,130 @@ export async function PATCH(
     }
 
     if (contact_email !== undefined) {
+      const normalizedNewEmail = contact_email
+        ? contact_email.trim().toLowerCase()
+        : null;
+
       // Validate email format if provided
-      if (contact_email && typeof contact_email === "string" && contact_email.trim().length > 0) {
+      if (normalizedNewEmail) {
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(contact_email.trim())) {
+        if (!emailRegex.test(normalizedNewEmail)) {
           return NextResponse.json({ error: "Invalid email format" }, { status: 400 });
         }
       }
-      updateData.contact_email = contact_email?.trim() || null;
+
+      // Check if email is actually changing
+      const currentEmail = committee.contact_email?.toLowerCase() || null;
+      const emailChanged = normalizedNewEmail !== currentEmail;
+
+      if (emailChanged && normalizedNewEmail) {
+        // Find the new head user by email
+        const [newHeadUser] = await db
+          .select({
+            id: users.id,
+            email: users.email,
+          })
+          .from(users)
+          .where(eq(users.email, normalizedNewEmail))
+          .limit(1);
+
+        if (!newHeadUser) {
+          return NextResponse.json(
+            {
+              error:
+                "No user found with this email. Please ensure the committee head has a user account before updating.",
+            },
+            { status: 400 },
+          );
+        }
+
+        // Ensure new user is not already head of another committee
+        const [existingHeadCommittee] = await db
+          .select({
+            id: committees.id,
+            name: committees.name,
+          })
+          .from(committees)
+          .where(eq(committees.head_id, newHeadUser.id))
+          .limit(1);
+
+        if (existingHeadCommittee && existingHeadCommittee.id !== committeeId) {
+          return NextResponse.json(
+            {
+              error: `User with email ${normalizedNewEmail} is already the head of committee '${existingHeadCommittee.name}'`,
+            },
+            { status: 400 },
+          );
+        }
+
+        // Get role IDs
+        const [studentRole] = await db
+          .select({ id: roles.id })
+          .from(roles)
+          .where(eq(roles.name, "student"))
+          .limit(1);
+
+        const [committeeHeadRole] = await db
+          .select({ id: roles.id })
+          .from(roles)
+          .where(eq(roles.name, "committee_head"))
+          .limit(1);
+
+        if (!studentRole || !committeeHeadRole) {
+          return NextResponse.json(
+            { error: "Required roles (student, committee_head) not found in database" },
+            { status: 500 },
+          );
+        }
+
+        // If there was an old head, change their role back to student
+        if (committee.head_id) {
+          await db
+            .update(users)
+            .set({
+              role_id: studentRole.id,
+              updated_at: new Date(),
+            })
+            .where(eq(users.id, committee.head_id));
+        }
+
+        // Change new head's role to committee_head
+        await db
+          .update(users)
+          .set({
+            role_id: committeeHeadRole.id,
+            updated_at: new Date(),
+          })
+          .where(eq(users.id, newHeadUser.id));
+
+        // Update committee with new head_id and email
+        updateData.head_id = newHeadUser.id;
+        updateData.contact_email = normalizedNewEmail;
+      } else if (normalizedNewEmail === null) {
+        // If email is being cleared, also clear head_id and revert old head to student
+        if (committee.head_id) {
+          const [studentRole] = await db
+            .select({ id: roles.id })
+            .from(roles)
+            .where(eq(roles.name, "student"))
+            .limit(1);
+
+          if (studentRole) {
+            await db
+              .update(users)
+              .set({
+                role_id: studentRole.id,
+                updated_at: new Date(),
+              })
+              .where(eq(users.id, committee.head_id));
+          }
+        }
+        updateData.head_id = null;
+        updateData.contact_email = null;
+      } else {
+        // Email unchanged, just update the field (normalize it)
+        updateData.contact_email = normalizedNewEmail;
+      }
     }
 
     const [updatedCommittee] = await db
@@ -139,12 +262,13 @@ export async function DELETE(
       return NextResponse.json({ error: "Invalid committee ID" }, { status: 400 });
     }
 
-    // Verify committee exists
+    // Verify committee exists and get head_id
     const [committee] = await db
       .select({
         id: committees.id,
         name: committees.name,
         description: committees.description,
+        head_id: committees.head_id,
         created_at: committees.created_at,
         updated_at: committees.updated_at,
       })
@@ -156,10 +280,24 @@ export async function DELETE(
       return NextResponse.json({ error: "Committee not found" }, { status: 404 });
     }
 
-    // Delete all committee members first (cascade should handle this, but being explicit)
-    await db
-      .delete(committee_members)
-      .where(eq(committee_members.committee_id, committeeId));
+    // If there's a head, revert their role back to student before deleting
+    if (committee.head_id) {
+      const [studentRole] = await db
+        .select({ id: roles.id })
+        .from(roles)
+        .where(eq(roles.name, "student"))
+        .limit(1);
+
+      if (studentRole) {
+        await db
+          .update(users)
+          .set({
+            role_id: studentRole.id,
+            updated_at: new Date(),
+          })
+          .where(eq(users.id, committee.head_id));
+      }
+    }
 
     // Delete the committee
     await db

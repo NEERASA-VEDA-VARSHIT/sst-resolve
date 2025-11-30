@@ -3,7 +3,7 @@
  * Helper functions for working with ticket statuses
  */
 
-import { TICKET_STATUS } from "@/conf/constants";
+import { STATUS_ALIASES, TICKET_STATUS } from "@/conf/constants";
 
 /**
  * Get all valid ticket status values from the database enum
@@ -23,19 +23,8 @@ export function getValidStatuses(): string[] {
 export function isValidStatus(status: string | null | undefined): boolean {
   if (!status) return false;
   const normalized = status.toLowerCase().trim();
-  
-  // Valid statuses from database enum
-  const validStatuses = [
-    "open",
-    "in_progress", 
-    "awaiting_student_response", // Maps to AWAITING_STUDENT in DB
-    "awaiting_student",          // Also accept DB enum format
-    "reopened",
-    "escalated",                 // Valid DB status (though may be deprecated in favor of escalation_level)
-    "resolved",
-  ];
-  
-  return validStatuses.includes(normalized);
+  if (STATUS_ALIASES[normalized]) return true;
+  return Object.values(TICKET_STATUS).includes(normalized as typeof TICKET_STATUS[keyof typeof TICKET_STATUS]);
 }
 
 /**
@@ -45,11 +34,11 @@ export function isValidStatus(status: string | null | undefined): boolean {
  */
 export function getStatusFilterOptions(): Array<{ value: string; label: string }> {
   return [
-    { value: "open", label: "Open" },
-    { value: "in_progress", label: "In Progress" },
-    { value: "awaiting_student_response", label: "Awaiting Student Response" },
-    { value: "reopened", label: "Reopened" },
-    { value: "resolved", label: "Resolved" },
+    { value: TICKET_STATUS.OPEN, label: "Open" },
+    { value: TICKET_STATUS.IN_PROGRESS, label: "In Progress" },
+    { value: TICKET_STATUS.AWAITING_STUDENT, label: "Awaiting Student Response" },
+    { value: TICKET_STATUS.REOPENED, label: "Reopened" },
+    { value: TICKET_STATUS.RESOLVED, label: "Resolved" },
     // Special filters (not direct DB statuses)
     { value: "escalated", label: "Escalated" }, // Special: filters by escalation_level > 0
   ];

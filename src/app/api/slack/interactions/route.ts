@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, tickets, ticket_statuses, categories, users } from "@/db";
-import { eq } from "drizzle-orm";
+import { db, tickets, categories, users } from "@/db";
+import { eq, sql } from "drizzle-orm";
 import { postThreadReply } from "@/lib/integration/slack";
 import { sendEmail, getStatusUpdateEmail, getTATSetEmail, getCommentAddedEmail, getStudentEmail } from "@/lib/integration/email";
-import { getStatusIdByValue } from "@/lib/status/status-helpers";
 import { calculateTATDate } from "@/utils";
-import type { TicketMetadata } from "@/db/types";
+import type { TicketMetadata } from "@/db/inferred-types";
+import { TICKET_STATUS } from "@/conf/constants";
+import { getStatusIdByValue } from "@/lib/status/getTicketStatuses";
 
 export async function POST(request: NextRequest) {
 	try {
@@ -31,12 +32,10 @@ export async function POST(request: NextRequest) {
 						const [ticketData] = await db
 							.select({
 								ticket: tickets,
-								status: ticket_statuses,
 								category: categories,
 								creator: users,
 							})
 							.from(tickets)
-							.leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
 							.leftJoin(categories, eq(tickets.category_id, categories.id))
 							.leftJoin(users, eq(tickets.created_by, users.id))
 							.where(eq(tickets.id, ticketId))
@@ -51,39 +50,41 @@ export async function POST(request: NextRequest) {
 						const originalMessageId = details.originalEmailMessageId;
 						const originalSubject = details.originalEmailSubject;
 
-						// Get CLOSED status ID
-						const closedStatusId = await getStatusIdByValue("CLOSED");
-
-						if (closedStatusId) {
-							await db
-								.update(tickets)
-								.set({ status_id: closedStatusId, updated_at: new Date() })
-								.where(eq(tickets.id, ticketId));
-
-							// Send notifications asynchronously
-							(async () => {
-								try {
-									const studentEmail = creator ? await getStudentEmail(creator.id) : null;
-									if (studentEmail) {
-										const emailTemplate = getStatusUpdateEmail(
-											ticket.id,
-											"CLOSED",
-											category?.name || "General"
-										);
-										await sendEmail({
-											to: studentEmail,
-											subject: emailTemplate.subject,
-											html: emailTemplate.html,
-											ticketId: ticket.id,
-											threadMessageId: originalMessageId,
-											originalSubject: originalSubject,
-										});
-									}
-								} catch (emailError) {
-									console.error("Error sending close email:", emailError);
-								}
-							})();
+						// Get the status_id for "resolved" status
+						const resolvedStatusId = await getStatusIdByValue(TICKET_STATUS.RESOLVED);
+						if (!resolvedStatusId) {
+							console.error(`[Slack Interactions] Failed to find status_id for "${TICKET_STATUS.RESOLVED}"`);
+							return NextResponse.json({ error: "Failed to resolve ticket" }, { status: 500 });
 						}
+
+						await db
+							.update(tickets)
+							.set({ status_id: resolvedStatusId, updated_at: new Date() })
+							.where(eq(tickets.id, ticketId));
+
+						// Send notifications asynchronously
+						(async () => {
+							try {
+								const studentEmail = creator ? await getStudentEmail(creator.id) : null;
+								if (studentEmail) {
+									const emailTemplate = getStatusUpdateEmail(
+										ticket.id,
+										"RESOLVED",
+										category?.name || "General"
+									);
+									await sendEmail({
+										to: studentEmail,
+										subject: emailTemplate.subject,
+										html: emailTemplate.html,
+										ticketId: ticket.id,
+										threadMessageId: originalMessageId,
+										originalSubject: originalSubject,
+									});
+								}
+							} catch (emailError) {
+								console.error("Error sending close email:", emailError);
+							}
+						})();
 
 						return NextResponse.json({ text: "OK" });
 					}
@@ -104,12 +105,10 @@ export async function POST(request: NextRequest) {
 					const [ticketData] = await db
 						.select({
 							ticket: tickets,
-							status: ticket_statuses,
 							category: categories,
 							creator: users,
 						})
 						.from(tickets)
-						.leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
 						.leftJoin(categories, eq(tickets.category_id, categories.id))
 						.leftJoin(users, eq(tickets.created_by, users.id))
 						.where(eq(tickets.id, ticketId))
@@ -139,9 +138,12 @@ export async function POST(request: NextRequest) {
 					const updateData: { metadata: TicketMetadata; status_id?: number } = { metadata: details };
 
 					if (markInProgress) {
-						const inProgressStatusId = await getStatusIdByValue("IN_PROGRESS");
-						if (inProgressStatusId) {
-							updateData.status_id = inProgressStatusId;
+						// Get the status_id for "in_progress" status
+						const statusId = await getStatusIdByValue(TICKET_STATUS.IN_PROGRESS);
+						if (statusId) {
+							updateData.status_id = statusId;
+						} else {
+							console.error(`[Slack Interactions] Failed to find status_id for "${TICKET_STATUS.IN_PROGRESS}"`);
 						}
 					}
 
@@ -257,12 +259,10 @@ export async function POST(request: NextRequest) {
 					const [ticketData] = await db
 						.select({
 							ticket: tickets,
-							status: ticket_statuses,
 							category: categories,
 							creator: users,
 						})
 						.from(tickets)
-						.leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
 						.leftJoin(categories, eq(tickets.category_id, categories.id))
 						.leftJoin(users, eq(tickets.created_by, users.id))
 						.where(eq(tickets.id, ticketId))

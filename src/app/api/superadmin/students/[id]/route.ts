@@ -12,10 +12,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { students, users, tickets, hostels, batches, class_sections } from "@/db/schema";
+import type { StudentInsert } from "@/db/inferred-types";
 import { eq } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
-import { z } from "zod";
+import { AdminUpdateStudentSchema } from "@/schemas/business/student";
 
 /**
  * GET /api/superadmin/students/[id]
@@ -48,17 +49,15 @@ export async function GET(
 				user_id: students.user_id,
 				roll_no: students.roll_no,
 				room_no: students.room_no,
-				batch_year: students.batch_year,
+				batch_year: batches.batch_year,
 				department: students.department,
 				hostel_id: students.hostel_id,
 				batch_id: students.batch_id,
 				class_section_id: students.class_section_id,
 				email: users.email,
-				first_name: users.first_name,
-				last_name: users.last_name,
+				full_name: users.full_name,
 				phone: users.phone,
 				hostel_name: hostels.name,
-				batch_display: batches.display_name,
 				section_name: class_sections.name,
 			})
 			.from(students)
@@ -84,18 +83,6 @@ export async function GET(
  * PATCH /api/superadmin/students/[id]
  * Update student information
  */
-const UpdateStudentSchema = z.object({
-	full_name: z.string().min(1).max(120).optional(),
-	phone: z.string().max(30).nullable().optional(),
-	roll_no: z.string().min(1).max(32).optional(),
-	room_no: z.string().max(16).nullable().optional(),
-	hostel_id: z.number().nullable().optional(),
-	batch_id: z.number().nullable().optional(),
-	class_section_id: z.number().nullable().optional(),
-	batch_year: z.number().nullable().optional(),
-	department: z.string().max(120).nullable().optional(),
-});
-
 export async function PATCH(
 	request: NextRequest,
 	{ params }: { params: Promise<{ id: string }> }
@@ -118,7 +105,7 @@ export async function PATCH(
 		}
 
 		const body = await request.json();
-		const parsed = UpdateStudentSchema.safeParse(body);
+		const parsed = AdminUpdateStudentSchema.safeParse(body);
 		if (!parsed.success) {
 			return NextResponse.json(
 				{ error: "Invalid request data", details: parsed.error.format() },
@@ -139,14 +126,15 @@ export async function PATCH(
 		}
 
 		const updatedStudent = await db.transaction(async (tx) => {
-			const studentUpdate: Record<string, unknown> = {
+			// Use Partial<StudentInsert> for type-safe updates
+			const studentUpdate: Partial<StudentInsert> = {
 				...updateData,
 				updated_at: new Date(),
 			};
 
 			// Remove fields that go to users table
-			delete studentUpdate.full_name;
-			delete studentUpdate.phone;
+			delete (studentUpdate as Record<string, unknown>).full_name;
+			delete (studentUpdate as Record<string, unknown>).phone;
 
 			const [updated] = await tx
 				.update(students)
@@ -157,9 +145,7 @@ export async function PATCH(
 			// Update users table if name or phone changed
 			const userUpdate: Record<string, unknown> = {};
 			if (updateData.full_name) {
-				const nameParts = updateData.full_name.trim().split(' ');
-				userUpdate.first_name = nameParts[0] || null;
-				userUpdate.last_name = nameParts.slice(1).join(' ') || null;
+				userUpdate.full_name = updateData.full_name.trim() || null;
 			}
 			if (updateData.phone !== undefined) userUpdate.phone = updateData.phone;
 
@@ -240,7 +226,7 @@ export async function DELETE(
 			.where(eq(users.id, student.user_id))
 			.limit(1);
 
-		const neverLoggedIn = user?.clerk_id?.startsWith("pending_");
+		const neverLoggedIn = user?.external_id?.startsWith("pending_");
 
 		await db
 			.delete(students)

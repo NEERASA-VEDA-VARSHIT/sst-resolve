@@ -3,7 +3,7 @@
  * Optimized queries for common operations
  */
 
-import { db, users, roles, admin_assignments, tickets, committee_members, categories, ticket_statuses, domains, scopes } from "@/db";
+import { db, users, roles, admin_assignments, tickets, committees, categories, domains, scopes, admin_profiles, ticket_statuses } from "@/db";
 import { eq, and, isNull, isNotNull, lt, sql } from "drizzle-orm";
 import type { UserRole } from "@/types/auth";
 
@@ -16,14 +16,14 @@ export async function findSuperAdminClerkId(): Promise<string | null> {
   try {
     const superAdminUsers = await db
       .select({
-        clerk_id: users.clerk_id,
+        external_id: users.external_id,
       })
       .from(users)
       .innerJoin(roles, eq(users.role_id, roles.id))
       .where(eq(roles.name, "super_admin"))
       .limit(1);
 
-    return superAdminUsers[0]?.clerk_id || null;
+    return superAdminUsers[0]?.external_id || null;
   } catch (error) {
     console.error("[DB Helpers] Error finding super admin:", error);
     return null;
@@ -69,9 +69,10 @@ export async function isAdmin(
       })
       .from(users)
       .leftJoin(roles, eq(users.role_id, roles.id))
-      .leftJoin(domains, eq(users.primary_domain_id, domains.id))
-      .leftJoin(scopes, eq(users.primary_scope_id, scopes.id))
-      .where(eq(users.clerk_id, clerkUserId))
+      .leftJoin(admin_profiles, eq(admin_profiles.user_id, users.id))
+      .leftJoin(domains, eq(admin_profiles.primary_domain_id, domains.id))
+      .leftJoin(scopes, eq(admin_profiles.primary_scope_id, scopes.id))
+      .where(eq(users.external_id, clerkUserId))
       .limit(1);
 
     if (!user || !user.roleName) {
@@ -173,38 +174,54 @@ export async function userHasScope(
 }
 
 /**
- * Get active committee members for a committee
- * Returns users with their details
+ * Get active committee member for a committee
+ * Returns the single member (head) of the committee
+ * Simplified: committees now have a single head_id instead of multiple members
  */
 export async function getActiveCommitteeMembers(committeeId: number): Promise<Array<{
   userId: string;
   clerkId: string;
   name: string | null;
   email: string | null;
-  role: string | null; // Committee-specific role (chair, member, etc.)
+  role: string | null; // Always "head" for single member
 }>> {
   try {
-    const members = await db
+    const [committee] = await db
+      .select({
+        head_id: committees.head_id,
+      })
+      .from(committees)
+      .where(eq(committees.id, committeeId))
+      .limit(1);
+
+    if (!committee || !committee.head_id) {
+      return [];
+    }
+
+    const [member] = await db
       .select({
         userId: users.id,
-        clerkId: users.clerk_id,
-        name: sql<string>`concat(${users.first_name}, ' ', ${users.last_name})`,
+        clerkId: users.external_id,
+        name: users.full_name,
         email: users.email,
-        committeeRole: committee_members.role,
       })
-      .from(committee_members)
-      .innerJoin(users, eq(committee_members.user_id, users.id))
-      .where(eq(committee_members.committee_id, committeeId));
+      .from(users)
+      .where(eq(users.id, committee.head_id))
+      .limit(1);
 
-    return members.map(m => ({
-      userId: m.userId,
-      clerkId: m.clerkId,
-      name: m.name,
-      email: m.email,
-      role: m.committeeRole,
-    }));
+    if (!member) {
+      return [];
+    }
+
+    return [{
+      userId: member.userId,
+      clerkId: member.clerkId,
+      name: member.name,
+      email: member.email,
+      role: "head", // Single member is always the head
+    }];
   } catch (error) {
-    console.error("[DB Helpers] Error getting active committee members:", error);
+    console.error("[DB Helpers] Error getting active committee member:", error);
     return [];
   }
 }
@@ -259,13 +276,13 @@ export async function getPOCForCategory(categoryId: number): Promise<{
     const [poc] = await db
       .select({
         userId: users.id,
-        firstName: users.first_name,
-        lastName: users.last_name,
+        fullName: users.full_name,
         email: users.email,
-        slackUserId: users.slack_user_id,
-        clerkId: users.clerk_id,
+        slackUserId: admin_profiles.slack_user_id,
+        clerkId: users.external_id,
       })
       .from(users)
+      .leftJoin(admin_profiles, eq(admin_profiles.user_id, users.id))
       .where(eq(users.id, defaultAuthority))
       .limit(1);
 
@@ -276,7 +293,7 @@ export async function getPOCForCategory(categoryId: number): Promise<{
     return {
       userId: poc.userId,
       clerkId: poc.clerkId,
-      name: `${poc.firstName} ${poc.lastName}`.trim(),
+      name: poc.fullName || "",
       email: poc.email,
       slackUserId: poc.slackUserId,
     };
@@ -310,19 +327,28 @@ export async function getOpenTicketsForAdmin(
     const [user] = await db
       .select({ id: users.id })
       .from(users)
-      .where(eq(users.clerk_id, clerkUserId))
+      .where(eq(users.external_id, clerkUserId))
       .limit(1);
 
     if (!user) {
       return [];
     }
 
-    // Build query conditions
+    // Build query conditions - use status_id instead of status
+    // Get resolved status ID to exclude it
+    const [resolvedStatus] = await db
+      .select({ id: ticket_statuses.id })
+      .from(ticket_statuses)
+      .where(eq(ticket_statuses.value, "resolved"))
+      .limit(1);
+    
     const conditions = [
       eq(tickets.assigned_to, user.id),
-      sql`${ticket_statuses.value} != 'RESOLVED'`,
-      sql`${ticket_statuses.value} != 'CLOSED'`,
     ];
+    
+    if (resolvedStatus) {
+      conditions.push(sql`${tickets.status_id} != ${resolvedStatus.id}`);
+    }
 
     // Apply domain/scope filters if provided
     if (options?.domain) {
@@ -347,14 +373,14 @@ export async function getOpenTicketsForAdmin(
         due_at: tickets.resolution_due_at,
       })
       .from(tickets)
-      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
+      .leftJoin(ticket_statuses, eq(ticket_statuses.id, tickets.status_id))
       .leftJoin(categories, eq(tickets.category_id, categories.id))
       .where(and(...conditions))
       .orderBy(tickets.created_at);
 
      return openTickets.map(t => ({
        ...t,
-       status: t.status || "OPEN",
+        status: t.status || "open",
        category: t.category || null,
        subcategory: null // Placeholder
      }));
@@ -381,13 +407,25 @@ export async function getTicketsNeedingAcknowledgement(
     const [user] = await db
       .select({ id: users.id })
       .from(users)
-      .where(eq(users.clerk_id, clerkUserId))
+      .where(eq(users.external_id, clerkUserId))
       .limit(1);
 
     if (!user) {
       return [];
     }
 
+    // Get open status ID
+    const [openStatus] = await db
+      .select({ id: ticket_statuses.id })
+      .from(ticket_statuses)
+      .where(eq(ticket_statuses.value, "open"))
+      .limit(1);
+    
+    const ackConditions = [eq(tickets.assigned_to, user.id)];
+    if (openStatus) {
+      ackConditions.push(eq(tickets.status_id, openStatus.id));
+    }
+    
     const ticketsNeedingAck = await db
       .select({
         id: tickets.id,
@@ -397,20 +435,14 @@ export async function getTicketsNeedingAcknowledgement(
         due_at: tickets.resolution_due_at,
       })
       .from(tickets)
-      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
+      .leftJoin(ticket_statuses, eq(ticket_statuses.id, tickets.status_id))
       .leftJoin(categories, eq(tickets.category_id, categories.id))
-      .where(
-        and(
-          eq(tickets.assigned_to, user.id),
-          eq(ticket_statuses.value, "OPEN"),
-          isNull(tickets.acknowledged_at)
-        )
-      )
+      .where(and(...ackConditions))
       .orderBy(tickets.created_at);
 
      return ticketsNeedingAck.map(t => ({
        ...t,
-       status: t.status || "OPEN"
+       status: t.status || "open"
      }));
   } catch (error) {
     console.error("[DB Helpers] Error getting tickets needing acknowledgement:", error);
@@ -428,11 +460,28 @@ export async function getTicketsOverdue( ): Promise<Array<{
    category: string | null;
    created_at: Date | null;
    due_at: Date | null;
-   sla_breached_at: Date | null;
    assigned_to: string | null; // Changed from number to string (UUID)
  }>> {
   try {
     const now = new Date();
+    
+    // Get status IDs to exclude
+    const [resolvedStatus, awaitingStudentStatus] = await Promise.all([
+      db.select({ id: ticket_statuses.id }).from(ticket_statuses).where(eq(ticket_statuses.value, "resolved")).limit(1),
+      db.select({ id: ticket_statuses.id }).from(ticket_statuses).where(eq(ticket_statuses.value, "awaiting_student")).limit(1),
+    ]);
+
+    const overdueConditions = [
+      isNotNull(tickets.resolution_due_at),
+      lt(tickets.resolution_due_at, now),
+    ];
+    
+    if (resolvedStatus[0]) {
+      overdueConditions.push(sql`${tickets.status_id} != ${resolvedStatus[0].id}`);
+    }
+    if (awaitingStudentStatus[0]) {
+      overdueConditions.push(sql`${tickets.status_id} != ${awaitingStudentStatus[0].id}`);
+    }
 
     const overdueTickets = await db
       .select({
@@ -441,26 +490,17 @@ export async function getTicketsOverdue( ): Promise<Array<{
         category: categories.name,
         created_at: tickets.created_at,
         due_at: tickets.resolution_due_at,
-        sla_breached_at: tickets.sla_breached_at,
         assigned_to: tickets.assigned_to,
       })
       .from(tickets)
-      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
+      .leftJoin(ticket_statuses, eq(ticket_statuses.id, tickets.status_id))
       .leftJoin(categories, eq(tickets.category_id, categories.id))
-      .where(
-        and(
-          isNotNull(tickets.resolution_due_at),
-          lt(tickets.resolution_due_at, now),
-          sql`${ticket_statuses.value} != 'RESOLVED'`,
-          sql`${ticket_statuses.value} != 'CLOSED'`,
-          sql`${ticket_statuses.value} != 'AWAITING_STUDENT'` // Exclude tickets awaiting student response from overdue
-        )
-      )
+      .where(and(...overdueConditions))
       .orderBy(tickets.resolution_due_at);
 
      return overdueTickets.map(t => ({
        ...t,
-       status: t.status || "OPEN"
+       status: t.status || "open"
      }));
   } catch (error) {
     console.error("[DB Helpers] Error getting overdue tickets:", error);

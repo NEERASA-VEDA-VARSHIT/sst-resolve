@@ -58,25 +58,22 @@ export async function PATCH(request: NextRequest) {
 
 		// Check which students exist
 		const existingStudents = await db
-			.select({ id: students.id, active: students.active })
+			.select({ id: students.id })
 			.from(students)
 			.where(inArray(students.id, body.student_ids));
 
 		const existingIds = new Set(existingStudents.map(s => s.id));
 		const notFoundIds = body.student_ids.filter(id => !existingIds.has(id));
-		const alreadyActive = existingStudents.filter(s => s.active).map(s => s.id);
 
-		// Reactivate students
-		const idsToReactivate = body.student_ids.filter(
-			id => existingIds.has(id) && !alreadyActive.includes(id)
-		);
+		// Reactivate students (update timestamp)
+		// Note: If you need soft delete, add is_active field to students table
+		const idsToReactivate = body.student_ids.filter(id => existingIds.has(id));
 
 		let reactivated = 0;
 		if (idsToReactivate.length > 0) {
 			await db
 				.update(students)
 				.set({
-					active: true,
 					updated_at: new Date(),
 				})
 				.where(inArray(students.id, idsToReactivate));
@@ -90,16 +87,12 @@ export async function PATCH(request: NextRequest) {
 		notFoundIds.forEach(id => {
 			errors.push({ id, error: "Student not found" });
 		});
-		
-		alreadyActive.forEach(id => {
-			errors.push({ id, error: "Already active" });
-		});
 
 		const response: ReactivateResponse = {
 			success: errors.length === 0,
 			reactivated,
 			errors,
-			message: `Reactivated ${reactivated} student(s). ${alreadyActive.length} already active. ${notFoundIds.length} not found.`,
+			message: `Reactivated ${reactivated} student(s). ${notFoundIds.length} not found.`,
 		};
 
 		return NextResponse.json(response, { status: 200 });

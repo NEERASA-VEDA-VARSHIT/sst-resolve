@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth, clerkClient } from "@clerk/nextjs/server";
 import { db, students, users, hostels, batches, class_sections } from "@/db";
+import type { StudentInsert, UserInsert } from "@/db/inferred-types";
 import { eq } from "drizzle-orm";
-import { UpdateStudentMobileSchema } from "@/schema/student.schema";
+import {
+  UpdateStudentMobileSchema,
+  UpdateStudentProfileSchema,
+} from "@/schemas/business/student";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
 
 /* ------------------------------------------------------------
@@ -24,12 +28,9 @@ async function getStudentProfile(dbUserId: string) {
 
       batch_id: students.batch_id,
       batch_year: batches.batch_year,
-      batch_year_direct: students.batch_year,
 
       department: students.department,
-      active: students.active,
-      source: students.source,
-      last_synced_at: students.last_synced_at,
+      blood_group: students.blood_group,
       created_at: students.created_at,
       updated_at: students.updated_at,
     })
@@ -61,38 +62,30 @@ export async function GET() {
     const profile = await getStudentProfile(dbUser.id);
 
     if (!profile) {
-      console.warn(`[GET /api/profile] Student profile not found for user ${dbUser.id} (email: ${dbUser.email}, clerk_id: ${dbUser.clerk_id})`);
+      console.warn(`[GET /api/profile] Student profile not found for user ${dbUser.id} (email: ${dbUser.email}, external_id: ${dbUser.external_id})`);
       return NextResponse.json(
         { error: "Student profile not found", needsLink: true, userNumber },
         { status: 404 }
       );
     }
 
-    // Construct full name from first_name and last_name
-    const full_name = [dbUser.first_name, dbUser.last_name]
-      .filter(Boolean)
-      .join(' ')
-      .trim() || null;
-
     return NextResponse.json({
       id: profile.id,
       user_number: profile.roll_no,
-      full_name: full_name,
-      email: dbUser.email,
-      mobile: dbUser.phone,
-      room_number: profile.room_no,
+      full_name: dbUser.full_name || "",
+      email: dbUser.email || "",
+      mobile: dbUser.phone || "",
+      room_number: profile.room_no || null,
 
-      hostel: profile.hostel_name,
-      hostel_id: profile.hostel_id,
+      hostel: profile.hostel_name || null,
+      hostel_id: profile.hostel_id || null,
 
-      class_section: profile.class_section_name,
-      batch_year: profile.batch_year || profile.batch_year_direct,
-      department: profile.department,
-      active: profile.active,
-      source: profile.source,
-      last_synced_at: profile.last_synced_at,
-      created_at: profile.created_at,
-      updated_at: profile.updated_at,
+      class_section: profile.class_section_name || null,
+      batch_year: profile.batch_year || null,
+      department: profile.department || null,
+      blood_group: profile.blood_group || null,
+      created_at: profile.created_at ? new Date(profile.created_at).toISOString() : new Date().toISOString(),
+      updated_at: profile.updated_at ? new Date(profile.updated_at).toISOString() : new Date().toISOString(),
     });
 
   } catch (err) {
@@ -126,13 +119,23 @@ export async function PATCH(request: NextRequest) {
     }
 
     /* ---------------------------
-       Validate room number
+       Validate profile updates (hostel_id, room_number)
     ----------------------------*/
-    if (room_number !== undefined && !room_number.trim()) {
-      return NextResponse.json(
-        { error: "Room number cannot be empty" },
-        { status: 400 }
-      );
+    if (hostel_id !== undefined || room_number !== undefined) {
+      const profileValidation = UpdateStudentProfileSchema.safeParse({
+        hostel_id,
+        room_number,
+      });
+      
+      if (!profileValidation.success) {
+        return NextResponse.json(
+          { 
+            error: "Invalid profile data", 
+            details: profileValidation.error.issues 
+          },
+          { status: 400 }
+        );
+      }
     }
 
     const dbUser = await getOrCreateUser(userId);
@@ -142,12 +145,13 @@ export async function PATCH(request: NextRequest) {
        Update MOBILE
     ----------------------------*/
     if (mobile !== undefined) {
+      const userUpdate: Partial<UserInsert> = {
+        phone: mobile.trim(),
+        updated_at: new Date(),
+      };
       await db
         .update(users)
-        .set({
-          phone: mobile.trim(),
-          updated_at: new Date(),
-        })
+        .set(userUpdate)
         .where(eq(users.id, dbUser.id));
     }
 
@@ -158,23 +162,35 @@ export async function PATCH(request: NextRequest) {
 
     /* ---------------------------
        Update STUDENT FIELDS
+       ✅ Using drizzle-zod schema for validation and transformation
     ----------------------------*/
-    const studentUpdates: Record<string, unknown> = {};
+    let studentUpdates: Partial<StudentInsert> | null = null;
 
-    if (hostel_id !== undefined) {
-      studentUpdates.hostel_id =
-        hostel_id === "" || hostel_id === null ? null : hostel_id;
+    if (hostel_id !== undefined || room_number !== undefined) {
+      // Validate and transform using drizzle-zod schema (handles field name mapping)
+      const profileData = UpdateStudentProfileSchema.parse({
+        hostel_id: hostel_id === "" || hostel_id === null ? null : hostel_id,
+        room_number,
+      });
+
+      studentUpdates = {
+        updated_at: new Date(),
+      };
+
+      if (profileData.hostel_id !== undefined && profileData.hostel_id !== null) {
+        studentUpdates.hostel_id = profileData.hostel_id;
+      }
+
+      if (profileData.room_no !== undefined && profileData.room_no !== null && typeof profileData.room_no === 'string') {
+        studentUpdates.room_no = profileData.room_no.trim().toUpperCase();
+      }
     }
 
-    if (room_number !== undefined) {
-      studentUpdates.room_no = room_number.trim();
-    }
-
-    if (Object.keys(studentUpdates).length > 0) {
+    if (studentUpdates && Object.keys(studentUpdates).length > 1) { // > 1 because updated_at is always present
       if (!existingProfile) {
         // Student record doesn't exist - this shouldn't happen if user was created via admin form
         // But we'll return a helpful error message
-        console.error(`[PATCH /api/profile] Student record not found for user ${dbUser.id} (email: ${dbUser.email})`);
+        console.error(`[PATCH /api/profile] Student record not found for user ${dbUser.id} (email: ${dbUser.email}, external_id: ${dbUser.external_id})`);
         return NextResponse.json(
           { error: "Student profile not found. Please contact administration to create your student profile." },
           { status: 404 }
@@ -195,36 +211,28 @@ export async function PATCH(request: NextRequest) {
     const profile = await getStudentProfile(dbUser.id);
 
     if (!profile) {
-      console.error(`[PATCH /api/profile] Student profile not found after update for user ${dbUser.id}`);
+      console.error(`[PATCH /api/profile] Student profile not found after update for user ${dbUser.id} (email: ${dbUser.email}, external_id: ${dbUser.external_id})`);
       return NextResponse.json(
         { error: "Student profile not found. Please contact administration to create your student profile." },
         { status: 404 }
       );
     }
 
-    // Construct full name from first_name and last_name
-    const full_name = [dbUser.first_name, dbUser.last_name]
-      .filter(Boolean)
-      .join(' ')
-      .trim() || null;
-
     return NextResponse.json({
       id: profile.id,
       user_number: profile.roll_no,
-      full_name: full_name,
-      email: dbUser.email,
-      mobile: mobile !== undefined ? mobile.trim() : dbUser.phone,
-      room_number: profile.room_no,
-      hostel: profile.hostel_name,
-      hostel_id: profile.hostel_id,
-      class_section: profile.class_section_name,
-      batch_year: profile.batch_year || profile.batch_year_direct,
-      department: profile.department,
-      active: profile.active,
-      source: profile.source,
-      last_synced_at: profile.last_synced_at,
-      created_at: profile.created_at,
-      updated_at: profile.updated_at,
+      full_name: dbUser.full_name || "",
+      email: dbUser.email || "",
+      mobile: mobile !== undefined ? mobile.trim() : (dbUser.phone || ""),
+      room_number: profile.room_no || null,
+      hostel: profile.hostel_name || null,
+      hostel_id: profile.hostel_id || null,
+      class_section: profile.class_section_name || null,
+      batch_year: profile.batch_year || null,
+      department: profile.department || null,
+      blood_group: profile.blood_group || null,
+      created_at: profile.created_at ? new Date(profile.created_at).toISOString() : new Date().toISOString(),
+      updated_at: profile.updated_at ? new Date(profile.updated_at).toISOString() : new Date().toISOString(),
     });
 
   } catch (err) {

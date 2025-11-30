@@ -36,8 +36,8 @@ interface Student {
 	phone: string | null;
 	roll_no: string;
 	room_no: string | null;
-	hostel: "Neeladri" | "Velankani" | null;
-	class_section: "A" | "B" | "C" | "D" | null;
+	hostel: string | null;
+	class_section: string | null;
 	batch_year: number | null;
 	department: string | null;
 	created_at: Date;
@@ -46,7 +46,11 @@ interface Student {
 
 interface Batch {
 	batch_year: number;
-	display_name: string | null;
+}
+
+interface Hostel {
+	id: number;
+	name: string;
 }
 
 interface PaginationInfo {
@@ -59,6 +63,7 @@ interface PaginationInfo {
 export default function SuperAdminStudentsPage() {
 	const [students, setStudents] = useState<Student[]>([]);
 	const [batches, setBatches] = useState<Batch[]>([]);
+	const [hostels, setHostels] = useState<Hostel[]>([]);
 	const [loading, setLoading] = useState(false);
 	const [search, setSearch] = useState("");
 	const [hostelFilter, setHostelFilter] = useState<string>("all");
@@ -115,8 +120,9 @@ export default function SuperAdminStudentsPage() {
 			}
 
 			const data = await response.json();
-			setStudents(data.students);
+			setStudents(data.students || []);
 			setBatches(data.batches || []); // Set batches from API
+			setHostels(data.hostels || []); // Set hostels from API
 			setPagination(data.pagination);
 			// Clear selection on page change or filter change
 			setSelectedStudents([]);
@@ -247,8 +253,11 @@ export default function SuperAdminStudentsPage() {
 							</SelectTrigger>
 							<SelectContent>
 								<SelectItem value="all">All Hostels</SelectItem>
-								<SelectItem value="Neeladri">Neeladri</SelectItem>
-								<SelectItem value="Velankani">Velankani</SelectItem>
+								{hostels.map((hostel) => (
+									<SelectItem key={hostel.id} value={hostel.name}>
+										{hostel.name}
+									</SelectItem>
+								))}
 							</SelectContent>
 						</Select>
 						<Select value={batchYearFilter} onValueChange={setBatchYearFilter}>
@@ -259,7 +268,7 @@ export default function SuperAdminStudentsPage() {
 								<SelectItem value="all">All Batches</SelectItem>
 								{batches.map((batch) => (
 									<SelectItem key={batch.batch_year} value={batch.batch_year.toString()}>
-										{batch.display_name || `Batch ${batch.batch_year}`}
+										Batch {batch.batch_year}
 									</SelectItem>
 								))}
 							</SelectContent>
@@ -319,8 +328,7 @@ export default function SuperAdminStudentsPage() {
 							{sortedBatchYears.map((batchYear) => {
 								const batchStudents = studentsByBatch[batchYear];
 								const isExpanded = expandedBatches.has(batchYear);
-								const batchInfo = batches.find((b) => b.batch_year === batchYear);
-								const batchDisplayName = batchInfo?.display_name || `Batch ${batchYear}`;
+								const batchDisplayName = `Batch ${batchYear}`;
 
 								return (
 									<div key={batchYear} className="rounded-md border">

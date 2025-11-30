@@ -1,2 +1,0 @@
-ALTER TABLE "ticket_groups" ADD COLUMN "is_archived" boolean DEFAULT false NOT NULL;--> statement-breakpoint
-CREATE INDEX "idx_ticket_groups_is_archived" ON "ticket_groups" USING btree ("is_archived");

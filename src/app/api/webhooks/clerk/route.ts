@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Webhook } from "svix";
 import { headers } from "next/headers";
 import { db, users } from "@/db";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
 
 /**
@@ -128,7 +128,12 @@ async function handleUserCreated(eventData: ClerkUserEventData) {
 		const [existingUser] = await db
 			.select()
 			.from(users)
-			.where(eq(users.clerk_id, clerkUserId))
+			.where(
+				and(
+					eq(users.auth_provider, 'clerk'),
+					eq(users.external_id, clerkUserId)
+				)
+			)
 			.limit(1);
 
 		if (existingUser) {
@@ -155,7 +160,12 @@ async function handleUserCreated(eventData: ClerkUserEventData) {
 				const [existingUser] = await db
 					.select()
 					.from(users)
-					.where(eq(users.clerk_id, clerkUserId))
+					.where(
+						and(
+							eq(users.auth_provider, 'clerk'),
+							eq(users.external_id, clerkUserId)
+						)
+					)
 					.limit(1);
 				if (existingUser) {
 					console.log(`[Clerk Webhook] Found existing user after duplicate key error: ${existingUser.id}`);
@@ -218,7 +228,7 @@ async function handleUserDeleted(eventData: ClerkUserEventData) {
 		const [existingUser] = await db
 			.select()
 			.from(users)
-			.where(eq(users.clerk_id, clerkUserId))
+			.where(eq(users.external_id, clerkUserId))
 			.limit(1);
 
 		if (!existingUser) {
@@ -231,7 +241,7 @@ async function handleUserDeleted(eventData: ClerkUserEventData) {
 		await db
 			.update(users)
 			.set({
-				clerk_id: `DELETED_${clerkUserId}_${Date.now()}`, // Prefix to mark as deleted, keep unique
+    external_id: `DELETED_${clerkUserId}_${Date.now()}`, // Prefix to mark as deleted, keep unique
 				updated_at: new Date(),
 			})
 			.where(eq(users.id, existingUser.id));
@@ -241,7 +251,7 @@ async function handleUserDeleted(eventData: ClerkUserEventData) {
 		// Option 2: Hard delete (NOT RECOMMENDED - breaks referential integrity)
 		// ⚠️ WARNING: This will fail if there are foreign key constraints
 		// Uncomment only if you want to completely remove user data
-		// await db.delete(users).where(eq(users.clerk_id, clerkUserId));
+		// await db.delete(users).where(eq(users.external_id, clerkUserId));
 		// console.log(`[Clerk Webhook] Hard deleted user: ${clerkUserId}`);
 	} catch (error) {
 		console.error("[Clerk Webhook] Error handling user deletion:", error);

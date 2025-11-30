@@ -1,7 +1,8 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { db, tickets, ticket_committee_tags, committee_members, ticket_statuses, categories } from "@/db";
+import { db, tickets, ticket_committee_tags, committees, categories, ticket_statuses } from "@/db";
 import { desc, eq, inArray } from "drizzle-orm";
+import type { Ticket } from "@/db/types-only";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { TicketCard } from "@/components/layout/TicketCard";
@@ -53,13 +54,13 @@ export default async function CommitteeDashboardPage({
     throw new Error('Failed to load user profile');
   }
 
-  // Get committee IDs this user belongs to (using user_id FK)
-  const memberRecords = await db
-    .select({ committee_id: committee_members.committee_id })
-    .from(committee_members)
-    .where(eq(committee_members.user_id, user.id));
+  // Get committee IDs this user is the head of (using head_id)
+  const committeeRecords = await db
+    .select({ id: committees.id })
+    .from(committees)
+    .where(eq(committees.head_id, user.id));
 
-  const committeeIds = memberRecords.map(m => m.committee_id);
+  const committeeIds = committeeRecords.map(c => c.id);
 
   // Get tickets created by this committee member with joins
   const createdTicketRows = await db
@@ -69,38 +70,19 @@ export default async function CommitteeDashboardPage({
       description: tickets.description,
       location: tickets.location,
       status_id: tickets.status_id,
+      status_value: ticket_statuses.value,
       category_id: tickets.category_id,
       subcategory_id: tickets.subcategory_id,
       sub_subcategory_id: tickets.sub_subcategory_id,
       created_by: tickets.created_by,
       assigned_to: tickets.assigned_to,
-      acknowledged_by: tickets.acknowledged_by,
       group_id: tickets.group_id,
       escalation_level: tickets.escalation_level,
-      tat_extended_count: tickets.tat_extended_count,
-      last_escalation_at: tickets.last_escalation_at,
-      acknowledgement_tat_hours: tickets.acknowledgement_tat_hours,
-      resolution_tat_hours: tickets.resolution_tat_hours,
       acknowledgement_due_at: tickets.acknowledgement_due_at,
       resolution_due_at: tickets.resolution_due_at,
-      acknowledged_at: tickets.acknowledged_at,
-      reopened_at: tickets.reopened_at,
-      sla_breached_at: tickets.sla_breached_at,
-      reopen_count: tickets.reopen_count,
-      rating: tickets.rating,
-      feedback_type: tickets.feedback_type,
-      rating_submitted: tickets.rating_submitted,
-      feedback: tickets.feedback,
-      is_public: tickets.is_public,
-      admin_link: tickets.admin_link,
-      student_link: tickets.student_link,
-      slack_thread_id: tickets.slack_thread_id,
-      external_ref: tickets.external_ref,
       metadata: tickets.metadata,
       created_at: tickets.created_at,
       updated_at: tickets.updated_at,
-      resolved_at: tickets.resolved_at,
-      status_value: ticket_statuses.value,
       category_name: categories.name,
     })
     .from(tickets)
@@ -112,16 +94,28 @@ export default async function CommitteeDashboardPage({
   // Filter by category name = "Committee" and transform for TicketCard
   let createdTickets = createdTicketRows
     .filter(t => (t.category_name || "").toLowerCase() === "committee")
-    .map(t => ({
-      ...t,
-      status: t.status_value || null,
-      category_name: t.category_name || null,
-    }));
+    .map(t => {
+      let ticketMetadata: Record<string, unknown> = {};
+      if (t.metadata && typeof t.metadata === 'object' && !Array.isArray(t.metadata)) {
+        ticketMetadata = t.metadata as Record<string, unknown>;
+      }
+      return {
+        ...t,
+        status: t.status_value || null,
+        status_id: t.status_id || null,
+        scope_id: null,
+        category_name: t.category_name || null,
+        resolved_at: ticketMetadata.resolved_at ? new Date(ticketMetadata.resolved_at as string) : null,
+        reopened_at: ticketMetadata.reopened_at ? new Date(ticketMetadata.reopened_at as string) : null,
+        acknowledged_at: ticketMetadata.acknowledged_at ? new Date(ticketMetadata.acknowledged_at as string) : null,
+        rating: (ticketMetadata.rating as number | null) || null,
+        feedback: (ticketMetadata.feedback as string | null) || null,
+      };
+    });
 
   // Get tickets tagged to committees this user belongs to with joins
   type TicketWithExtras = typeof tickets.$inferSelect & {
     status?: string | null;
-    status_value?: string | null;
     category_name?: string | null;
   };
   let taggedTickets: TicketWithExtras[] = [];
@@ -141,38 +135,19 @@ export default async function CommitteeDashboardPage({
           description: tickets.description,
           location: tickets.location,
           status_id: tickets.status_id,
+          status_value: ticket_statuses.value,
           category_id: tickets.category_id,
           subcategory_id: tickets.subcategory_id,
           sub_subcategory_id: tickets.sub_subcategory_id,
           created_by: tickets.created_by,
           assigned_to: tickets.assigned_to,
-          acknowledged_by: tickets.acknowledged_by,
           group_id: tickets.group_id,
           escalation_level: tickets.escalation_level,
-          tat_extended_count: tickets.tat_extended_count,
-          last_escalation_at: tickets.last_escalation_at,
-          acknowledgement_tat_hours: tickets.acknowledgement_tat_hours,
-          resolution_tat_hours: tickets.resolution_tat_hours,
           acknowledgement_due_at: tickets.acknowledgement_due_at,
           resolution_due_at: tickets.resolution_due_at,
-          acknowledged_at: tickets.acknowledged_at,
-          reopened_at: tickets.reopened_at,
-          sla_breached_at: tickets.sla_breached_at,
-          reopen_count: tickets.reopen_count,
-          rating: tickets.rating,
-          feedback_type: tickets.feedback_type,
-          rating_submitted: tickets.rating_submitted,
-          feedback: tickets.feedback,
-          is_public: tickets.is_public,
-          admin_link: tickets.admin_link,
-          student_link: tickets.student_link,
-          slack_thread_id: tickets.slack_thread_id,
-          external_ref: tickets.external_ref,
           metadata: tickets.metadata,
           created_at: tickets.created_at,
           updated_at: tickets.updated_at,
-          resolved_at: tickets.resolved_at,
-          status_value: ticket_statuses.value,
           category_name: categories.name,
         })
         .from(tickets)
@@ -181,11 +156,24 @@ export default async function CommitteeDashboardPage({
         .where(inArray(tickets.id, taggedTicketIds))
         .orderBy(desc(tickets.created_at));
       
-      taggedTickets = taggedTicketRows.map(t => ({
-        ...t,
-        status: t.status_value || null,
-        category_name: t.category_name || null,
-      }));
+      taggedTickets = taggedTicketRows.map(t => {
+        let ticketMetadata: Record<string, unknown> = {};
+        if (t.metadata && typeof t.metadata === 'object' && !Array.isArray(t.metadata)) {
+          ticketMetadata = t.metadata as Record<string, unknown>;
+        }
+        return {
+          ...t,
+          status: t.status_value || null,
+          status_id: t.status_id || 0,
+          scope_id: null,
+          category_name: t.category_name || null,
+          resolved_at: ticketMetadata.resolved_at ? new Date(ticketMetadata.resolved_at as string) : null,
+          reopened_at: ticketMetadata.reopened_at ? new Date(ticketMetadata.reopened_at as string) : null,
+          acknowledged_at: ticketMetadata.acknowledged_at ? new Date(ticketMetadata.acknowledged_at as string) : null,
+          rating: (ticketMetadata.rating as number | null) || null,
+          feedback: (ticketMetadata.feedback as string | null) || null,
+        };
+      });
     }
   }
 
@@ -323,7 +311,7 @@ export default async function CommitteeDashboardPage({
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {createdTickets.map((ticket) => (
-                <TicketCard key={ticket.id} ticket={ticket} basePath="/committee/dashboard" />
+                <TicketCard key={ticket.id} ticket={ticket as unknown as Ticket & { status?: string | null; category_name?: string | null; creator_name?: string | null; creator_email?: string | null }} basePath="/committee/dashboard" />
               ))}
             </div>
           )}
@@ -376,7 +364,7 @@ export default async function CommitteeDashboardPage({
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {taggedTickets.map((ticket) => (
-                <TicketCard key={ticket.id} ticket={ticket} basePath="/committee/dashboard" />
+                <TicketCard key={ticket.id} ticket={ticket as unknown as Ticket & { status?: string | null; category_name?: string | null; creator_name?: string | null; creator_email?: string | null }} basePath="/committee/dashboard" />
               ))}
             </div>
           )}

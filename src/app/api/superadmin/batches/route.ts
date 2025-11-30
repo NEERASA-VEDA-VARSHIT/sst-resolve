@@ -32,14 +32,14 @@ export async function GET(request: NextRequest) {
 		const { searchParams } = new URL(request.url);
 		const activeOnly = searchParams.get("active") === "true";
 
-	const query = db.select({
+		const query = db
+			.select({
 		id: batches.id,
 		batch_year: batches.batch_year,
-		display_name: batches.display_name,
 		is_active: batches.is_active,
 		created_at: batches.created_at,
-		updated_at: batches.updated_at,
-	}).from(batches);
+			})
+			.from(batches);
 
 	const batchList = activeOnly
 		? await query.where(eq(batches.is_active, true)).orderBy(batches.batch_year)
@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
 		}
 
 		const body = await request.json();
-		const { batch_year, display_name } = body;
+		const { batch_year } = body;
 
 		// Validate required fields
 		if (!batch_year || isNaN(parseInt(batch_year))) {
@@ -110,7 +110,6 @@ export async function POST(request: NextRequest) {
 			.insert(batches)
 			.values({
 				batch_year: year,
-				display_name: display_name?.trim() || `Batch ${year}`,
 				is_active: true,
 			})
 			.returning();

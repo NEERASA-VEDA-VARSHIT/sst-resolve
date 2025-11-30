@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { db, tickets, ticket_statuses } from "@/db";
+import { db, tickets } from "@/db";
+import { ticket_statuses } from "@/db/schema";
+import type { TicketInsert } from "@/db/inferred-types";
 import { eq } from "drizzle-orm";
-import { RateTicketSchema } from "@/schema/ticket.schema";
+import { RateTicketSchema } from "@/schemas/business/ticket";
 
 /**
  * ============================================
@@ -46,7 +48,7 @@ export async function POST(
 			);
 		}
 		
-		const { rating: ratingNum } = validationResult.data;
+		const { rating: ratingNum, feedback } = validationResult.data;
 
 		// Get current user from database
 		const { getOrCreateUser } = await import("@/lib/auth/user-sync");
@@ -55,7 +57,7 @@ export async function POST(
 			return NextResponse.json({ error: "User not found" }, { status: 404 });
 		}
 
-		// Get current ticket with status join
+		// Get current ticket
 		const [ticketRow] = await db
 			.select({
 				id: tickets.id,
@@ -63,38 +65,19 @@ export async function POST(
 				description: tickets.description,
 				location: tickets.location,
 				status_id: tickets.status_id,
+				status_value: ticket_statuses.value,
 				category_id: tickets.category_id,
 				subcategory_id: tickets.subcategory_id,
 				sub_subcategory_id: tickets.sub_subcategory_id,
 				created_by: tickets.created_by,
 				assigned_to: tickets.assigned_to,
-				acknowledged_by: tickets.acknowledged_by,
 				group_id: tickets.group_id,
 				escalation_level: tickets.escalation_level,
-				tat_extended_count: tickets.tat_extended_count,
-				last_escalation_at: tickets.last_escalation_at,
-				acknowledgement_tat_hours: tickets.acknowledgement_tat_hours,
-				resolution_tat_hours: tickets.resolution_tat_hours,
 				acknowledgement_due_at: tickets.acknowledgement_due_at,
 				resolution_due_at: tickets.resolution_due_at,
-				acknowledged_at: tickets.acknowledged_at,
-				reopened_at: tickets.reopened_at,
-				sla_breached_at: tickets.sla_breached_at,
-				reopen_count: tickets.reopen_count,
-				rating: tickets.rating,
-				feedback_type: tickets.feedback_type,
-				rating_submitted: tickets.rating_submitted,
-				feedback: tickets.feedback,
-				is_public: tickets.is_public,
-				admin_link: tickets.admin_link,
-				student_link: tickets.student_link,
-				slack_thread_id: tickets.slack_thread_id,
-				external_ref: tickets.external_ref,
 				metadata: tickets.metadata,
 				created_at: tickets.created_at,
 				updated_at: tickets.updated_at,
-				resolved_at: tickets.resolved_at,
-				status_value: ticket_statuses.value,
 			})
 			.from(tickets)
 			.leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
@@ -105,35 +88,44 @@ export async function POST(
 			return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
 		}
 
-		const ticket = {
-			...ticketRow,
-			status: ticketRow.status_value || null,
-		};
-
 		// Check if user owns this ticket
-		if (ticket.created_by !== dbUser.id) {
+		if (ticketRow.created_by !== dbUser.id) {
 			return NextResponse.json({ error: "You can only rate your own tickets" }, { status: 403 });
 		}
 
 		// Check if ticket is closed/resolved
-		const statusLower = (ticket.status || "").toLowerCase();
+		const statusLower = (ticketRow.status_value || "").toLowerCase();
 		if (statusLower !== "closed" && statusLower !== "resolved") {
 			return NextResponse.json({ error: "You can only rate closed or resolved tickets" }, { status: 400 });
 		}
 
+		// Parse metadata to check if already rated
+		let metadata: Record<string, unknown> = {};
+		if (ticketRow.metadata && typeof ticketRow.metadata === 'object' && !Array.isArray(ticketRow.metadata)) {
+			metadata = { ...ticketRow.metadata as Record<string, unknown> };
+		}
+
 		// Check if already rated
-		if (ticket.rating) {
+		if (metadata.rating_submitted) {
 			return NextResponse.json({ error: "This ticket has already been rated" }, { status: 400 });
 		}
 
-		// Update ticket with rating (rating is integer, not string)
+		// Update metadata with rating
+		metadata.rating = ratingNum;
+		metadata.rating_submitted = new Date().toISOString();
+		if (feedback) {
+			metadata.feedback = feedback;
+		}
+
+		// Update ticket with rating in metadata
+		const updateData: Partial<TicketInsert> = {
+			metadata: metadata as unknown,
+			updated_at: new Date(),
+		};
+		
 		await db
 			.update(tickets)
-			.set({
-				rating: ratingNum,
-				rating_submitted: new Date(),
-				updated_at: new Date(),
-			})
+			.set(updateData)
 			.where(eq(tickets.id, ticketId));
 
 		return NextResponse.json({ 

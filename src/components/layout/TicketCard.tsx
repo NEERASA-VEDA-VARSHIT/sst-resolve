@@ -11,8 +11,7 @@ import {
   FileText,
 } from "lucide-react";
 
-import type { Ticket } from "@/db/types-only";
-import type { TicketMetadata } from "@/db/types";
+import type { Ticket, TicketMetadata } from "@/db/types-only";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -117,7 +116,18 @@ function TicketCardComponent({ ticket, basePath = "/student/dashboard", disableL
 
   // Memoize created date string
   const createdDateStr = useMemo(() => {
-    return ticket.created_at?.toLocaleDateString("en-US", {
+    if (!ticket.created_at) return null;
+    
+    // Handle both Date objects and string timestamps
+    const date = ticket.created_at instanceof Date 
+      ? ticket.created_at 
+      : typeof ticket.created_at === 'string' 
+        ? new Date(ticket.created_at)
+        : null;
+    
+    if (!date || isNaN(date.getTime())) return null;
+    
+    return date.toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
       year: "numeric",
@@ -250,14 +260,16 @@ function TicketCardComponent({ ticket, basePath = "/student/dashboard", disableL
 
             {/* Created At + TAT */}
             <div className="flex items-center justify-between gap-2 text-[10px] sm:text-xs">
-              <div className="flex items-center gap-1 sm:gap-1.5 text-muted-foreground min-w-0">
-                <div className="p-0.5 sm:p-1 rounded-md bg-muted/50 group-hover:bg-primary/10 flex-shrink-0">
-                  <Calendar className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+              {createdDateStr && (
+                <div className="flex items-center gap-1 sm:gap-1.5 text-muted-foreground min-w-0">
+                  <div className="p-0.5 sm:p-1 rounded-md bg-muted/50 group-hover:bg-primary/10 flex-shrink-0">
+                    <Calendar className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+                  </div>
+                  <span className="font-medium truncate">
+                    {createdDateStr}
+                  </span>
                 </div>
-                <span className="font-medium truncate">
-                  {createdDateStr}
-                </span>
-              </div>
+              )}
 
               {tatDate && tatLabel && (
                 <div

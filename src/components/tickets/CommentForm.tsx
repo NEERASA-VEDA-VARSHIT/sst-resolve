@@ -28,9 +28,9 @@ export function CommentForm({ ticketId, currentStatus, comments = [] }: CommentF
 	const lastCommentIsFromStudent = lastCommentSource === "website";
 	
 	// Check if student can reply:
-	// 1. Status must be "awaiting_student_response"
+	// 1. Status must be "awaiting_student" (canonical value from database)
 	// 2. Last comment must NOT be from a student (must be from admin/committee)
-	const canReply = normalizedStatus === "awaiting_student_response" && !lastCommentIsFromStudent;
+	const canReply = (normalizedStatus === "awaiting_student" || normalizedStatus === "awaiting_student_response") && !lastCommentIsFromStudent;
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
@@ -47,7 +47,10 @@ export function CommentForm({ ticketId, currentStatus, comments = [] }: CommentF
 			const response = await fetch(`/api/tickets/${ticketId}/comments`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ comment }),
+				body: JSON.stringify({ 
+					comment,
+					commentType: "student_visible" // Students can only add student-visible comments
+				}),
 			});
 
 			if (response.ok) {

@@ -1,5 +1,5 @@
 {
-  "id": "0a8430c8-cd85-481c-81fe-44eb246331bc",
+  "id": "9ac8b85d-39f1-4f75-8f1a-3fd13066f4a0",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -38,18 +38,11 @@
           "primaryKey": false,
           "notNull": false,
           "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false,
-          "default": "now()"
         }
       },
       "indexes": {
-        "idx_admin_assignments_user_id": {
-          "name": "idx_admin_assignments_user_id",
+        "idx_admin_assignments_user": {
+          "name": "idx_admin_assignments_user",
           "columns": [
             {
               "expression": "user_id",
@@ -63,8 +56,8 @@
           "method": "btree",
           "with": {}
         },
-        "idx_admin_assignments_domain_id": {
-          "name": "idx_admin_assignments_domain_id",
+        "idx_admin_assignments_domain": {
+          "name": "idx_admin_assignments_domain",
           "columns": [
             {
               "expression": "domain_id",
@@ -136,84 +129,55 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.audit_log": {
-      "name": "audit_log",
+    "public.admin_profiles": {
+      "name": "admin_profiles",
       "schema": "",
       "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
           "primaryKey": true,
           "notNull": true
         },
-        "table_name": {
-          "name": "table_name",
-          "type": "varchar(100)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "record_id": {
-          "name": "record_id",
+        "primary_domain_id": {
+          "name": "primary_domain_id",
           "type": "integer",
           "primaryKey": false,
+          "notNull": false
+        },
+        "primary_scope_id": {
+          "name": "primary_scope_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "slack_user_id": {
+          "name": "slack_user_id",
+          "type": "varchar(128)",
+          "primaryKey": false,
           "notNull": true
         },
-        "action": {
-          "name": "action",
-          "type": "varchar(20)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        " old_data": {
-          "name": " old_data",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "new_data": {
-          "name": "new_data",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "performed_by": {
-          "name": "performed_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "performed_at": {
-          "name": "performed_at",
+        "created_at": {
+          "name": "created_at",
           "type": "timestamp",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "default": "now()"
         },
-        "ip_address": {
-          "name": "ip_address",
-          "type": "varchar(45)",
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
           "primaryKey": false,
-          "notNull": false
-        },
-        "user_agent": {
-          "name": "user_agent",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
+          "notNull": false,
+          "default": "now()"
         }
       },
       "indexes": {
-        "idx_audit_log_table_record": {
-          "name": "idx_audit_log_table_record",
+        "idx_admin_profiles_domain": {
+          "name": "idx_admin_profiles_domain",
           "columns": [
             {
-              "expression": "table_name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "record_id",
+              "expression": "primary_domain_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -224,41 +188,11 @@
           "method": "btree",
           "with": {}
         },
-        "idx_audit_log_performed_by": {
-          "name": "idx_audit_log_performed_by",
+        "idx_admin_profiles_scope": {
+          "name": "idx_admin_profiles_scope",
           "columns": [
             {
-              "expression": "performed_by",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_audit_log_performed_at": {
-          "name": "idx_audit_log_performed_at",
-          "columns": [
-            {
-              "expression": "performed_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_audit_log_action": {
-          "name": "idx_audit_log_action",
-          "columns": [
-            {
-              "expression": "action",
+              "expression": "primary_scope_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -271,12 +205,38 @@
         }
       },
       "foreignKeys": {
-        "audit_log_performed_by_users_id_fk": {
-          "name": "audit_log_performed_by_users_id_fk",
-          "tableFrom": "audit_log",
+        "admin_profiles_user_id_users_id_fk": {
+          "name": "admin_profiles_user_id_users_id_fk",
+          "tableFrom": "admin_profiles",
           "tableTo": "users",
           "columnsFrom": [
-            "performed_by"
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "admin_profiles_primary_domain_id_domains_id_fk": {
+          "name": "admin_profiles_primary_domain_id_domains_id_fk",
+          "tableFrom": "admin_profiles",
+          "tableTo": "domains",
+          "columnsFrom": [
+            "primary_domain_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "admin_profiles_primary_scope_id_scopes_id_fk": {
+          "name": "admin_profiles_primary_scope_id_scopes_id_fk",
+          "tableFrom": "admin_profiles",
+          "tableTo": "scopes",
+          "columnsFrom": [
+            "primary_scope_id"
           ],
           "columnsTo": [
             "id"
@@ -307,17 +267,11 @@
           "primaryKey": false,
           "notNull": true
         },
-        "display_name": {
-          "name": "display_name",
-          "type": "varchar(50)",
-          "primaryKey": false,
-          "notNull": false
-        },
         "is_active": {
           "name": "is_active",
           "type": "boolean",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "default": true
         },
         "created_at": {
@@ -326,47 +280,9 @@
           "primaryKey": false,
           "notNull": false,
           "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false,
-          "default": "now()"
         }
       },
-      "indexes": {
-        "idx_batches_batch_year": {
-          "name": "idx_batches_batch_year",
-          "columns": [
-            {
-              "expression": "batch_year",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_batches_is_active": {
-          "name": "idx_batches_is_active",
-          "columns": [
-            {
-              "expression": "is_active",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
@@ -434,21 +350,17 @@
           "primaryKey": false,
           "notNull": false
         },
+        "scope_mode": {
+          "name": "scope_mode",
+          "type": "scope_mode",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'dynamic'"
+        },
         "default_admin_id": {
           "name": "default_admin_id",
           "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "committee_id": {
-          "name": "committee_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "parent_category_id": {
-          "name": "parent_category_id",
-          "type": "integer",
           "primaryKey": false,
           "notNull": false
         },
@@ -456,22 +368,28 @@
           "name": "sla_hours",
           "type": "integer",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "default": 48
         },
-        "active": {
-          "name": "active",
+        "is_active": {
+          "name": "is_active",
           "type": "boolean",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "default": true
         },
         "display_order": {
           "name": "display_order",
           "type": "integer",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "default": 0
+        },
+        "parent_category_id": {
+          "name": "parent_category_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -504,8 +422,8 @@
           "method": "btree",
           "with": {}
         },
-        "idx_categories_domain_id": {
-          "name": "idx_categories_domain_id",
+        "idx_categories_domain": {
+          "name": "idx_categories_domain",
           "columns": [
             {
               "expression": "domain_id",
@@ -519,41 +437,11 @@
           "method": "btree",
           "with": {}
         },
-        "idx_categories_parent_category_id": {
-          "name": "idx_categories_parent_category_id",
+        "idx_categories_parent": {
+          "name": "idx_categories_parent",
           "columns": [
             {
               "expression": "parent_category_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_categories_active": {
-          "name": "idx_categories_active",
-          "columns": [
-            {
-              "expression": "active",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_categories_display_order": {
-          "name": "idx_categories_display_order",
-          "columns": [
-            {
-              "expression": "display_order",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -598,19 +486,6 @@
           "tableTo": "users",
           "columnsFrom": [
             "default_admin_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "categories_committee_id_committees_id_fk": {
-          "name": "categories_committee_id_committees_id_fk",
-          "tableFrom": "categories",
-          "tableTo": "committees",
-          "columnsFrom": [
-            "committee_id"
           ],
           "columnsTo": [
             "id"
@@ -668,29 +543,14 @@
           "primaryKey": false,
           "notNull": true
         },
-        "is_primary": {
-          "name": "is_primary",
-          "type": "boolean",
+        "assignment_type": {
+          "name": "assignment_type",
+          "type": "varchar(32)",
           "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "priority": {
-          "name": "priority",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
           "type": "timestamp",
           "primaryKey": false,
           "notNull": false,
@@ -718,27 +578,6 @@
           "columns": [
             {
               "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_category_assignments_primary": {
-          "name": "idx_category_assignments_primary",
-          "columns": [
-            {
-              "expression": "category_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "is_primary",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -780,8 +619,8 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "unique_category_user": {
-          "name": "unique_category_user",
+        "unique_category_admin_assignment": {
+          "name": "unique_category_admin_assignment",
           "nullsNotDistinct": false,
           "columns": [
             "category_id",
@@ -831,7 +670,7 @@
           "name": "required",
           "type": "boolean",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "default": false
         },
         "placeholder": {
@@ -862,14 +701,14 @@
           "name": "display_order",
           "type": "integer",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "default": 0
         },
-        "active": {
-          "name": "active",
+        "is_active": {
+          "name": "is_active",
           "type": "boolean",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "default": true
         },
         "created_at": {
@@ -887,68 +726,7 @@
           "default": "now()"
         }
       },
-      "indexes": {
-        "idx_category_fields_subcategory_id": {
-          "name": "idx_category_fields_subcategory_id",
-          "columns": [
-            {
-              "expression": "subcategory_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_category_fields_slug": {
-          "name": "idx_category_fields_slug",
-          "columns": [
-            {
-              "expression": "slug",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_category_fields_active": {
-          "name": "idx_category_fields_active",
-          "columns": [
-            {
-              "expression": "active",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_category_fields_display_order": {
-          "name": "idx_category_fields_display_order",
-          "columns": [
-            {
-              "expression": "display_order",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
         "category_fields_subcategory_id_subcategories_id_fk": {
           "name": "category_fields_subcategory_id_subcategories_id_fk",
@@ -979,147 +757,12 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "unique_category_field_subcategory_slug": {
-          "name": "unique_category_field_subcategory_slug",
+        "unique_category_field_slug": {
+          "name": "unique_category_field_slug",
           "nullsNotDistinct": false,
           "columns": [
             "subcategory_id",
             "slug"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.category_profile_fields": {
-      "name": "category_profile_fields",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "category_id": {
-          "name": "category_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "field_name": {
-          "name": "field_name",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "required": {
-          "name": "required",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "editable": {
-          "name": "editable",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "display_order": {
-          "name": "display_order",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_category_profile_fields_category_id": {
-          "name": "idx_category_profile_fields_category_id",
-          "columns": [
-            {
-              "expression": "category_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_category_profile_fields_field_name": {
-          "name": "idx_category_profile_fields_field_name",
-          "columns": [
-            {
-              "expression": "field_name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_category_profile_fields_display_order": {
-          "name": "idx_category_profile_fields_display_order",
-          "columns": [
-            {
-              "expression": "display_order",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "category_profile_fields_category_id_categories_id_fk": {
-          "name": "category_profile_fields_category_id_categories_id_fk",
-          "tableFrom": "category_profile_fields",
-          "tableTo": "categories",
-          "columnsFrom": [
-            "category_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "unique_category_profile_field": {
-          "name": "unique_category_profile_field",
-          "nullsNotDistinct": false,
-          "columns": [
-            "category_id",
-            "field_name"
           ]
         }
       },
@@ -1139,7 +782,7 @@
         },
         "name": {
           "name": "name",
-          "type": "varchar(20)",
+          "type": "varchar(50)",
           "primaryKey": false,
           "notNull": true
         },
@@ -1147,7 +790,7 @@
           "name": "is_active",
           "type": "boolean",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "default": true
         },
         "created_at": {
@@ -1156,47 +799,9 @@
           "primaryKey": false,
           "notNull": false,
           "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false,
-          "default": "now()"
         }
       },
-      "indexes": {
-        "idx_class_sections_name": {
-          "name": "idx_class_sections_name",
-          "columns": [
-            {
-              "expression": "name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_class_sections_is_active": {
-          "name": "idx_class_sections_is_active",
-          "columns": [
-            {
-              "expression": "is_active",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
@@ -1205,286 +810,6 @@
           "nullsNotDistinct": false,
           "columns": [
             "name"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.comments": {
-      "name": "comments",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "ticket_id": {
-          "name": "ticket_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "author_id": {
-          "name": "author_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "body": {
-          "name": "body",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "comment_type": {
-          "name": "comment_type",
-          "type": "varchar(32)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'student_visible'"
-        },
-        "is_internal": {
-          "name": "is_internal",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "slack_message_id": {
-          "name": "slack_message_id",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "email_thread_id": {
-          "name": "email_thread_id",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "in_reply_to": {
-          "name": "in_reply_to",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_comments_ticket_id": {
-          "name": "idx_comments_ticket_id",
-          "columns": [
-            {
-              "expression": "ticket_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_comments_author_id": {
-          "name": "idx_comments_author_id",
-          "columns": [
-            {
-              "expression": "author_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_comments_ticket_created": {
-          "name": "idx_comments_ticket_created",
-          "columns": [
-            {
-              "expression": "ticket_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "comments_ticket_id_tickets_id_fk": {
-          "name": "comments_ticket_id_tickets_id_fk",
-          "tableFrom": "comments",
-          "tableTo": "tickets",
-          "columnsFrom": [
-            "ticket_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "comments_author_id_users_id_fk": {
-          "name": "comments_author_id_users_id_fk",
-          "tableFrom": "comments",
-          "tableTo": "users",
-          "columnsFrom": [
-            "author_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.committee_members": {
-      "name": "committee_members",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "committee_id": {
-          "name": "committee_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "role": {
-          "name": "role",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_committee_members_committee_id": {
-          "name": "idx_committee_members_committee_id",
-          "columns": [
-            {
-              "expression": "committee_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_committee_members_user_id": {
-          "name": "idx_committee_members_user_id",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "committee_members_committee_id_committees_id_fk": {
-          "name": "committee_members_committee_id_committees_id_fk",
-          "tableFrom": "committee_members",
-          "tableTo": "committees",
-          "columnsFrom": [
-            "committee_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "committee_members_user_id_users_id_fk": {
-          "name": "committee_members_user_id_users_id_fk",
-          "tableFrom": "committee_members",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "unique_committee_member": {
-          "name": "unique_committee_member",
-          "nullsNotDistinct": false,
-          "columns": [
-            "committee_id",
-            "user_id"
           ]
         }
       },
@@ -1520,6 +845,19 @@
           "primaryKey": false,
           "notNull": false
         },
+        "head_id": {
+          "name": "head_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": true
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -1550,114 +888,12 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "committees_name_unique": {
-          "name": "committees_name_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "name"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.deleted_category_fields": {
-      "name": "deleted_category_fields",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
-          "primaryKey": true,
-          "notNull": true
         },
-        "original_field_id": {
-          "name": "original_field_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "field_data": {
-          "name": "field_data",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "options_data": {
-          "name": "options_data",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "deleted_by": {
-          "name": "deleted_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "deleted_at": {
-          "name": "deleted_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "deletion_reason": {
-          "name": "deletion_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "ticket_count": {
-          "name": "ticket_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "default": 0
-        }
-      },
-      "indexes": {
-        "idx_deleted_fields_original_id": {
-          "name": "idx_deleted_fields_original_id",
+        "idx_committees_head": {
+          "name": "idx_committees_head",
           "columns": [
             {
-              "expression": "original_field_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_deleted_fields_deleted_at": {
-          "name": "idx_deleted_fields_deleted_at",
-          "columns": [
-            {
-              "expression": "deleted_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_deleted_fields_deleted_by": {
-          "name": "idx_deleted_fields_deleted_by",
-          "columns": [
-            {
-              "expression": "deleted_by",
+              "expression": "head_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -1670,27 +906,27 @@
         }
       },
       "foreignKeys": {
-        "deleted_category_fields_deleted_by_users_id_fk": {
-          "name": "deleted_category_fields_deleted_by_users_id_fk",
-          "tableFrom": "deleted_category_fields",
+        "committees_head_id_users_id_fk": {
+          "name": "committees_head_id_users_id_fk",
+          "tableFrom": "committees",
           "tableTo": "users",
           "columnsFrom": [
-            "deleted_by"
+            "head_id"
           ],
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "deleted_category_fields_original_field_id_unique": {
-          "name": "deleted_category_fields_original_field_id_unique",
+        "committees_name_unique": {
+          "name": "committees_name_unique",
           "nullsNotDistinct": false,
           "columns": [
-            "original_field_id"
+            "name"
           ]
         }
       },
@@ -1724,7 +960,7 @@
           "name": "is_active",
           "type": "boolean",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "default": true
         },
         "created_at": {
@@ -1758,8 +994,8 @@
           "method": "btree",
           "with": {}
         },
-        "idx_domains_is_active": {
-          "name": "idx_domains_is_active",
+        "idx_domains_active": {
+          "name": "idx_domains_active",
           "columns": [
             {
               "expression": "is_active",
@@ -1827,7 +1063,7 @@
           "name": "notify_channel",
           "type": "varchar(32)",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "default": "'slack'"
         },
         "created_at": {
@@ -1845,56 +1081,7 @@
           "default": "now()"
         }
       },
-      "indexes": {
-        "idx_escalation_rules_domain_scope_level": {
-          "name": "idx_escalation_rules_domain_scope_level",
-          "columns": [
-            {
-              "expression": "domain_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "scope_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "level",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_escalation_rules_domain_level": {
-          "name": "idx_escalation_rules_domain_level",
-          "columns": [
-            {
-              "expression": "domain_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "level",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
         "escalation_rules_domain_id_domains_id_fk": {
           "name": "escalation_rules_domain_id_domains_id_fk",
@@ -1952,162 +1139,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.escalations": {
-      "name": "escalations",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "ticket_id": {
-          "name": "ticket_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "escalated_by": {
-          "name": "escalated_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "escalated_to": {
-          "name": "escalated_to",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "level": {
-          "name": "level",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_escalations_ticket_id": {
-          "name": "idx_escalations_ticket_id",
-          "columns": [
-            {
-              "expression": "ticket_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_escalations_level": {
-          "name": "idx_escalations_level",
-          "columns": [
-            {
-              "expression": "level",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_escalations_ticket_level": {
-          "name": "idx_escalations_ticket_level",
-          "columns": [
-            {
-              "expression": "ticket_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "level",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "escalations_ticket_id_tickets_id_fk": {
-          "name": "escalations_ticket_id_tickets_id_fk",
-          "tableFrom": "escalations",
-          "tableTo": "tickets",
-          "columnsFrom": [
-            "ticket_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "escalations_escalated_by_users_id_fk": {
-          "name": "escalations_escalated_by_users_id_fk",
-          "tableFrom": "escalations",
-          "tableTo": "users",
-          "columnsFrom": [
-            "escalated_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "escalations_escalated_to_users_id_fk": {
-          "name": "escalations_escalated_to_users_id_fk",
-          "tableFrom": "escalations",
-          "tableTo": "users",
-          "columnsFrom": [
-            "escalated_to"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.field_options": {
       "name": "field_options",
       "schema": "",
@@ -2140,14 +1171,14 @@
           "name": "display_order",
           "type": "integer",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "default": 0
         },
-        "active": {
-          "name": "active",
+        "is_active": {
+          "name": "is_active",
           "type": "boolean",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "default": true
         },
         "created_at": {
@@ -2166,41 +1197,11 @@
         }
       },
       "indexes": {
-        "idx_field_options_field_id": {
-          "name": "idx_field_options_field_id",
+        "idx_field_options_field": {
+          "name": "idx_field_options_field",
           "columns": [
             {
               "expression": "field_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_field_options_display_order": {
-          "name": "idx_field_options_display_order",
-          "columns": [
-            {
-              "expression": "display_order",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_field_options_active": {
-          "name": "idx_field_options_active",
-          "columns": [
-            {
-              "expression": "active",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -2249,23 +1250,11 @@
           "primaryKey": false,
           "notNull": true
         },
-        "code": {
-          "name": "code",
-          "type": "varchar(20)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "capacity": {
-          "name": "capacity",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
         "is_active": {
           "name": "is_active",
           "type": "boolean",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "default": true
         },
         "created_at": {
@@ -2274,47 +1263,9 @@
           "primaryKey": false,
           "notNull": false,
           "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false,
-          "default": "now()"
         }
       },
-      "indexes": {
-        "idx_hostels_name": {
-          "name": "idx_hostels_name",
-          "columns": [
-            {
-              "expression": "name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_hostels_is_active": {
-          "name": "idx_hostels_is_active",
-          "columns": [
-            {
-              "expression": "is_active",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
@@ -2324,96 +1275,8 @@
           "columns": [
             "name"
           ]
-        },
-        "hostels_code_unique": {
-          "name": "hostels_code_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "code"
-          ]
         }
       },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.notification_settings": {
-      "name": "notification_settings",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "slack_enabled": {
-          "name": "slack_enabled",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "email_enabled": {
-          "name": "email_enabled",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "tat_reminders_enabled": {
-          "name": "tat_reminders_enabled",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "committee_notifications_enabled": {
-          "name": "committee_notifications_enabled",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "slack_config": {
-          "name": "slack_config",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "notification_settings_updated_by_users_id_fk": {
-          "name": "notification_settings_updated_by_users_id_fk",
-          "tableFrom": "notification_settings",
-          "tableTo": "users",
-          "columnsFrom": [
-            "updated_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -2452,26 +1315,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "priority": {
-          "name": "priority",
-          "type": "varchar(20)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'normal'"
-        },
-        "payload": {
-          "name": "payload",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "status": {
-          "name": "status",
-          "type": "varchar(32)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
-        },
         "slack_message_id": {
           "name": "slack_message_id",
           "type": "varchar(255)",
@@ -2484,18 +1327,11 @@
           "primaryKey": false,
           "notNull": false
         },
-        "attempt_count": {
-          "name": "attempt_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "default": "now()"
         },
         "sent_at": {
@@ -2503,18 +1339,11 @@
           "type": "timestamp",
           "primaryKey": false,
           "notNull": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false,
-          "default": "now()"
         }
       },
       "indexes": {
-        "idx_notifications_user_id": {
-          "name": "idx_notifications_user_id",
+        "idx_notifications_user": {
+          "name": "idx_notifications_user",
           "columns": [
             {
               "expression": "user_id",
@@ -2528,8 +1357,8 @@
           "method": "btree",
           "with": {}
         },
-        "idx_notifications_ticket_id": {
-          "name": "idx_notifications_ticket_id",
+        "idx_notifications_ticket": {
+          "name": "idx_notifications_ticket",
           "columns": [
             {
               "expression": "ticket_id",
@@ -2543,47 +1372,11 @@
           "method": "btree",
           "with": {}
         },
-        "idx_notifications_status": {
-          "name": "idx_notifications_status",
+        "idx_notifications_channel": {
+          "name": "idx_notifications_channel",
           "columns": [
             {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_notifications_user_status": {
-          "name": "idx_notifications_user_status",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_notifications_type": {
-          "name": "idx_notifications_type",
-          "columns": [
-            {
-              "expression": "notification_type",
+              "expression": "channel",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -2655,7 +1448,7 @@
           "name": "attempts",
           "type": "integer",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "default": 0
         },
         "next_retry_at": {
@@ -2674,7 +1467,7 @@
           "name": "created_at",
           "type": "timestamp",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "default": "now()"
         }
       },
@@ -2707,6 +1500,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": true
         },
         "created_at": {
           "name": "created_at",
@@ -2770,9 +1570,9 @@
           "primaryKey": false,
           "notNull": true
         },
-        "description": {
-          "name": "description",
-          "type": "text",
+        "student_field_key": {
+          "name": "student_field_key",
+          "type": "varchar(64)",
           "primaryKey": false,
           "notNull": false
         },
@@ -2780,7 +1580,7 @@
           "name": "is_active",
           "type": "boolean",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "default": true
         },
         "created_at": {
@@ -2799,8 +1599,8 @@
         }
       },
       "indexes": {
-        "idx_scopes_domain_id": {
-          "name": "idx_scopes_domain_id",
+        "idx_scopes_domain": {
+          "name": "idx_scopes_domain",
           "columns": [
             {
               "expression": "domain_id",
@@ -2814,23 +1614,8 @@
           "method": "btree",
           "with": {}
         },
-        "idx_scopes_name": {
-          "name": "idx_scopes_name",
-          "columns": [
-            {
-              "expression": "name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_scopes_is_active": {
-          "name": "idx_scopes_is_active",
+        "idx_scopes_active": {
+          "name": "idx_scopes_active",
           "columns": [
             {
               "expression": "is_active",
@@ -2862,257 +1647,12 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "unique_domain_scope": {
-          "name": "unique_domain_scope",
+        "unique_scope_name_domain": {
+          "name": "unique_scope_name_domain",
           "nullsNotDistinct": false,
           "columns": [
             "domain_id",
             "name"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.student_profile_data": {
-      "name": "student_profile_data",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "student_id": {
-          "name": "student_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "field_id": {
-          "name": "field_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "value": {
-          "name": "value",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_student_profile_data_student_field": {
-          "name": "idx_student_profile_data_student_field",
-          "columns": [
-            {
-              "expression": "student_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "field_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "student_profile_data_student_id_students_id_fk": {
-          "name": "student_profile_data_student_id_students_id_fk",
-          "tableFrom": "student_profile_data",
-          "tableTo": "students",
-          "columnsFrom": [
-            "student_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "student_profile_data_field_id_student_profile_fields_id_fk": {
-          "name": "student_profile_data_field_id_student_profile_fields_id_fk",
-          "tableFrom": "student_profile_data",
-          "tableTo": "student_profile_fields",
-          "columnsFrom": [
-            "field_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "unique_student_profile_data": {
-          "name": "unique_student_profile_data",
-          "nullsNotDistinct": false,
-          "columns": [
-            "student_id",
-            "field_id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.student_profile_fields": {
-      "name": "student_profile_fields",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "field_name": {
-          "name": "field_name",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "field_label": {
-          "name": "field_label",
-          "type": "varchar(128)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "field_type": {
-          "name": "field_type",
-          "type": "varchar(32)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "is_required": {
-          "name": "is_required",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "is_editable_by_student": {
-          "name": "is_editable_by_student",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "is_system_field": {
-          "name": "is_system_field",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "display_order": {
-          "name": "display_order",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "validation_rules": {
-          "name": "validation_rules",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "default_value": {
-          "name": "default_value",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "help_text": {
-          "name": "help_text",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_profile_fields_name": {
-          "name": "idx_profile_fields_name",
-          "columns": [
-            {
-              "expression": "field_name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_profile_fields_order": {
-          "name": "idx_profile_fields_order",
-          "columns": [
-            {
-              "expression": "display_order",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "student_profile_fields_field_name_unique": {
-          "name": "student_profile_fields_field_name_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "field_name"
           ]
         }
       },
@@ -3129,13 +1669,6 @@
           "type": "serial",
           "primaryKey": true,
           "notNull": true
-        },
-        "student_uid": {
-          "name": "student_uid",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "gen_random_uuid()"
         },
         "user_id": {
           "name": "user_id",
@@ -3173,48 +1706,15 @@
           "primaryKey": false,
           "notNull": false
         },
-        "batch_year": {
-          "name": "batch_year",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
         "department": {
           "name": "department",
           "type": "varchar(120)",
           "primaryKey": false,
           "notNull": false
         },
-        "active": {
-          "name": "active",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "source": {
-          "name": "source",
-          "type": "varchar(20)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'csv'"
-        },
-        "last_synced_at": {
-          "name": "last_synced_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "tickets_this_week": {
-          "name": "tickets_this_week",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "last_ticket_date": {
-          "name": "last_ticket_date",
-          "type": "timestamp",
+        "blood_group": {
+          "name": "blood_group",
+          "type": "varchar(8)",
           "primaryKey": false,
           "notNull": false
         },
@@ -3234,21 +1734,6 @@
         }
       },
       "indexes": {
-        "idx_students_user_id": {
-          "name": "idx_students_user_id",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_students_roll_no": {
           "name": "idx_students_roll_no",
           "columns": [
@@ -3264,86 +1749,11 @@
           "method": "btree",
           "with": {}
         },
-        "idx_students_batch_year": {
-          "name": "idx_students_batch_year",
+        "idx_students_user": {
+          "name": "idx_students_user",
           "columns": [
             {
-              "expression": "batch_year",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_students_hostel_id": {
-          "name": "idx_students_hostel_id",
-          "columns": [
-            {
-              "expression": "hostel_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_students_batch_id": {
-          "name": "idx_students_batch_id",
-          "columns": [
-            {
-              "expression": "batch_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_students_class_section_id": {
-          "name": "idx_students_class_section_id",
-          "columns": [
-            {
-              "expression": "class_section_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_students_active": {
-          "name": "idx_students_active",
-          "columns": [
-            {
-              "expression": "active",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_students_student_uid": {
-          "name": "idx_students_student_uid",
-          "columns": [
-            {
-              "expression": "student_uid",
+              "expression": "user_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -3411,13 +1821,6 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "students_student_uid_unique": {
-          "name": "students_student_uid_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "student_uid"
-          ]
-        },
         "students_user_id_unique": {
           "name": "students_user_id_unique",
           "nullsNotDistinct": false,
@@ -3477,18 +1880,24 @@
           "primaryKey": false,
           "notNull": false
         },
-        "active": {
-          "name": "active",
+        "sla_hours": {
+          "name": "sla_hours",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_active": {
+          "name": "is_active",
           "type": "boolean",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "default": true
         },
         "display_order": {
           "name": "display_order",
           "type": "integer",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "default": 0
         },
         "created_at": {
@@ -3507,56 +1916,11 @@
         }
       },
       "indexes": {
-        "idx_sub_subcategories_subcategory_id": {
-          "name": "idx_sub_subcategories_subcategory_id",
+        "idx_sub_subcategories_subcategory": {
+          "name": "idx_sub_subcategories_subcategory",
           "columns": [
             {
               "expression": "subcategory_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_sub_subcategories_slug": {
-          "name": "idx_sub_subcategories_slug",
-          "columns": [
-            {
-              "expression": "slug",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_sub_subcategories_active": {
-          "name": "idx_sub_subcategories_active",
-          "columns": [
-            {
-              "expression": "active",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_sub_subcategories_display_order": {
-          "name": "idx_sub_subcategories_display_order",
-          "columns": [
-            {
-              "expression": "display_order",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -3598,8 +1962,8 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "unique_sub_subcategory_subcategory_slug": {
-          "name": "unique_sub_subcategory_subcategory_slug",
+        "unique_sub_subcategory_slug": {
+          "name": "unique_sub_subcategory_slug",
           "nullsNotDistinct": false,
           "columns": [
             "subcategory_id",
@@ -3651,18 +2015,24 @@
           "primaryKey": false,
           "notNull": false
         },
-        "active": {
-          "name": "active",
+        "sla_hours": {
+          "name": "sla_hours",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_active": {
+          "name": "is_active",
           "type": "boolean",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "default": true
         },
         "display_order": {
           "name": "display_order",
           "type": "integer",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "default": 0
         },
         "created_at": {
@@ -3681,56 +2051,11 @@
         }
       },
       "indexes": {
-        "idx_subcategories_category_id": {
-          "name": "idx_subcategories_category_id",
+        "idx_subcategories_category": {
+          "name": "idx_subcategories_category",
           "columns": [
             {
               "expression": "category_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_subcategories_slug": {
-          "name": "idx_subcategories_slug",
-          "columns": [
-            {
-              "expression": "slug",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_subcategories_active": {
-          "name": "idx_subcategories_active",
-          "columns": [
-            {
-              "expression": "active",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_subcategories_display_order": {
-          "name": "idx_subcategories_display_order",
-          "columns": [
-            {
-              "expression": "display_order",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -3772,8 +2097,8 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "unique_subcategory_category_slug": {
-          "name": "unique_subcategory_category_slug",
+        "unique_subcategory_slug": {
+          "name": "unique_subcategory_slug",
           "nullsNotDistinct": false,
           "columns": [
             "category_id",
@@ -3799,7 +2124,7 @@
           "name": "ticket_id",
           "type": "integer",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "user_id": {
           "name": "user_id",
@@ -3823,20 +2148,13 @@
           "name": "created_at",
           "type": "timestamp",
           "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
           "notNull": false,
           "default": "now()"
         }
       },
       "indexes": {
-        "idx_ticket_activity_ticket_id": {
-          "name": "idx_ticket_activity_ticket_id",
+        "idx_ticket_activity_ticket": {
+          "name": "idx_ticket_activity_ticket",
           "columns": [
             {
               "expression": "ticket_id",
@@ -3850,11 +2168,11 @@
           "method": "btree",
           "with": {}
         },
-        "idx_ticket_activity_user_id": {
-          "name": "idx_ticket_activity_user_id",
+        "idx_ticket_activity_action": {
+          "name": "idx_ticket_activity_action",
           "columns": [
             {
-              "expression": "user_id",
+              "expression": "action",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -3865,15 +2183,9 @@
           "method": "btree",
           "with": {}
         },
-        "idx_ticket_activity_ticket_created": {
-          "name": "idx_ticket_activity_ticket_created",
+        "idx_ticket_activity_created": {
+          "name": "idx_ticket_activity_created",
           "columns": [
-            {
-              "expression": "ticket_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
             {
               "expression": "created_at",
               "isExpression": false,
@@ -3941,7 +2253,7 @@
           "name": "uploaded_by",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "file_name": {
           "name": "file_name",
@@ -3955,40 +2267,15 @@
           "primaryKey": false,
           "notNull": true
         },
-        "file_size": {
-          "name": "file_size",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
         "mime_type": {
           "name": "mime_type",
           "type": "varchar(100)",
           "primaryKey": false,
           "notNull": false
         },
-        "storage_url": {
-          "name": "storage_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "is_deleted": {
-          "name": "is_deleted",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "deleted_at": {
-          "name": "deleted_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "deleted_by": {
-          "name": "deleted_by",
-          "type": "uuid",
+        "file_size": {
+          "name": "file_size",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false
         },
@@ -3996,20 +2283,13 @@
           "name": "created_at",
           "type": "timestamp",
           "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
           "notNull": false,
           "default": "now()"
         }
       },
       "indexes": {
-        "idx_ticket_attachments_ticket_id": {
-          "name": "idx_ticket_attachments_ticket_id",
+        "idx_ticket_attachments_ticket": {
+          "name": "idx_ticket_attachments_ticket",
           "columns": [
             {
               "expression": "ticket_id",
@@ -4023,26 +2303,11 @@
           "method": "btree",
           "with": {}
         },
-        "idx_ticket_attachments_uploaded_by": {
-          "name": "idx_ticket_attachments_uploaded_by",
+        "idx_ticket_attachments_uploaded": {
+          "name": "idx_ticket_attachments_uploaded",
           "columns": [
             {
               "expression": "uploaded_by",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_ticket_attachments_is_deleted": {
-          "name": "idx_ticket_attachments_is_deleted",
-          "columns": [
-            {
-              "expression": "is_deleted",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -4080,19 +2345,6 @@
           ],
           "onDelete": "set null",
           "onUpdate": "no action"
-        },
-        "ticket_attachments_deleted_by_users_id_fk": {
-          "name": "ticket_attachments_deleted_by_users_id_fk",
-          "tableFrom": "ticket_attachments",
-          "tableTo": "users",
-          "columnsFrom": [
-            "deleted_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -4127,7 +2379,7 @@
           "name": "tagged_by",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "reason": {
           "name": "reason",
@@ -4141,51 +2393,14 @@
           "primaryKey": false,
           "notNull": false,
           "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false,
-          "default": "now()"
         }
       },
       "indexes": {
-        "idx_ticket_committee_tags_ticket_id": {
-          "name": "idx_ticket_committee_tags_ticket_id",
+        "idx_ticket_committee_ticket": {
+          "name": "idx_ticket_committee_ticket",
           "columns": [
             {
               "expression": "ticket_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_ticket_committee_tags_committee_id": {
-          "name": "idx_ticket_committee_tags_committee_id",
-          "columns": [
-            {
-              "expression": "committee_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_ticket_committee_tags_tagged_by": {
-          "name": "idx_ticket_committee_tags_tagged_by",
-          "columns": [
-            {
-              "expression": "tagged_by",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -4240,8 +2455,8 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "unique_ticket_committee_tag": {
-          "name": "unique_ticket_committee_tag",
+        "unique_ticket_committee": {
+          "name": "unique_ticket_committee",
           "nullsNotDistinct": false,
           "columns": [
             "ticket_id",
@@ -4253,33 +2468,98 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.ticket_groups": {
-      "name": "ticket_groups",
+    "public.ticket_feedback": {
+      "name": "ticket_feedback",
       "schema": "",
       "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
+        "ticket_id": {
+          "name": "ticket_id",
+          "type": "integer",
           "primaryKey": true,
           "notNull": true
         },
-        "name": {
-          "name": "name",
-          "type": "varchar(255)",
+        "rating": {
+          "name": "rating",
+          "type": "integer",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false,
+          "default": "NULL"
         },
-        "description": {
-          "name": "description",
+        "feedback": {
+          "name": "feedback",
           "type": "text",
           "primaryKey": false,
           "notNull": false
         },
-        "created_by": {
-          "name": "created_by",
-          "type": "uuid",
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
           "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "ticket_feedback_ticket_id_tickets_id_fk": {
+          "name": "ticket_feedback_ticket_id_tickets_id_fk",
+          "tableFrom": "ticket_feedback",
+          "tableTo": "tickets",
+          "columnsFrom": [
+            "ticket_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.ticket_integrations": {
+      "name": "ticket_integrations",
+      "schema": "",
+      "columns": {
+        "ticket_id": {
+          "name": "ticket_id",
+          "type": "integer",
+          "primaryKey": true,
           "notNull": true
+        },
+        "slack_thread_id": {
+          "name": "slack_thread_id",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "email_thread_id": {
+          "name": "email_thread_id",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "admin_link": {
+          "name": "admin_link",
+          "type": "varchar(512)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "student_link": {
+          "name": "student_link",
+          "type": "varchar(512)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "external_ref": {
+          "name": "external_ref",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -4297,11 +2577,11 @@
         }
       },
       "indexes": {
-        "idx_ticket_groups_created_by": {
-          "name": "idx_ticket_groups_created_by",
+        "idx_ticket_integrations_slack": {
+          "name": "idx_ticket_integrations_slack",
           "columns": [
             {
-              "expression": "created_by",
+              "expression": "slack_thread_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -4312,11 +2592,11 @@
           "method": "btree",
           "with": {}
         },
-        "idx_ticket_groups_created_at": {
-          "name": "idx_ticket_groups_created_at",
+        "idx_ticket_integrations_email": {
+          "name": "idx_ticket_integrations_email",
           "columns": [
             {
-              "expression": "created_at",
+              "expression": "email_thread_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -4329,22 +2609,30 @@
         }
       },
       "foreignKeys": {
-        "ticket_groups_created_by_users_id_fk": {
-          "name": "ticket_groups_created_by_users_id_fk",
-          "tableFrom": "ticket_groups",
-          "tableTo": "users",
+        "ticket_integrations_ticket_id_tickets_id_fk": {
+          "name": "ticket_integrations_ticket_id_tickets_id_fk",
+          "tableFrom": "ticket_integrations",
+          "tableTo": "tickets",
           "columnsFrom": [
-            "created_by"
+            "ticket_id"
           ],
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "ticket_integrations_external_ref_unique": {
+          "name": "ticket_integrations_external_ref_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "external_ref"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -4381,7 +2669,7 @@
           "name": "progress_percent",
           "type": "integer",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "default": 0
         },
         "badge_color": {
@@ -4395,21 +2683,21 @@
           "name": "is_active",
           "type": "boolean",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "default": true
         },
         "is_final": {
           "name": "is_final",
           "type": "boolean",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "default": false
         },
         "display_order": {
           "name": "display_order",
           "type": "integer",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "default": 0
         },
         "created_at": {
@@ -4433,36 +2721,6 @@
           "columns": [
             {
               "expression": "value",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_ticket_statuses_is_active": {
-          "name": "idx_ticket_statuses_is_active",
-          "columns": [
-            {
-              "expression": "is_active",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_ticket_statuses_display_order": {
-          "name": "idx_ticket_statuses_display_order",
-          "columns": [
-            {
-              "expression": "display_order",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -4541,11 +2799,17 @@
           "primaryKey": false,
           "notNull": false
         },
+        "scope_id": {
+          "name": "scope_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_by": {
           "name": "created_by",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "assigned_to": {
           "name": "assigned_to",
@@ -4553,49 +2817,12 @@
           "primaryKey": false,
           "notNull": false
         },
-        "acknowledged_by": {
-          "name": "acknowledged_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "group_id": {
-          "name": "group_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
         "escalation_level": {
           "name": "escalation_level",
           "type": "integer",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "default": 0
-        },
-        "tat_extended_count": {
-          "name": "tat_extended_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "last_escalation_at": {
-          "name": "last_escalation_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "acknowledgement_tat_hours": {
-          "name": "acknowledgement_tat_hours",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "resolution_tat_hours": {
-          "name": "resolution_tat_hours",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
         },
         "acknowledgement_due_at": {
           "name": "acknowledgement_due_at",
@@ -4609,86 +2836,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "acknowledged_at": {
-          "name": "acknowledged_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reopened_at": {
-          "name": "reopened_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "sla_breached_at": {
-          "name": "sla_breached_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reopen_count": {
-          "name": "reopen_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "rating": {
-          "name": "rating",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "feedback_type": {
-          "name": "feedback_type",
-          "type": "varchar(20)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "rating_submitted": {
-          "name": "rating_submitted",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "feedback": {
-          "name": "feedback",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "is_public": {
-          "name": "is_public",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "admin_link": {
-          "name": "admin_link",
-          "type": "varchar(512)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "student_link": {
-          "name": "student_link",
-          "type": "varchar(512)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "slack_thread_id": {
-          "name": "slack_thread_id",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "external_ref": {
-          "name": "external_ref",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
-        },
         "metadata": {
           "name": "metadata",
           "type": "jsonb",
@@ -4699,59 +2846,23 @@
           "name": "created_at",
           "type": "timestamp",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "default": "now()"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "default": "now()"
-        },
-        "resolved_at": {
-          "name": "resolved_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
-        "idx_tickets_status_id": {
-          "name": "idx_tickets_status_id",
+        "idx_tickets_status": {
+          "name": "idx_tickets_status",
           "columns": [
             {
               "expression": "status_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_tickets_category_id": {
-          "name": "idx_tickets_category_id",
-          "columns": [
-            {
-              "expression": "category_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_tickets_subcategory_id": {
-          "name": "idx_tickets_subcategory_id",
-          "columns": [
-            {
-              "expression": "subcategory_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -4792,11 +2903,11 @@
           "method": "btree",
           "with": {}
         },
-        "idx_tickets_group_id": {
-          "name": "idx_tickets_group_id",
+        "idx_tickets_category": {
+          "name": "idx_tickets_category",
           "columns": [
             {
-              "expression": "group_id",
+              "expression": "category_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -4807,11 +2918,11 @@
           "method": "btree",
           "with": {}
         },
-        "idx_tickets_escalation_level": {
-          "name": "idx_tickets_escalation_level",
+        "idx_tickets_scope": {
+          "name": "idx_tickets_scope",
           "columns": [
             {
-              "expression": "escalation_level",
+              "expression": "scope_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -4841,21 +2952,6 @@
           "isUnique": false,
           "concurrently": false,
           "method": "btree",
-          "with": {}
-        },
-        "idx_tickets_metadata": {
-          "name": "idx_tickets_metadata",
-          "columns": [
-            {
-              "expression": "metadata",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "gin",
           "with": {}
         }
       },
@@ -4912,6 +3008,19 @@
           "onDelete": "no action",
           "onUpdate": "no action"
         },
+        "tickets_scope_id_scopes_id_fk": {
+          "name": "tickets_scope_id_scopes_id_fk",
+          "tableFrom": "tickets",
+          "tableTo": "scopes",
+          "columnsFrom": [
+            "scope_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
         "tickets_created_by_users_id_fk": {
           "name": "tickets_created_by_users_id_fk",
           "tableFrom": "tickets",
@@ -4935,46 +3044,12 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "tickets_acknowledged_by_users_id_fk": {
-          "name": "tickets_acknowledged_by_users_id_fk",
-          "tableFrom": "tickets",
-          "tableTo": "users",
-          "columnsFrom": [
-            "acknowledged_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "tickets_group_id_ticket_groups_id_fk": {
-          "name": "tickets_group_id_ticket_groups_id_fk",
-          "tableFrom": "tickets",
-          "tableTo": "ticket_groups",
-          "columnsFrom": [
-            "group_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "tickets_external_ref_unique": {
-          "name": "tickets_external_ref_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "external_ref"
-          ]
-        }
-      },
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -4990,8 +3065,14 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
-        "clerk_id": {
-          "name": "clerk_id",
+        "auth_provider": {
+          "name": "auth_provider",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "external_id": {
+          "name": "external_id",
           "type": "varchar(255)",
           "primaryKey": false,
           "notNull": true
@@ -5000,23 +3081,17 @@
           "name": "email",
           "type": "varchar(256)",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "phone": {
           "name": "phone",
           "type": "varchar(30)",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
-        "first_name": {
-          "name": "first_name",
-          "type": "varchar(120)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_name": {
-          "name": "last_name",
-          "type": "varchar(120)",
+        "full_name": {
+          "name": "full_name",
+          "type": "varchar(255)",
           "primaryKey": false,
           "notNull": false
         },
@@ -5031,32 +3106,6 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true
-        },
-        "user_type": {
-          "name": "user_type",
-          "type": "user_type",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'human'"
-        },
-        "primary_domain_id": {
-          "name": "primary_domain_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "primary_scope_id": {
-          "name": "primary_scope_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "slack_user_id": {
-          "name": "slack_user_id",
-          "type": "varchar(128)",
-          "primaryKey": false,
-          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -5074,11 +3123,11 @@
         }
       },
       "indexes": {
-        "idx_users_clerk_id": {
-          "name": "idx_users_clerk_id",
+        "idx_users_role_id": {
+          "name": "idx_users_role_id",
           "columns": [
             {
-              "expression": "clerk_id",
+              "expression": "role_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -5103,51 +3152,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "idx_users_role_id": {
-          "name": "idx_users_role_id",
-          "columns": [
-            {
-              "expression": "role_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_users_user_type": {
-          "name": "idx_users_user_type",
-          "columns": [
-            {
-              "expression": "user_type",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_users_primary_domain_id": {
-          "name": "idx_users_primary_domain_id",
-          "columns": [
-            {
-              "expression": "primary_domain_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -5163,43 +3167,10 @@
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
-        },
-        "users_primary_domain_id_domains_id_fk": {
-          "name": "users_primary_domain_id_domains_id_fk",
-          "tableFrom": "users",
-          "tableTo": "domains",
-          "columnsFrom": [
-            "primary_domain_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "users_primary_scope_id_scopes_id_fk": {
-          "name": "users_primary_scope_id_scopes_id_fk",
-          "tableFrom": "users",
-          "tableTo": "scopes",
-          "columnsFrom": [
-            "primary_scope_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "users_clerk_id_unique": {
-          "name": "users_clerk_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "clerk_id"
-          ]
-        },
         "users_email_unique": {
           "name": "users_email_unique",
           "nullsNotDistinct": false,
@@ -5214,13 +3185,13 @@
     }
   },
   "enums": {
-    "public.user_type": {
-      "name": "user_type",
+    "public.scope_mode": {
+      "name": "scope_mode",
       "schema": "public",
       "values": [
-        "human",
-        "system",
-        "bot"
+        "fixed",
+        "dynamic",
+        "none"
       ]
     }
   },

@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
         name: subcategories.name,
         slug: subcategories.slug,
         description: subcategories.description,
-        active: subcategories.active,
+        is_active: subcategories.is_active,
         display_order: subcategories.display_order,
         created_at: subcategories.created_at,
         updated_at: subcategories.updated_at,
@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
       .where(
         and(
           eq(subcategories.category_id, parseInt(categoryId)),
-          eq(subcategories.active, true)
+          eq(subcategories.is_active, true)
         )
       )
       .orderBy(asc(subcategories.display_order), desc(subcategories.created_at));
@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
               .where(
                 and(
                   eq(sub_subcategories.subcategory_id, subcat.id),
-                  eq(sub_subcategories.active, true)
+                  eq(sub_subcategories.is_active, true)
                 )
               )
               .orderBy(asc(sub_subcategories.display_order), desc(sub_subcategories.created_at));
@@ -90,7 +90,7 @@ export async function GET(request: NextRequest) {
                 help_text: category_fields.help_text,
                 validation_rules: category_fields.validation_rules,
                 display_order: category_fields.display_order,
-                active: category_fields.active,
+                is_active: category_fields.is_active,
                 created_at: category_fields.created_at,
                 updated_at: category_fields.updated_at,
               })
@@ -98,7 +98,7 @@ export async function GET(request: NextRequest) {
               .where(
                 and(
                   eq(category_fields.subcategory_id, subcat.id),
-                  eq(category_fields.active, true)
+                  eq(category_fields.is_active, true)
                 )
               )
               .orderBy(asc(category_fields.display_order), desc(category_fields.created_at));
@@ -119,18 +119,41 @@ export async function GET(request: NextRequest) {
             fields = fieldsWithOptions;
           }
 
-          return {
+          // Transform is_active to active for frontend compatibility
+          const transformedSubcat: Record<string, unknown> = {
             ...subcat,
-            fields: includeFields ? fields : undefined,
-            sub_subcategories: includeSubSubcategories ? subSubcategories : undefined,
+            active: subcat.is_active,
           };
+          delete transformedSubcat.is_active;
+
+          if (includeFields) {
+            transformedSubcat.fields = fields.map(field => {
+              const { is_active, ...rest } = field;
+              return { ...rest, active: is_active };
+            });
+          }
+
+          if (includeSubSubcategories) {
+            transformedSubcat.sub_subcategories = subSubcategories.map(subSubcat => {
+              const { is_active, ...rest } = subSubcat;
+              return { ...rest, active: is_active };
+            });
+          }
+
+          return transformedSubcat;
         })
       );
 
       return NextResponse.json(subcatsWithData);
     }
 
-    return NextResponse.json(subcats);
+    // Transform is_active to active for frontend compatibility
+    const transformedSubcats = subcats.map(subcat => {
+      const { is_active, ...rest } = subcat;
+      return { ...rest, active: is_active };
+    });
+
+    return NextResponse.json(transformedSubcats);
   } catch (error) {
     console.error("Error fetching subcategories:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
@@ -167,7 +190,7 @@ export async function POST(request: NextRequest) {
         name: subcategories.name,
         slug: subcategories.slug,
         description: subcategories.description,
-        active: subcategories.active,
+        is_active: subcategories.is_active,
         display_order: subcategories.display_order,
         created_at: subcategories.created_at,
         updated_at: subcategories.updated_at,
@@ -177,7 +200,7 @@ export async function POST(request: NextRequest) {
         and(
           eq(subcategories.category_id, parseInt(category_id)),
           eq(subcategories.slug, slug),
-          eq(subcategories.active, false)
+          eq(subcategories.is_active, false)
         )
       )
       .limit(1);
@@ -191,12 +214,15 @@ export async function POST(request: NextRequest) {
           description: description || null,
           display_order: display_order || 0,
           assigned_admin_id: assigned_admin_id === null || assigned_admin_id === "" ? null : String(assigned_admin_id),
-          active: true,
+          is_active: true,
           updated_at: new Date(),
         })
         .where(eq(subcategories.id, existingInactive.id))
         .returning();
-      return NextResponse.json(reactivated, { status: 201 });
+      
+      // Transform is_active to active for frontend compatibility
+      const { is_active, ...rest } = reactivated;
+      return NextResponse.json({ ...rest, active: is_active }, { status: 201 });
     }
 
     const [newSubcategory] = await db
@@ -208,11 +234,13 @@ export async function POST(request: NextRequest) {
         description: description || null,
         display_order: display_order || 0,
         assigned_admin_id: assigned_admin_id === null || assigned_admin_id === "" ? null : String(assigned_admin_id),
-        active: true,
+        is_active: true,
       })
       .returning();
 
-    return NextResponse.json(newSubcategory, { status: 201 });
+    // Transform is_active to active for frontend compatibility
+    const { is_active, ...rest } = newSubcategory;
+    return NextResponse.json({ ...rest, active: is_active }, { status: 201 });
   } catch (error) {
     console.error("Error creating subcategory:", error);
     if (error && typeof error === 'object' && 'code' in error && error.code === "23505") {

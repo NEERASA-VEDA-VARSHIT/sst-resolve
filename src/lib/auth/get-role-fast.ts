@@ -8,7 +8,7 @@
 
 import { db } from "@/db";
 import { users, roles } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import type { UserRole } from "@/types/auth";
 
 /**
@@ -42,7 +42,12 @@ export async function getRoleFast(clerkId: string): Promise<UserRole | null> {
       })
       .from(users)
       .leftJoin(roles, eq(users.role_id, roles.id))
-      .where(eq(users.clerk_id, clerkId))
+      .where(
+        and(
+          eq(users.auth_provider, 'clerk'),
+          eq(users.external_id, clerkId)
+        )
+      )
       .limit(1);
 
     let role: UserRole | null = null;

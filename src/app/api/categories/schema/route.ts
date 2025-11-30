@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { categories, subcategories, sub_subcategories, category_fields, field_options, category_profile_fields } from "@/db/schema";
+import { categories, subcategories, sub_subcategories, category_fields, field_options } from "@/db/schema";
 import { eq, and, asc, desc } from "drizzle-orm";
 
 // GET: Fetch category schema for ticket creation (public endpoint for authenticated users)
@@ -75,7 +75,7 @@ export async function GET(request: NextRequest) {
         name: subcategories.name,
         slug: subcategories.slug,
         description: subcategories.description,
-        active: subcategories.active,
+        active: subcategories.is_active,
         display_order: subcategories.display_order,
         created_at: subcategories.created_at,
         updated_at: subcategories.updated_at,
@@ -84,7 +84,7 @@ export async function GET(request: NextRequest) {
       .where(
         and(
           eq(subcategories.category_id, category.id),
-          eq(subcategories.active, true)
+          eq(subcategories.is_active, true)
         )
       )
       .orderBy(asc(subcategories.display_order), desc(subcategories.created_at));
@@ -99,7 +99,7 @@ export async function GET(request: NextRequest) {
           .where(
             and(
               eq(sub_subcategories.subcategory_id, subcat.id),
-              eq(sub_subcategories.active, true)
+              eq(sub_subcategories.is_active, true)
             )
           )
           .orderBy(asc(sub_subcategories.display_order), desc(sub_subcategories.created_at));
@@ -117,7 +117,7 @@ export async function GET(request: NextRequest) {
             help_text: category_fields.help_text,
             validation_rules: category_fields.validation_rules,
             display_order: category_fields.display_order,
-            active: category_fields.active,
+            active: category_fields.is_active,
             created_at: category_fields.created_at,
             updated_at: category_fields.updated_at,
           })
@@ -125,7 +125,7 @@ export async function GET(request: NextRequest) {
           .where(
             and(
               eq(category_fields.subcategory_id, subcat.id),
-              eq(category_fields.active, true)
+              eq(category_fields.is_active, true)
             )
           )
           .orderBy(asc(category_fields.display_order), desc(category_fields.created_at));
@@ -140,7 +140,7 @@ export async function GET(request: NextRequest) {
                 .where(
                   and(
                     eq(field_options.field_id, field.id),
-                    eq(field_options.active, true)
+                    eq(field_options.is_active, true)
                   )
                 )
                 .orderBy(asc(field_options.display_order), desc(field_options.created_at));
@@ -158,13 +158,6 @@ export async function GET(request: NextRequest) {
       })
     );
 
-    // Fetch profile field configurations for this category
-    const profileFields = await db
-      .select()
-      .from(category_profile_fields)
-      .where(eq(category_profile_fields.category_id, category.id))
-      .orderBy(asc(category_profile_fields.display_order));
-
     return NextResponse.json({
       category: {
         id: category.id,
@@ -176,12 +169,7 @@ export async function GET(request: NextRequest) {
         sla_hours: category.sla_hours,
       },
       subcategories: subcatsWithData,
-      profileFields: profileFields.map(f => ({
-        field_name: f.field_name,
-        required: f.required,
-        editable: f.editable,
-        display_order: f.display_order,
-      })),
+      profileFields: [], // Always fetch all student details, no filtering needed
     });
   } catch (error) {
     console.error("Error fetching category schema:", error);

@@ -9,18 +9,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { users, students, hostels, batches, class_sections, roles } from "@/db/schema";
+import type { UserInsert, StudentInsert } from "@/db/inferred-types";
 import { eq } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
-
-function splitFullName(name: string): { first_name: string; last_name: string } {
-	if (!name) return { first_name: "", last_name: "" };
-	const parts = name.trim().split(/\s+/);
-	if (parts.length === 0) return { first_name: "", last_name: "" };
-	if (parts.length === 1) return { first_name: parts[0], last_name: "" };
-	const first_name = parts[0];
-	const last_name = parts.slice(1).join(" ");
-	return { first_name, last_name };
-}
 
 function cleanFullName(name: string): string {
 	if (!name) return name;
@@ -65,9 +56,10 @@ export async function POST(request: NextRequest) {
 		} = body;
 
 		// Validate required fields
-		if (!email || !full_name || !user_number) {
+		if (!email || !full_name || !user_number || !mobile || !room_number || 
+			!hostel_id || !class_section_id || !batch_id || !department) {
 			return NextResponse.json(
-				{ error: "Email, full name, and user number are required" },
+				{ error: "All fields are required: email, full name, user number, mobile, room number, hostel, class section, batch, and department" },
 				{ status: 400 }
 			);
 		}
@@ -81,56 +73,50 @@ export async function POST(request: NextRequest) {
 			);
 		}
 
-		// Validate mobile if provided
-		const cleanedMobile = mobile ? cleanMobile(mobile) : null;
-		if (cleanedMobile && cleanedMobile.length !== 10) {
+		// Validate mobile (required)
+		const cleanedMobile = cleanMobile(mobile);
+		if (cleanedMobile.length !== 10) {
 			return NextResponse.json(
 				{ error: "Mobile number must be 10 digits" },
 				{ status: 400 }
 			);
 		}
 
-		// Validate master data references if provided
-		if (hostel_id) {
-			const [hostel] = await db
-				.select()
-				.from(hostels)
-				.where(eq(hostels.id, hostel_id))
-				.limit(1);
-			if (!hostel || !hostel.is_active) {
-				return NextResponse.json(
-					{ error: "Invalid or inactive hostel" },
-					{ status: 400 }
-				);
-			}
+		// Validate master data references (all required)
+		const [hostel] = await db
+			.select()
+			.from(hostels)
+			.where(eq(hostels.id, hostel_id))
+			.limit(1);
+		if (!hostel || !hostel.is_active) {
+			return NextResponse.json(
+				{ error: "Invalid or inactive hostel" },
+				{ status: 400 }
+			);
 		}
 
-		if (class_section_id) {
-			const [section] = await db
-				.select()
-				.from(class_sections)
-				.where(eq(class_sections.id, class_section_id))
-				.limit(1);
-			if (!section || !section.is_active) {
-				return NextResponse.json(
-					{ error: "Invalid or inactive class section" },
-					{ status: 400 }
-				);
-			}
+		const [section] = await db
+			.select()
+			.from(class_sections)
+			.where(eq(class_sections.id, class_section_id))
+			.limit(1);
+		if (!section || !section.is_active) {
+			return NextResponse.json(
+				{ error: "Invalid or inactive class section" },
+				{ status: 400 }
+			);
 		}
 
-		if (batch_id) {
-			const [batch] = await db
-				.select()
-				.from(batches)
-				.where(eq(batches.id, batch_id))
-				.limit(1);
-			if (!batch || !batch.is_active) {
-				return NextResponse.json(
-					{ error: "Invalid or inactive batch" },
-					{ status: 400 }
-				);
-			}
+		const [batch] = await db
+			.select()
+			.from(batches)
+			.where(eq(batches.id, batch_id))
+			.limit(1);
+		if (!batch || !batch.is_active) {
+			return NextResponse.json(
+				{ error: "Invalid or inactive batch" },
+				{ status: 400 }
+			);
 		}
 
 		// Get student role
@@ -148,7 +134,6 @@ export async function POST(request: NextRequest) {
 		}
 
 		// Prepare data
-		const nameParts = splitFullName(cleanFullName(full_name));
 		const cleanedName = cleanFullName(full_name);
 
 		// Check if user already exists
@@ -190,43 +175,31 @@ export async function POST(request: NextRequest) {
 
 			// If user doesn't exist, create it
 			if (!targetUser) {
+				const userData: UserInsert = {
+					auth_provider: "manual",
+					external_id: `pending_${cleanedEmail}`, // Temporary, will be updated on first login
+					email: cleanedEmail,
+					full_name: cleanedName,
+					phone: cleanedMobile,
+					role_id: studentRole.id,
+				};
 				const [newUser] = await tx
 					.insert(users)
-					.values({
-						clerk_id: `pending_${cleanedEmail}`, // Temporary, will be updated on first login
-						email: cleanedEmail,
-						first_name: nameParts.first_name,
-						last_name: nameParts.last_name,
-						phone: cleanedMobile,
-						role_id: studentRole.id,
-					})
+					.values(userData)
 					.returning();
 				targetUser = newUser;
 			} else {
-				// User exists - update their info (name, phone) but keep their clerk_id
+				// User exists - update their info (name, phone) but keep their external_id
+				const userUpdate: Partial<UserInsert> = {
+					full_name: cleanedName,
+					phone: cleanedMobile,
+					role_id: studentRole.id, // Ensure they have student role
+					updated_at: new Date(),
+				};
 				await tx
 					.update(users)
-					.set({
-						first_name: nameParts.first_name,
-						last_name: nameParts.last_name,
-						phone: cleanedMobile || targetUser.phone,
-						role_id: studentRole.id, // Ensure they have student role
-						updated_at: new Date(),
-					})
+					.set(userUpdate)
 					.where(eq(users.id, targetUser.id));
-			}
-
-			// Get batch_year from batch_id if provided
-			let batch_year: number | null = null;
-			if (batch_id) {
-				const [batch] = await tx
-					.select({ batch_year: batches.batch_year })
-					.from(batches)
-					.where(eq(batches.id, batch_id))
-					.limit(1);
-				if (batch) {
-					batch_year = batch.batch_year;
-				}
 			}
 
 			// Check if student record already exists for this user
@@ -240,42 +213,36 @@ export async function POST(request: NextRequest) {
 			let wasStudentCreated = false;
 			if (existingStudent) {
 				// Update existing student record
+				const studentUpdate: Partial<StudentInsert> = {
+					roll_no: user_number.trim(),
+					room_no: room_number.trim(),
+					hostel_id: hostel_id,
+					class_section_id: class_section_id,
+					batch_id: batch_id,
+					department: department.trim(),
+					updated_at: new Date(),
+				};
 				const [updatedStudent] = await tx
 					.update(students)
-					.set({
-						roll_no: user_number.trim(),
-						room_no: room_number?.trim() || null,
-						hostel_id: hostel_id || null,
-						class_section_id: class_section_id || null,
-						batch_id: batch_id || null,
-						batch_year: batch_year,
-						department: department?.trim() || null,
-						source: "manual", // Track that this was updated manually
-						active: true,
-						last_synced_at: new Date(),
-						updated_at: new Date(),
-					})
+					.set(studentUpdate)
 					.where(eq(students.id, existingStudent.id))
 					.returning();
 				studentRecord = updatedStudent;
 				wasStudentCreated = false;
 			} else {
 				// Create new student record
+				const studentData: StudentInsert = {
+					user_id: targetUser.id,
+					roll_no: user_number.trim(),
+					room_no: room_number.trim(),
+					hostel_id: hostel_id,
+					class_section_id: class_section_id,
+					batch_id: batch_id,
+					department: department.trim(),
+				};
 				const [newStudent] = await tx
 					.insert(students)
-					.values({
-						user_id: targetUser.id,
-						roll_no: user_number.trim(),
-						room_no: room_number?.trim() || null,
-						hostel_id: hostel_id || null,
-						class_section_id: class_section_id || null,
-						batch_id: batch_id || null,
-						batch_year: batch_year,
-						department: department?.trim() || null,
-						source: "manual", // Track that this was created manually
-						active: true,
-						last_synced_at: new Date(),
-					})
+					.values(studentData)
 					.returning();
 				studentRecord = newStudent;
 				wasStudentCreated = true;

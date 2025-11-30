@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { db, users, domains, scopes, roles, students } from "@/db";
+import { db, users, domains, scopes, roles, students, admin_profiles } from "@/db";
 import { eq, inArray } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
@@ -21,15 +21,14 @@ export async function GET() {
             return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }
 
-        // Fetch users with admin, super_admin, or committee role
+        // Fetch users with admin, super_admin, or committee_head role
         const staffMembers = await db
             .select({
                 id: users.id,
-                clerkUserId: users.clerk_id,
-                firstName: users.first_name,
-                lastName: users.last_name,
+                external_id: users.external_id,
+                full_name: users.full_name,
                 email: users.email,
-                slackUserId: users.slack_user_id,
+                slackUserId: admin_profiles.slack_user_id,
                 phone: users.phone,
                 role: roles.name,
                 domain: domains.name,
@@ -39,14 +38,15 @@ export async function GET() {
             })
             .from(users)
             .innerJoin(roles, eq(users.role_id, roles.id))
-            .leftJoin(domains, eq(users.primary_domain_id, domains.id))
-            .leftJoin(scopes, eq(users.primary_scope_id, scopes.id))
-            .where(inArray(roles.name, ["admin", "super_admin", "committee"]));
+            .leftJoin(admin_profiles, eq(admin_profiles.user_id, users.id))
+            .leftJoin(domains, eq(admin_profiles.primary_domain_id, domains.id))
+            .leftJoin(scopes, eq(admin_profiles.primary_scope_id, scopes.id))
+            .where(inArray(roles.name, ["admin", "super_admin", "committee_head"]));
 
         const formattedStaff = staffMembers.map((staff) => ({
             id: staff.id,
-            clerkUserId: staff.clerkUserId,
-            fullName: [staff.firstName, staff.lastName].filter(Boolean).join(" ") || "Unknown",
+            clerkUserId: staff.external_id, // Map external_id to clerkUserId for backward compatibility
+            fullName: staff.full_name || "Unknown",
             email: staff.email,
             slackUserId: staff.slackUserId,
             whatsappNumber: staff.phone, // Map phone to whatsappNumber
@@ -86,9 +86,14 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
         }
 
-        // Domain is required for admin and committee, optional for super_admin
-        if (role !== "super_admin" && !domain) {
-            return NextResponse.json({ error: "Domain is required for admin and committee roles" }, { status: 400 });
+        // Domain is always required
+        if (!domain) {
+            return NextResponse.json({ error: "Domain is required" }, { status: 400 });
+        }
+
+        // Scope is always required
+        if (!scope) {
+            return NextResponse.json({ error: "Scope is required" }, { status: 400 });
         }
 
         let targetUser;
@@ -108,21 +113,22 @@ export async function POST(request: NextRequest) {
                 // User exists - use existing user
                 targetUser = existingUser;
             } else {
-                // Create new user with pending clerk_id (will be updated when they sign up)
+                // Create new user with pending external_id (will be updated when they sign up)
                 const [studentRole] = await db.select().from(roles).where(eq(roles.name, "student")).limit(1);
                 if (!studentRole) {
                     return NextResponse.json({ error: "Student role not found" }, { status: 500 });
                 }
 
-                // Generate a temporary clerk_id (will be updated when user signs up)
-                const tempClerkId = `pending_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+                // Generate a temporary external_id (will be updated when user signs up)
+                const tempExternalId = `pending_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+                const fullName = [firstName, lastName].filter(Boolean).join(" ");
 
                 const [createdUser] = await db.insert(users).values({
-                    clerk_id: tempClerkId,
+                    auth_provider: "manual",
+                    external_id: tempExternalId,
                     email: email,
-                    first_name: firstName,
-                    last_name: lastName,
-                    phone: phone || null,
+                    full_name: fullName,
+                    phone: phone || "",
                     role_id: studentRole.id, // Will be updated below
                     created_at: new Date(),
                     updated_at: new Date(),
@@ -131,30 +137,23 @@ export async function POST(request: NextRequest) {
                 targetUser = createdUser;
             }
         } else {
-            // Find the user by clerk_id
-            [targetUser] = await db.select().from(users).where(eq(users.clerk_id, clerkUserId)).limit(1);
+            // Find the user by external_id (Clerk user ID)
+            [targetUser] = await db.select().from(users).where(eq(users.external_id, clerkUserId)).limit(1);
 
             if (!targetUser) {
                 return NextResponse.json({ error: "User not found" }, { status: 404 });
             }
         }
 
-        // Resolve domain and scope IDs (optional for super_admin)
-        let domainRecord = null;
-        let scopeRecord = null;
+        // Resolve domain and scope IDs (both required)
+        const [domainRecord] = await db.select().from(domains).where(eq(domains.name, domain)).limit(1);
+        if (!domainRecord) {
+            return NextResponse.json({ error: "Invalid domain" }, { status: 400 });
+        }
 
-        if (domain) {
-            [domainRecord] = await db.select().from(domains).where(eq(domains.name, domain)).limit(1);
-            if (!domainRecord) {
-                return NextResponse.json({ error: "Invalid domain" }, { status: 400 });
-            }
-
-            if (scope) {
-                [scopeRecord] = await db.select().from(scopes).where(eq(scopes.name, scope)).limit(1);
-                if (!scopeRecord) {
-                    return NextResponse.json({ error: "Invalid scope" }, { status: 400 });
-                }
-            }
+        const [scopeRecord] = await db.select().from(scopes).where(eq(scopes.name, scope)).limit(1);
+        if (!scopeRecord) {
+            return NextResponse.json({ error: "Invalid scope" }, { status: 400 });
         }
 
         // Resolve role ID
@@ -164,7 +163,7 @@ export async function POST(request: NextRequest) {
         }
 
         // If promoting from student, delete student record
-        const elevatedRoles: string[] = ["admin", "super_admin", "committee"];
+        const elevatedRoles: string[] = ["admin", "super_admin", "committee_head"];
         if (elevatedRoles.includes(role)) {
             const [studentRecord] = await db.select().from(students).where(eq(students.user_id, targetUser.id)).limit(1);
             if (studentRecord) {
@@ -173,15 +172,31 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        // Update user with role, domain, scope, and contact info
+        // Update user with role and contact info
         await db.update(users).set({
             role_id: roleRecord.id,
-            primary_domain_id: domainRecord ? domainRecord.id : null,
-            primary_scope_id: scopeRecord ? scopeRecord.id : null,
-            slack_user_id: slackUserId || null,
             phone: whatsappNumber || targetUser.phone || null,
             updated_at: new Date(),
         }).where(eq(users.id, targetUser.id));
+
+        // Update or create admin profile with domain, scope, and slack (all required)
+        await db
+            .insert(admin_profiles)
+            .values({
+                user_id: targetUser.id,
+                primary_domain_id: domainRecord.id,
+                primary_scope_id: scopeRecord.id,
+                slack_user_id: slackUserId || null,
+            })
+            .onConflictDoUpdate({
+                target: admin_profiles.user_id,
+                set: {
+                    primary_domain_id: domainRecord.id,
+                    primary_scope_id: scopeRecord.id,
+                    slack_user_id: slackUserId || null,
+                    updated_at: new Date(),
+                },
+            });
 
         return NextResponse.json({ success: true });
     } catch (error) {
@@ -212,18 +227,28 @@ export async function PATCH(request: NextRequest) {
             return NextResponse.json({ error: "Missing user ID" }, { status: 400 });
         }
 
-        // Resolve domain and scope IDs
-        let domainId = null;
-        if (domain) {
-            const [domainRecord] = await db.select().from(domains).where(eq(domains.name, domain));
-            if (domainRecord) domainId = domainRecord.id;
+        // Domain is always required
+        if (!domain) {
+            return NextResponse.json({ error: "Domain is required" }, { status: 400 });
         }
 
-        let scopeId = null;
-        if (scope) {
-            const [scopeRecord] = await db.select().from(scopes).where(eq(scopes.name, scope));
-            if (scopeRecord) scopeId = scopeRecord.id;
+        // Scope is always required
+        if (!scope) {
+            return NextResponse.json({ error: "Scope is required" }, { status: 400 });
         }
+
+        // Resolve domain and scope IDs
+        const [domainRecord] = await db.select().from(domains).where(eq(domains.name, domain)).limit(1);
+        if (!domainRecord) {
+            return NextResponse.json({ error: "Invalid domain" }, { status: 400 });
+        }
+        const domainId = domainRecord.id;
+
+        const [scopeRecord] = await db.select().from(scopes).where(eq(scopes.name, scope)).limit(1);
+        if (!scopeRecord) {
+            return NextResponse.json({ error: "Invalid scope" }, { status: 400 });
+        }
+        const scopeId = scopeRecord.id;
 
         // Resolve role ID
         let roleId = null;
@@ -238,13 +263,29 @@ export async function PATCH(request: NextRequest) {
         const updateData: UserUpdate = {
             updated_at: new Date(),
         };
-        if (domainId) updateData.primary_domain_id = domainId;
-        if (scopeId !== undefined) updateData.primary_scope_id = scopeId; // Allow nulling scope
         if (roleId) updateData.role_id = roleId;
-        if (slackUserId !== undefined) updateData.slack_user_id = slackUserId;
         if (whatsappNumber !== undefined) updateData.phone = whatsappNumber;
 
         await db.update(users).set(updateData).where(eq(users.id, id));
+
+        // Update admin profile with domain, scope, and slack (all required)
+        await db
+            .insert(admin_profiles)
+            .values({
+                user_id: id,
+                primary_domain_id: domainId,
+                primary_scope_id: scopeId,
+                slack_user_id: slackUserId || null,
+            })
+            .onConflictDoUpdate({
+                target: admin_profiles.user_id,
+                set: {
+                    primary_domain_id: domainId,
+                    primary_scope_id: scopeId,
+                    slack_user_id: slackUserId || null,
+                    updated_at: new Date(),
+                },
+            });
 
         return NextResponse.json({ success: true });
     } catch (error) {
@@ -294,11 +335,27 @@ export async function DELETE(request: NextRequest) {
         // Revert to student role and clear staff assignments
         await db.update(users).set({
             role_id: studentRole.id,
-            primary_domain_id: null,
-            primary_scope_id: null,
-            slack_user_id: null,
             updated_at: new Date(),
         }).where(eq(users.id, id));
+
+        // Clear admin profile primary domain/scope
+        const [existingProfile] = await db
+            .select({ user_id: admin_profiles.user_id })
+            .from(admin_profiles)
+            .where(eq(admin_profiles.user_id, id))
+            .limit(1);
+
+        if (existingProfile) {
+            await db.update(admin_profiles)
+                .set({
+                    primary_domain_id: null,
+                    primary_scope_id: null,
+                    updated_at: new Date(),
+                })
+                .where(eq(admin_profiles.user_id, id));
+        }
+
+        await db.delete(admin_profiles).where(eq(admin_profiles.user_id, id));
 
         // If you want to actually delete the user (use with caution):
         // await db.delete(users).where(eq(users.id, id));

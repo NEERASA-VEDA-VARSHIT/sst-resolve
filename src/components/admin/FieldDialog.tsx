@@ -22,7 +22,8 @@ import {
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Plus, Trash2, GripVertical } from "lucide-react";
+import { Plus, Trash2, GripVertical, AlertCircle } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface Field {
   id: number;
@@ -106,8 +107,14 @@ export function FieldDialog({
       setLoadingStaff(true);
       const response = await fetch("/api/admin/list");
       if (response.ok) {
-        const data = await response.json();
-        setAdminUsers(data.admins || []);
+        // Check Content-Type before parsing JSON
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const data = await response.json();
+          setAdminUsers(data.admins || []);
+        } else {
+          console.warn("API returned non-JSON response");
+        }
       }
     } catch (error) {
       console.error("Error fetching admins:", error);
@@ -178,6 +185,9 @@ export function FieldDialog({
     if (key === "label" && !newOptions[index].value) {
       newOptions[index].value = generateSlug(value);
     }
+    
+    // Note: We allow duplicate values to be typed so users can see the visual warning
+    // The validation on submit will prevent saving duplicates
     setOptions(newOptions);
   };
 
@@ -191,6 +201,27 @@ export function FieldDialog({
         toast.error("Select fields must have at least one option");
         setLoading(false);
         return;
+      }
+
+      // Validate for duplicate values (case-insensitive)
+      if (formData.field_type === "select") {
+        const valueMap = new Map<string, number>();
+        for (let i = 0; i < options.length; i++) {
+          const opt = options[i];
+          const value = (opt.value || generateSlug(opt.label)).trim().toLowerCase();
+          if (!value) {
+            toast.error(`Option ${i + 1}: Value cannot be empty`);
+            setLoading(false);
+            return;
+          }
+          if (valueMap.has(value)) {
+            const duplicateIndex = valueMap.get(value)!;
+            toast.error(`Duplicate values detected: Options ${duplicateIndex + 1} and ${i + 1} have the same value. Each option must have a unique value.`);
+            setLoading(false);
+            return;
+          }
+          valueMap.set(value, i);
+        }
       }
 
       const optionsToSend = options.map((opt, index) => ({
@@ -217,8 +248,14 @@ export function FieldDialog({
         toast.success(field ? "Field updated successfully" : "Field created successfully");
         onClose(true);
       } else {
-        const error = await response.json();
-        toast.error(error.error || "Failed to save field");
+        // Check Content-Type before parsing JSON error
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const error = await response.json();
+          toast.error(error.error || "Failed to save field");
+        } else {
+          toast.error(`Failed to save field (${response.status} ${response.statusText})`);
+        }
       }
     } catch (error) {
       console.error("Error saving field:", error);
@@ -367,35 +404,59 @@ export function FieldDialog({
                 </p>
               ) : (
                 <div className="space-y-2">
-                  {options.map((option, index) => (
-                    <div key={index} className="flex gap-2 items-center">
-                      <GripVertical className="w-4 h-4 text-muted-foreground" />
-                      <Input
-                        placeholder="Option label"
-                        value={option.label}
-                        onChange={(e) =>
-                          handleOptionChange(index, "label", e.target.value)
-                        }
-                        className="flex-1"
-                      />
-                      <Input
-                        placeholder="Option value"
-                        value={option.value}
-                        onChange={(e) =>
-                          handleOptionChange(index, "value", e.target.value)
-                        }
-                        className="flex-1"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleRemoveOption(index)}
-                      >
-                        <Trash2 className="w-4 h-4 text-destructive" />
-                      </Button>
-                    </div>
-                  ))}
+                  {options.map((option, index) => {
+                    // Check if this option has a duplicate value
+                    const normalizedValue = option.value?.trim().toLowerCase() || "";
+                    const isDuplicate = normalizedValue && options.some(
+                      (opt, idx) => idx !== index && opt.value?.trim().toLowerCase() === normalizedValue
+                    );
+                    
+                    return (
+                      <div key={index} className="space-y-1">
+                        <div className="flex gap-2 items-center">
+                          <GripVertical className="w-4 h-4 text-muted-foreground" />
+                          <Input
+                            placeholder="Option label"
+                            value={option.label}
+                            onChange={(e) =>
+                              handleOptionChange(index, "label", e.target.value)
+                            }
+                            className="flex-1"
+                          />
+                          <div className="flex-1 relative">
+                            <Input
+                              placeholder="Option value"
+                              value={option.value}
+                              onChange={(e) =>
+                                handleOptionChange(index, "value", e.target.value)
+                              }
+                              className={cn(
+                                "flex-1",
+                                isDuplicate && "border-destructive focus-visible:ring-destructive"
+                              )}
+                            />
+                            {isDuplicate && (
+                              <AlertCircle className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-destructive" />
+                            )}
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleRemoveOption(index)}
+                          >
+                            <Trash2 className="w-4 h-4 text-destructive" />
+                          </Button>
+                        </div>
+                        {isDuplicate && (
+                          <p className="text-xs text-destructive pl-6 flex items-center gap-1">
+                            <AlertCircle className="w-3 h-3" />
+                            This value is already used by another option. Each option must have a unique value.
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

@@ -25,29 +25,30 @@ export async function GET(
 
         const { id } = await params;
         const categoryId = parseInt(id);
+        
+        if (isNaN(categoryId) || categoryId <= 0) {
+            return NextResponse.json({ error: "Invalid category ID" }, { status: 400 });
+        }
 
-        // Fetch assignments with user info (removed staff reference)
+        // Fetch assignments with user info
         const assignmentsList = await db
             .select({
                 id: category_assignments.id,
                 category_id: category_assignments.category_id,
                 user_id: category_assignments.user_id,
-                is_primary: category_assignments.is_primary,
-                priority: category_assignments.priority,
+                assignment_type: category_assignments.assignment_type,
                 created_at: category_assignments.created_at,
-                updated_at: category_assignments.updated_at,
                 user: {
                     id: users.id,
                     email: users.email,
-                    first_name: users.first_name,
-                    last_name: users.last_name,
-                    clerk_id: users.clerk_id,
+                    full_name: users.full_name,
+                    external_id: users.external_id,
                 },
             })
             .from(category_assignments)
             .leftJoin(users, eq(category_assignments.user_id, users.id))
             .where(eq(category_assignments.category_id, categoryId))
-            .orderBy(desc(category_assignments.is_primary), desc(category_assignments.priority));
+            .orderBy(desc(category_assignments.created_at));
 
         return NextResponse.json({ assignments: assignmentsList });
     } catch (error) {
@@ -80,22 +81,42 @@ export async function POST(
 
         const { id } = await params;
         const categoryId = parseInt(id);
+        
+        if (isNaN(categoryId) || categoryId <= 0) {
+            return NextResponse.json({ error: "Invalid category ID" }, { status: 400 });
+        }
+        
         const body = await request.json();
-        const { user_id, is_primary, priority } = body;
+        const { user_id, assignment_type } = body;
 
-        if (!user_id) {
+        if (!user_id || typeof user_id !== 'string') {
             return NextResponse.json(
-                { error: "user_id is required" },
+                { error: "user_id (UUID) is required" },
                 { status: 400 }
             );
         }
 
-        // If setting as primary, unset other primary assignments for this category
-        if (is_primary) {
-            await db
-                .update(category_assignments)
-                .set({ is_primary: false, updated_at: new Date() })
-                .where(eq(category_assignments.category_id, categoryId));
+        // Validate user_id is a valid UUID format
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!uuidRegex.test(user_id)) {
+            return NextResponse.json(
+                { error: "user_id must be a valid UUID" },
+                { status: 400 }
+            );
+        }
+
+        // Check if user exists
+        const [userExists] = await db
+            .select({ id: users.id })
+            .from(users)
+            .where(eq(users.id, user_id))
+            .limit(1);
+
+        if (!userExists) {
+            return NextResponse.json(
+                { error: "User not found" },
+                { status: 404 }
+            );
         }
 
         // Check if assignment already exists
@@ -120,8 +141,7 @@ export async function POST(
             .values({
                 category_id: categoryId,
                 user_id,
-                is_primary: is_primary || false,
-                priority: priority || 0,
+                assignment_type: assignment_type || null,
             })
             .returning();
 

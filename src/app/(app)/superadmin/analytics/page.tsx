@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { db, tickets, categories, users, roles, domains, scopes, ticket_statuses } from "@/db";
+import { db, tickets, categories, users, roles, domains, scopes, admin_profiles, ticket_statuses } from "@/db";
 import { eq, sql } from "drizzle-orm";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
@@ -35,49 +35,97 @@ export default async function SuperAdminAnalyticsPage() {
         // === SYSTEM-WIDE DATA COLLECTION ===
 
         // Fetch ALL tickets with comprehensive data
-        const allTickets = await db
+        const allTicketsRaw = await db
             .select({
                 id: tickets.id,
-                status: ticket_statuses.value,
+                status_id: tickets.status_id,
+                status_value: ticket_statuses.value,
                 escalation_level: tickets.escalation_level,
                 created_at: tickets.created_at,
-                resolved_at: tickets.resolved_at,
-                acknowledged_at: tickets.acknowledged_at,
                 due_at: tickets.resolution_due_at,
                 category_id: tickets.category_id,
                 category_name: categories.name,
                 location: tickets.location,
-                rating: tickets.rating,
-                rating_submitted: tickets.rating_submitted,
+                metadata: tickets.metadata,
                 assigned_to: tickets.assigned_to,
                 created_by: tickets.created_by,
-                admin_first_name: users.first_name,
-                admin_last_name: users.last_name,
+                admin_full_name: users.full_name,
                 admin_domain: domains.name,
                 admin_scope: scopes.name
             })
             .from(tickets)
-            .leftJoin(categories, eq(tickets.category_id, categories.id))
             .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
+            .leftJoin(categories, eq(tickets.category_id, categories.id))
             .leftJoin(users, eq(tickets.assigned_to, users.id))
-            .leftJoin(domains, eq(users.primary_domain_id, domains.id))
-            .leftJoin(scopes, eq(users.primary_scope_id, scopes.id));
+            .leftJoin(admin_profiles, eq(admin_profiles.user_id, users.id))
+            .leftJoin(domains, eq(admin_profiles.primary_domain_id, domains.id))
+            .leftJoin(scopes, eq(admin_profiles.primary_scope_id, scopes.id));
+
+        // Extract metadata fields and transform
+        const allTickets = allTicketsRaw.map(t => {
+            let ticketMetadata: Record<string, unknown> = {};
+            if (t.metadata && typeof t.metadata === 'object' && !Array.isArray(t.metadata)) {
+                ticketMetadata = t.metadata as Record<string, unknown>;
+            }
+            const resolvedAt = ticketMetadata.resolved_at ? new Date(ticketMetadata.resolved_at as string) : null;
+            const acknowledgedAt = ticketMetadata.acknowledged_at ? new Date(ticketMetadata.acknowledged_at as string) : null;
+            const rating = (ticketMetadata.rating as number | null) || null;
+            const ratingSubmitted = ticketMetadata.rating_submitted ? new Date(ticketMetadata.rating_submitted as string) : null;
+            
+            // Split full_name into first_name and last_name for compatibility
+            const fullName = t.admin_full_name || "";
+            const nameParts = fullName.split(' ');
+            const admin_first_name = nameParts[0] || null;
+            const admin_last_name = nameParts.slice(1).join(' ') || null;
+            
+            return {
+                id: t.id,
+                status: t.status_value || null,
+                escalation_level: t.escalation_level || 0,
+                created_at: t.created_at,
+                resolved_at: resolvedAt,
+                acknowledged_at: acknowledgedAt,
+                due_at: t.due_at,
+                category_id: t.category_id,
+                category_name: t.category_name,
+                location: t.location,
+                rating,
+                rating_submitted: ratingSubmitted,
+                assigned_to: t.assigned_to,
+                created_by: t.created_by,
+                admin_first_name,
+                admin_last_name,
+                admin_domain: t.admin_domain,
+                admin_scope: t.admin_scope
+            };
+        });
 
         // Fetch all staff members (admins, super_admins, committee)
-        const allStaff = await db
+        const allStaffRaw = await db
             .select({
                 id: users.id,
-                first_name: users.first_name,
-                last_name: users.last_name,
+                full_name: users.full_name,
                 domain: domains.name,
                 scope: scopes.name,
                 role: roles.name
             })
             .from(users)
             .leftJoin(roles, eq(users.role_id, roles.id))
-            .leftJoin(domains, eq(users.primary_domain_id, domains.id))
-            .leftJoin(scopes, eq(users.primary_scope_id, scopes.id))
+            .leftJoin(admin_profiles, eq(admin_profiles.user_id, users.id))
+            .leftJoin(domains, eq(admin_profiles.primary_domain_id, domains.id))
+            .leftJoin(scopes, eq(admin_profiles.primary_scope_id, scopes.id))
             .where(sql`${roles.name} IN ('admin', 'super_admin', 'committee')`);
+
+        // Transform to split full_name into first_name and last_name
+        const allStaff = allStaffRaw.map(s => {
+            const fullName = s.full_name || "";
+            const nameParts = fullName.split(' ');
+            return {
+                ...s,
+                first_name: nameParts[0] || null,
+                last_name: nameParts.slice(1).join(' ') || null,
+            };
+        });
 
         // Fetch user counts by role
         await db
@@ -180,36 +228,52 @@ export default async function SuperAdminAnalyticsPage() {
         }).sort((a, b) => b.assignedCount - a.assignedCount);
 
         // === DOMAIN ANALYSIS ===
-        const hostelTickets = allTickets.filter(t => t.admin_domain === "Hostel");
-        const collegeTickets = allTickets.filter(t => t.admin_domain === "College");
+        // Fetch all active domains from database
+        const allDomains = await db
+            .select({
+                id: domains.id,
+                name: domains.name,
+            })
+            .from(domains)
+            .where(eq(domains.is_active, true));
 
-        const domainStats = {
-            Hostel: {
-                total: hostelTickets.length,
-                resolved: hostelTickets.filter(t => finalStatuses.has(t.status || "")).length,
-                pending: hostelTickets.filter(t => !finalStatuses.has(t.status || "")).length,
-                avgRating: hostelTickets.filter(t => t.rating).length > 0
-                    ? hostelTickets.filter(t => t.rating).reduce((sum, t) => sum + (t.rating || 0), 0) / hostelTickets.filter(t => t.rating).length
-                    : 0,
-            },
-            College: {
-                total: collegeTickets.length,
-                resolved: collegeTickets.filter(t => finalStatuses.has(t.status || "")).length,
-                pending: collegeTickets.filter(t => !finalStatuses.has(t.status || "")).length,
-                avgRating: collegeTickets.filter(t => t.rating).length > 0
-                    ? collegeTickets.filter(t => t.rating).reduce((sum, t) => sum + (t.rating || 0), 0) / collegeTickets.filter(t => t.rating).length
-                    : 0,
-            },
-            Unassigned: {
-                total: unassignedTickets,
-                resolved: 0,
-                pending: unassignedTickets,
-                avgRating: 0,
-            },
+        // Build domainStats dynamically based on fetched domains
+        const domainStats: Record<string, {
+            total: number;
+            resolved: number;
+            pending: number;
+            avgRating: number;
+        }> = {};
+
+        // Process each domain
+        for (const domain of allDomains) {
+            const domainTickets = allTickets.filter(t => t.admin_domain === domain.name);
+            const domainResolved = domainTickets.filter(t => finalStatuses.has(t.status || "")).length;
+            const domainPending = domainTickets.filter(t => !finalStatuses.has(t.status || "")).length;
+            const domainRatedTickets = domainTickets.filter(t => t.rating);
+            const domainAvgRating = domainRatedTickets.length > 0
+                ? domainRatedTickets.reduce((sum, t) => sum + (t.rating || 0), 0) / domainRatedTickets.length
+                : 0;
+
+            domainStats[domain.name] = {
+                total: domainTickets.length,
+                resolved: domainResolved,
+                pending: domainPending,
+                avgRating: domainAvgRating,
+            };
+        }
+
+        // Add Unassigned entry (tickets without assigned admin)
+        domainStats["Unassigned"] = {
+            total: unassignedTickets,
+            resolved: 0,
+            pending: unassignedTickets,
+            avgRating: 0,
         };
 
         // === CATEGORY ANALYSIS ===
         type CategoryStat = {
+            category_id: number | null;
             name: string;
             total: number;
             resolved: number;
@@ -221,8 +285,11 @@ export default async function SuperAdminAnalyticsPage() {
         const categoryStats = Object.values(
             allTickets.reduce((acc, ticket) => {
                 const categoryName = ticket.category_name || "Uncategorized";
-                if (!acc[categoryName]) {
-                    acc[categoryName] = {
+                const categoryId = ticket.category_id;
+                const key = categoryId ? `${categoryId}` : "uncategorized";
+                if (!acc[key]) {
+                    acc[key] = {
+                        category_id: categoryId,
                         name: categoryName,
                         total: 0,
                         resolved: 0,
@@ -232,18 +299,18 @@ export default async function SuperAdminAnalyticsPage() {
                         ratedCount: 0,
                     };
                 }
-                acc[categoryName].total++;
+                acc[key].total++;
                 if (finalStatuses.has(ticket.status || "")) {
-                    acc[categoryName].resolved++;
+                    acc[key].resolved++;
                 } else {
-                    acc[categoryName].pending++;
+                    acc[key].pending++;
                 }
                 if ((ticket.escalation_level || 0) > 0) {
-                    acc[categoryName].escalated++;
+                    acc[key].escalated++;
                 }
                 if (ticket.rating) {
-                    acc[categoryName].avgRating += ticket.rating;
-                    acc[categoryName].ratedCount++;
+                    acc[key].avgRating += ticket.rating;
+                    acc[key].ratedCount++;
                 }
                 return acc;
             }, {} as Record<string, CategoryStat>)
@@ -552,44 +619,57 @@ export default async function SuperAdminAnalyticsPage() {
                         <Card>
                             <CardHeader>
                                 <CardTitle>Staff Performance Leaderboard</CardTitle>
-                                <CardDescription>Individual admin performance metrics</CardDescription>
+                                <CardDescription>Individual admin performance metrics - Click on any admin to view detailed analytics</CardDescription>
                             </CardHeader>
                             <CardContent>
-                                <div className="space-y-4">
-                                    {staffPerformance.slice(0, 10).map((staff, index) => (
-                                        <div key={staff.id} className="flex items-center gap-4 p-4 border rounded-lg">
-                                            <div className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full bg-primary text-primary-foreground font-bold">
-                                                {index + 1}
-                                            </div>
-                                            <div className="flex-1">
-                                                <h4 className="font-semibold">{staff.full_name || "Unknown"}</h4>
-                                                <div className="flex gap-4 text-xs text-muted-foreground mt-1">
-                                                    <span>{staff.domain} - {staff.scope}</span>
+                                {staffPerformance.length === 0 ? (
+                                    <div className="text-center py-12">
+                                        <Shield className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                                        <p className="text-muted-foreground">No staff performance data available</p>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-4">
+                                        {staffPerformance.slice(0, 10).map((staff, index) => (
+                                        <Link
+                                            key={staff.id}
+                                            href={`/superadmin/dashboard/analytics/admin/${staff.id}`}
+                                            className="block"
+                                        >
+                                            <div className="flex items-center gap-4 p-4 border rounded-lg hover:shadow-md transition-all hover:border-primary cursor-pointer">
+                                                <div className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full bg-primary text-primary-foreground font-bold">
+                                                    {index + 1}
+                                                </div>
+                                                <div className="flex-1">
+                                                    <h4 className="font-semibold">{staff.full_name || "Unknown"}</h4>
+                                                    <div className="flex gap-4 text-xs text-muted-foreground mt-1">
+                                                        <span>{staff.domain || "N/A"} {staff.scope ? `- ${staff.scope}` : ""}</span>
+                                                    </div>
+                                                </div>
+                                                <div className="grid grid-cols-4 gap-4 text-center">
+                                                    <div>
+                                                        <p className="text-xs text-muted-foreground">Assigned</p>
+                                                        <p className="text-lg font-bold">{staff.assignedCount}</p>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs text-muted-foreground">Resolved</p>
+                                                        <p className="text-lg font-bold text-green-600">{staff.resolvedCount}</p>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs text-muted-foreground">Rate</p>
+                                                        <p className="text-lg font-bold">{staff.resolutionRate.toFixed(0)}%</p>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs text-muted-foreground">Rating</p>
+                                                        <p className="text-lg font-bold text-purple-600">
+                                                            {staff.avgRating > 0 ? staff.avgRating.toFixed(1) : '-'}
+                                                        </p>
+                                                    </div>
                                                 </div>
                                             </div>
-                                            <div className="grid grid-cols-4 gap-4 text-center">
-                                                <div>
-                                                    <p className="text-xs text-muted-foreground">Assigned</p>
-                                                    <p className="text-lg font-bold">{staff.assignedCount}</p>
-                                                </div>
-                                                <div>
-                                                    <p className="text-xs text-muted-foreground">Resolved</p>
-                                                    <p className="text-lg font-bold text-green-600">{staff.resolvedCount}</p>
-                                                </div>
-                                                <div>
-                                                    <p className="text-xs text-muted-foreground">Rate</p>
-                                                    <p className="text-lg font-bold">{staff.resolutionRate.toFixed(0)}%</p>
-                                                </div>
-                                                <div>
-                                                    <p className="text-xs text-muted-foreground">Rating</p>
-                                                    <p className="text-lg font-bold text-purple-600">
-                                                        {staff.avgRating > 0 ? staff.avgRating.toFixed(1) : '-'}
-                                                    </p>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
+                                        </Link>
+                                        ))}
+                                    </div>
+                                )}
                             </CardContent>
                         </Card>
                     </TabsContent>
@@ -597,7 +677,8 @@ export default async function SuperAdminAnalyticsPage() {
                     {/* Domains Tab */}
                     <TabsContent value="domains" className="space-y-4">
                         <div className="grid gap-4 md:grid-cols-3">
-                            {Object.entries(domainStats).map(([domain, stats]) => (
+                            {domainStats && typeof domainStats === 'object' && !Array.isArray(domainStats) 
+                              ? Object.entries(domainStats).map(([domain, stats]) => (
                                 <Card key={domain}>
                                     <CardHeader>
                                         <CardTitle className="flex items-center gap-2">
@@ -635,7 +716,8 @@ export default async function SuperAdminAnalyticsPage() {
                                         )}
                                     </CardContent>
                                 </Card>
-                            ))}
+                              ))
+                              : null}
                         </div>
                     </TabsContent>
 
@@ -644,22 +726,35 @@ export default async function SuperAdminAnalyticsPage() {
                         <Card>
                             <CardHeader>
                                 <CardTitle>Category Analysis</CardTitle>
-                                <CardDescription>Performance breakdown by category</CardDescription>
+                                <CardDescription>Performance breakdown by category - Click on any category to view detailed analytics</CardDescription>
                             </CardHeader>
                             <CardContent>
-                                <div className="space-y-4">
-                                    {categoryStats.map((cat) => {
+                                {categoryStats.length === 0 ? (
+                                    <div className="text-center py-12">
+                                        <Layers className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                                        <p className="text-muted-foreground">No category data available</p>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-4">
+                                        {categoryStats.map((cat) => {
                                         const resolutionRate = cat.total > 0 ? (cat.resolved / cat.total) * 100 : 0;
                                         const escalationRate = cat.total > 0 ? (cat.escalated / cat.total) * 100 : 0;
+                                        const categoryKey = cat.category_id ?? "uncategorized";
+                                        const categoryHref = `/superadmin/dashboard/analytics/category/${categoryKey}`;
                                         return (
-                                            <div key={cat.name} className="border rounded-lg p-4">
-                                                <div className="flex justify-between items-center mb-3">
-                                                    <h4 className="font-semibold flex items-center gap-2">
-                                                        <Layers className="h-4 w-4" />
-                                                        {cat.name}
-                                                    </h4>
-                                                    <Badge>{cat.total} tickets</Badge>
-                                                </div>
+                                            <Link
+                                                key={cat.name}
+                                                href={categoryHref}
+                                                className="block"
+                                            >
+                                                <div className="border rounded-lg p-4 hover:shadow-md transition-all hover:border-primary cursor-pointer">
+                                                    <div className="flex justify-between items-center mb-3">
+                                                        <h4 className="font-semibold flex items-center gap-2">
+                                                            <Layers className="h-4 w-4" />
+                                                            {cat.name}
+                                                        </h4>
+                                                        <Badge>{cat.total} tickets</Badge>
+                                                    </div>
                                                 <div className="grid grid-cols-5 gap-4 mb-3">
                                                     <div className="text-center">
                                                         <p className="text-xs text-muted-foreground">Total</p>
@@ -702,10 +797,12 @@ export default async function SuperAdminAnalyticsPage() {
                                                         </div>
                                                     )}
                                                 </div>
-                                            </div>
+                                                </div>
+                                            </Link>
                                         );
-                                    })}
-                                </div>
+                                        })}
+                                    </div>
+                                )}
                             </CardContent>
                         </Card>
                     </TabsContent>
@@ -718,25 +815,46 @@ export default async function SuperAdminAnalyticsPage() {
                                 <CardDescription>Daily ticket creation and resolution</CardDescription>
                             </CardHeader>
                             <CardContent>
-                                <div className="space-y-3">
-                                    {dailyTrend.map((day) => (
-                                        <div key={day.date} className="space-y-2">
-                                            <div className="flex justify-between text-sm">
-                                                <span className="font-medium">{day.date}</span>
-                                                <span className="text-muted-foreground">
-                                                    Created: {day.created} • Resolved: {day.resolved}
-                                                </span>
-                                            </div>
-                                            <div className="grid grid-cols-2 gap-2">
-                                                <div>
-                                                    <Progress value={(day.created / Math.max(...dailyTrend.map(d => d.created))) * 100} className="h-2 bg-blue-100" />
+                                <div className="space-y-4">
+                                    {dailyTrend.map((day) => {
+                                        const maxCreated = Math.max(1, ...dailyTrend.map(d => d.created || 0));
+                                        const maxResolved = Math.max(1, ...dailyTrend.map(d => d.resolved || 0));
+                                        const createdPercent = maxCreated > 0 ? (day.created / maxCreated) * 100 : 0;
+                                        const resolvedPercent = maxResolved > 0 ? (day.resolved / maxResolved) * 100 : 0;
+                                        return (
+                                            <div key={day.date} className="space-y-2">
+                                                <div className="flex justify-between items-center text-sm">
+                                                    <span className="font-medium">{day.date}</span>
+                                                    <div className="flex gap-4 text-xs">
+                                                        <span className="flex items-center gap-1">
+                                                            <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                                                            Created: <span className="font-semibold">{day.created}</span>
+                                                        </span>
+                                                        <span className="flex items-center gap-1">
+                                                            <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                                                            Resolved: <span className="font-semibold text-green-600">{day.resolved}</span>
+                                                        </span>
+                                                    </div>
                                                 </div>
-                                                <div>
-                                                    <Progress value={(day.resolved / Math.max(...dailyTrend.map(d => d.resolved))) * 100} className="h-2 bg-green-100" />
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <div className="space-y-1">
+                                                        <div className="flex justify-between text-xs text-muted-foreground">
+                                                            <span>Created</span>
+                                                            <span>{day.created}</span>
+                                                        </div>
+                                                        <Progress value={createdPercent} className="h-3" />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <div className="flex justify-between text-xs text-muted-foreground">
+                                                            <span>Resolved</span>
+                                                            <span className="text-green-600">{day.resolved}</span>
+                                                        </div>
+                                                        <Progress value={resolvedPercent} className="h-3 bg-green-100" />
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </CardContent>
                         </Card>

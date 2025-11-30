@@ -12,6 +12,7 @@ export interface EscalationTarget {
   fullName: string;
   email: string | null;
   level: number;
+  tat_hours: number | null; // TAT from escalation rule
 }
 
 /**
@@ -56,6 +57,7 @@ export async function getEscalationTargets(
           scope_id: escalation_rules.scope_id,
           level: escalation_rules.level,
           user_id: escalation_rules.user_id,
+          tat_hours: escalation_rules.tat_hours,
         })
         .from(escalation_rules)
         .where(
@@ -73,6 +75,7 @@ export async function getEscalationTargets(
           scope_id: escalation_rules.scope_id,
           level: escalation_rules.level,
           user_id: escalation_rules.user_id,
+          tat_hours: escalation_rules.tat_hours,
         })
         .from(escalation_rules)
         .where(
@@ -104,11 +107,12 @@ export async function getEscalationTargets(
 
         if (user) {
           targets.push({
-            clerkUserId: user.clerk_id,
+            clerkUserId: user.external_id,
             userId: user.id,
-            fullName: [user.first_name, user.last_name].filter(Boolean).join(' '),
+            fullName: user.full_name || "",
             email: user.email,
             level: rule.level || 0,
+            tat_hours: rule.tat_hours || null,
           });
         }
       }

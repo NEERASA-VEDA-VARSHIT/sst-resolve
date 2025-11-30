@@ -44,7 +44,6 @@ export default async function AdminGroupsPage() {
         id: tickets.id,
         status_id: tickets.status_id,
         status_value: ticket_statuses.value,
-        status_label: ticket_statuses.label,
         category_id: tickets.category_id,
         category_name: categories.name,
         description: tickets.description,

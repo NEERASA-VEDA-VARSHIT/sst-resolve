@@ -7,7 +7,6 @@ import { Badge } from "@/components/ui/badge";
 import { Plus, Edit, Trash2, Settings } from "lucide-react";
 import { CategoryDialog } from "./CategoryDialog";
 import { SubcategoryManager } from "./SubcategoryManager";
-import { ProfileFieldsConfig } from "./ProfileFieldsConfig";
 import { EscalationManager } from "./EscalationManager";
 import { CategoryAssignmentsManager } from "./CategoryAssignmentsManager";
 import { toast } from "sonner";
@@ -43,8 +42,13 @@ export function CategoryManager({ initialCategories }: CategoryManagerProps) {
     try {
       const response = await fetch("/api/admin/categories");
       if (response.ok) {
-        const data = await response.json();
-        setCategories(data);
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const data = await response.json();
+          setCategories(data);
+        } else {
+          console.error("Server returned non-JSON response when fetching categories");
+        }
       }
     } catch (error) {
       console.error("Error fetching categories:", error);
@@ -78,8 +82,13 @@ export function CategoryManager({ initialCategories }: CategoryManagerProps) {
           setSelectedCategory(null);
         }
       } else {
-        const error = await response.json();
-        toast.error(error.error || "Failed to delete category");
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const error = await response.json();
+          toast.error(error.error || "Failed to delete category");
+        } else {
+          toast.error(`Failed to delete category (${response.status} ${response.statusText})`);
+        }
       }
     } catch (error) {
       console.error("Error deleting category:", error);
@@ -115,7 +124,6 @@ export function CategoryManager({ initialCategories }: CategoryManagerProps) {
           <TabsList>
             <TabsTrigger value="subcategories">Subcategories & Fields</TabsTrigger>
             <TabsTrigger value="assignments">Admin Assignments</TabsTrigger>
-            <TabsTrigger value="profile-fields">Profile Fields</TabsTrigger>
             {(selectedCategory.name === "Hostel" || selectedCategory.name === "College") && (
               <TabsTrigger value="escalation">Escalation Rules</TabsTrigger>
             )}
@@ -170,28 +178,6 @@ export function CategoryManager({ initialCategories }: CategoryManagerProps) {
               </Button>
             </div>
             <CategoryAssignmentsManager categoryId={selectedCategory.id} />
-          </TabsContent>
-
-          <TabsContent value="profile-fields" className="space-y-4">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h4 className="text-lg font-semibold">{selectedCategory.name}</h4>
-                <p className="text-sm text-muted-foreground">
-                  Configure which profile fields to collect for tickets in this category
-                </p>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setSelectedCategory(null)}
-              >
-                Back to List
-              </Button>
-            </div>
-            <ProfileFieldsConfig
-              categoryId={selectedCategory.id}
-              categoryName={selectedCategory.name}
-            />
           </TabsContent>
 
           {(selectedCategory.name === "Hostel" || selectedCategory.name === "College") && (

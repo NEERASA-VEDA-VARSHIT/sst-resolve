@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -27,7 +26,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Users, Plus, Edit, Trash2, UserPlus, UserMinus, Loader2, Building2, ArrowLeft } from "lucide-react";
+import { Users, Plus, Edit, Trash2, Loader2, Building2, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
 
@@ -68,20 +67,20 @@ export default function CommitteesManagementPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [isMemberDialogOpen, setIsMemberDialogOpen] = useState(false);
+  // const [isMemberDialogOpen, setIsMemberDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [editingCommittee, setEditingCommittee] = useState<Committee | null>(null);
-  const [selectedCommittee, setSelectedCommittee] = useState<Committee | null>(null);
+  // const [selectedCommittee, setSelectedCommittee] = useState<Committee | null>(null);
   const [deletingCommitteeId, setDeletingCommitteeId] = useState<number | null>(null);
   const [formData, setFormData] = useState({
     name: "",
     description: "",
     contact_email: "",
   });
-  const [memberFormData, setMemberFormData] = useState({
-    clerk_user_id: "",
-    role: "member",
-  });
+  // const [memberFormData, setMemberFormData] = useState({
+  //   clerk_user_id: "",
+  //   role: "member",
+  // });
 
   useEffect(() => {
     fetchCommittees();
@@ -248,80 +247,8 @@ export default function CommitteesManagementPage() {
     }
   };
 
-  const handleOpenMemberDialog = (committee: Committee) => {
-    setSelectedCommittee(committee);
-    setMemberFormData({
-      clerk_user_id: "",
-      role: "member",
-    });
-    setIsMemberDialogOpen(true);
-  };
-
-  const handleAddMember = async () => {
-    if (!selectedCommittee || !memberFormData.clerk_user_id) {
-      toast.error("Please select a user");
-      return;
-    }
-
-    try {
-      setSaving(true);
-      const response = await fetch(`/api/committees/${selectedCommittee.id}/members`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          clerk_user_id: memberFormData.clerk_user_id,
-          role: memberFormData.role,
-        }),
-      });
-
-      if (response.ok) {
-        toast.success("Member added successfully");
-        setIsMemberDialogOpen(false);
-        fetchCommitteeMembers(selectedCommittee.id);
-      } else {
-        const error = await response.json();
-        toast.error(error.error || "Failed to add member");
-      }
-    } catch (error) {
-      console.error("Error adding member:", error);
-      toast.error("Failed to add member");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleRemoveMember = async (committeeId: number, clerkUserId: string) => {
-    if (!confirm("Are you sure you want to remove this member from the committee?")) {
-      return;
-    }
-
-    try {
-      setSaving(true);
-      const response = await fetch(`/api/committees/${committeeId}/members?clerk_user_id=${clerkUserId}`, {
-        method: "DELETE",
-      });
-
-      if (response.ok) {
-        toast.success("Member removed successfully");
-        fetchCommitteeMembers(committeeId);
-      } else {
-        const error = await response.json();
-        toast.error(error.error || "Failed to remove member");
-      }
-    } catch (error) {
-      console.error("Error removing member:", error);
-      toast.error("Failed to remove member");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // Get available users (not already in the committee)
-  const getAvailableUsers = (committeeId: number) => {
-    const currentMembers = committeeMembers[committeeId] || [];
-    const currentMemberIds = currentMembers.map(m => m.clerk_user_id);
-    return clerkUsers.filter(user => !currentMemberIds.includes(user.id));
-  };
+  // NOTE: Member management (add/remove) is disabled.
+  // The committee head is automatically set from the contact_email when creating/editing a committee.
 
   if (loading) {
     return (
@@ -422,7 +349,6 @@ export default function CommitteesManagementPage() {
       <div className="space-y-3">
         {committees.map((committee) => {
           const members = committeeMembers[committee.id] || [];
-          // const availableUsers = getAvailableUsers(committee.id);
           
           return (
             <Card key={committee.id} className="border-2 hover:shadow-lg transition-all duration-300">
@@ -445,14 +371,6 @@ export default function CommitteesManagementPage() {
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleOpenMemberDialog(committee)}
-                    >
-                      <UserPlus className="w-4 h-4 mr-2" />
-                      Manage Members
-                    </Button>
                     <Button
                       variant="outline"
                       size="sm"
@@ -486,14 +404,27 @@ export default function CommitteesManagementPage() {
                 <div>
                   <p className="text-sm font-medium mb-2">Members ({members.length})</p>
                   {members.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No members assigned. Click &quot;Manage Members&quot; to add users.</p>
+                    <p className="text-sm text-muted-foreground">
+                      No members assigned. The committee head (from contact email) is treated as the sole member.
+                    </p>
                   ) : (
                     <div className="space-y-2">
                       {members.map((member) => {
-                        const user = clerkUsers.find(u => u.id === member.clerk_user_id);
-                        const displayName = user
-                          ? `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.emailAddresses?.[0]?.emailAddress || "Unknown"
-                          : "Unknown User";
+                        const clerkUser = clerkUsers.find(u => u.id === member.clerk_user_id);
+
+                        let displayName = "Unknown User";
+                        if (clerkUser) {
+                          displayName =
+                            `${clerkUser.firstName || ""} ${clerkUser.lastName || ""}`.trim() ||
+                            clerkUser.emailAddresses?.[0]?.emailAddress ||
+                            clerkUser.email ||
+                            clerkUser.id;
+                        } else if (member.user) {
+                          displayName =
+                            `${member.user.firstName || ""} ${member.user.lastName || ""}`.trim() ||
+                            member.user.emailAddresses?.[0]?.emailAddress ||
+                            "Unknown User";
+                        }
                         
                         return (
                           <div key={member.id} className="flex items-center justify-between p-2 bg-muted rounded-lg">
@@ -506,14 +437,6 @@ export default function CommitteesManagementPage() {
                                 </Badge>
                               )}
                             </div>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleRemoveMember(committee.id, member.clerk_user_id)}
-                              disabled={saving}
-                            >
-                              <UserMinus className="w-4 h-4 text-destructive" />
-                            </Button>
                           </div>
                         );
                       })}
@@ -541,81 +464,6 @@ export default function CommitteesManagementPage() {
           </CardContent>
         </Card>
       )}
-
-      {/* Add Member Dialog */}
-      <Dialog open={isMemberDialogOpen} onOpenChange={setIsMemberDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add Member to {selectedCommittee?.name}</DialogTitle>
-            <DialogDescription>
-              Select a user with committee role to add to this committee
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="clerk_user_id">Select User *</Label>
-              <Select
-                value={memberFormData.clerk_user_id}
-                onValueChange={(value) => setMemberFormData({ ...memberFormData, clerk_user_id: value })}
-              >
-                <SelectTrigger id="clerk_user_id">
-                  <SelectValue placeholder="Select a user" />
-                </SelectTrigger>
-                <SelectContent>
-                  {getAvailableUsers(selectedCommittee?.id || 0).map((user) => {
-                    const displayName = user.name || 
-                      (user.firstName && user.lastName 
-                        ? `${user.firstName} ${user.lastName}` 
-                        : user.emailAddresses?.[0]?.emailAddress || 
-                          user.email || 
-                          user.id);
-                    return (
-                      <SelectItem key={user.id} value={user.id}>
-                        {displayName}
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
-              {getAvailableUsers(selectedCommittee?.id || 0).length === 0 && (
-                <p className="text-sm text-muted-foreground">
-                  No available users. All committee users are already assigned to this committee.
-                </p>
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="role">Role</Label>
-              <Select
-                value={memberFormData.role}
-                onValueChange={(value) => setMemberFormData({ ...memberFormData, role: value })}
-              >
-                <SelectTrigger id="role">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="member">Member</SelectItem>
-                  <SelectItem value="chair">Chair</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsMemberDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleAddMember} disabled={saving || !memberFormData.clerk_user_id}>
-              {saving ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Adding...
-                </>
-              ) : (
-                "Add Member"
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>

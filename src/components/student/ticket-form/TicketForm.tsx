@@ -214,6 +214,8 @@ export default function TicketForm(props: TicketFormProps) {
     }
 
     // map options by field_id
+    // Note: Options may already be attached to fields from the server (mappedCategoryFields)
+    // This mapping is a fallback for when options come separately via fieldOptionsProp
     type FieldOption = {
       id: number;
       field_id?: number;
@@ -227,13 +229,31 @@ export default function TicketForm(props: TicketFormProps) {
       const fieldId = opt.field_id;
       if (fieldId == null) continue;
       
+      // Skip empty values
+      const optValue = opt.value || opt.option_value || '';
+      if (!optValue || optValue.trim() === '') continue;
+      
       const arr = optionsByField.get(fieldId) || [];
-      arr.push({
-        id: opt.id,
-        label: opt.label || opt.option_label || '', // Support both property names
-        value: opt.value || opt.option_value || '',
+      
+      // Check for duplicates by ID first (if available), then by value+label combination
+      // This allows options with the same value but different labels
+      const isDuplicate = arr.some(existing => {
+        // If both have IDs, compare by ID
+        if (opt.id && existing.id && opt.id === existing.id) return true;
+        // Otherwise, compare by value+label combination
+        const existingKey = existing.id ? `id:${existing.id}` : `val:${existing.value}|label:${existing.label}`;
+        const newKey = opt.id ? `id:${opt.id}` : `val:${optValue}|label:${opt.label || opt.option_label || optValue}`;
+        return existingKey === newKey;
       });
-      optionsByField.set(fieldId, arr);
+      
+      if (!isDuplicate) {
+        arr.push({
+          id: opt.id,
+          label: opt.label || opt.option_label || optValue, // Support both property names
+          value: optValue,
+        });
+        optionsByField.set(fieldId, arr);
+      }
     }
 
     // for each category attach subcategories and subcategory fields
@@ -247,12 +267,20 @@ export default function TicketForm(props: TicketFormProps) {
       const subs = rawSubs.map((s) => {
         const subcategoryId = typeof s === 'object' && s !== null && 'id' in s ? (s as { id: number }).id : null;
         const rawFields = subcategoryId ? fieldsBySub.get(subcategoryId) || [] : [];
-        const fields = rawFields.map((f) => ({
-          ...f,
-          placeholder: f.placeholder ?? null,
-          help_text: f.help_text ?? null,
-          options: optionsByField.get(f.id) || [],
-        }));
+        const fields = rawFields.map((f) => {
+          // Use options already attached to field (from server) if available,
+          // otherwise fall back to optionsByField mapping
+          const fieldOptions = (f as DynamicField).options && Array.isArray((f as DynamicField).options) && (f as DynamicField).options!.length > 0
+            ? (f as DynamicField).options!
+            : (optionsByField.get(f.id) || []);
+          
+          return {
+            ...f,
+            placeholder: f.placeholder ?? null,
+            help_text: f.help_text ?? null,
+            options: fieldOptions,
+          };
+        });
         return {
           ...s,
           fields: fields.sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0)),
@@ -552,6 +580,10 @@ export default function TicketForm(props: TicketFormProps) {
         const err = await res.json().catch(() => ({ error: "upload failed" }));
         throw new Error(err.error || "Upload failed");
       }
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        throw new Error("Server returned non-JSON response");
+      }
       const data = await res.json();
       setForm((prev) => ({
         ...prev,
@@ -634,9 +666,23 @@ export default function TicketForm(props: TicketFormProps) {
         body: JSON.stringify(payload),
       });
 
+      // Check Content-Type before parsing
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        // Try to get error text if available
+        const text = await res.text().catch(() => "Unknown error");
+        console.error("[TicketForm] Non-JSON response:", {
+          status: res.status,
+          statusText: res.statusText,
+          contentType,
+          body: text.substring(0, 500), // First 500 chars
+        });
+        throw new Error(`Server error (${res.status}): ${res.statusText || "Unknown error"}`);
+      }
+
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: "ticket creation failed" }));
-        throw new Error(err.error || "Ticket creation failed");
+        throw new Error(err.error || `Ticket creation failed (${res.status})`);
       }
 
       const ticket = await res.json();

@@ -1,22 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth, clerkClient } from "@clerk/nextjs/server";
-import { db, tickets, ticket_committee_tags, committee_members, categories, users, ticket_statuses } from "@/db";
-import { eq, and, inArray } from "drizzle-orm";
+import { db, tickets, ticket_committee_tags, committees, categories, users, ticket_statuses } from "@/db";
+import { getStatusIdByValue } from "@/lib/status/getTicketStatuses";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import { sendEmail, getStatusUpdateEmail } from "@/lib/integration/email";
 import { postThreadReply } from "@/lib/integration/slack";
-import { TICKET_STATUS } from "@/conf/constants";
+import { TICKET_STATUS, getCanonicalStatus } from "@/conf/constants";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
 import { getAdminAssignment, ticketMatchesAdminAssignment } from "@/lib/assignment/admin-assignment";
-import type { TicketMetadata } from "@/db/types";
-// Removed: statusToEnum - status values are already in correct format from database
+import type { TicketMetadata } from "@/db/inferred-types";
 
 /** Utility: Ensure user owns the ticket */
 async function userOwnsTicket(userId: string, ticketId: number) {
   const [userRow] = await db
     .select({ id: users.id })
     .from(users)
-    .where(eq(users.clerk_id, userId))
+      .where(eq(users.external_id, userId))
     .limit(1);
 
   if (!userRow) return false;
@@ -50,7 +50,7 @@ export async function GET(
     const [ticketRecord] = await db
       .select({
         id: tickets.id,
-        status_value: ticket_statuses.value,
+        status: ticket_statuses.value,
         description: tickets.description,
         location: tickets.location,
         created_at: tickets.created_at,
@@ -63,25 +63,21 @@ export async function GET(
         category_id: tickets.category_id,
         // Join fields
         category_name: categories.name,
-        creator_first_name: users.first_name,
-        creator_last_name: users.last_name,
+        creator_full_name: users.full_name,
         creator_email: users.email,
       })
       .from(tickets)
-      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
       .leftJoin(categories, eq(tickets.category_id, categories.id))
       .leftJoin(users, eq(tickets.created_by, users.id))
+      .leftJoin(ticket_statuses, eq(ticket_statuses.id, tickets.status_id))
       .where(eq(tickets.id, ticketId))
       .limit(1);
 
     if (!ticketRecord)
       return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
 
-    // Construct creator name from first_name and last_name
-    const creator_name = [ticketRecord.creator_first_name, ticketRecord.creator_last_name]
-      .filter(Boolean)
-      .join(' ')
-      .trim() || null;
+    // Use full_name directly
+    const creator_name = ticketRecord.creator_full_name || null;
 
     // ------------------------------
     // ROLE-BASED ACCESS CONTROL
@@ -106,12 +102,12 @@ export async function GET(
         // Check if tagged
         const dbUser = await getOrCreateUser(userId);
         if (dbUser) {
-          const memberRecords = await db
-            .select({ committee_id: committee_members.committee_id })
-            .from(committee_members)
-            .where(eq(committee_members.user_id, dbUser.id));
+          const committeeRecords = await db
+            .select({ id: committees.id })
+            .from(committees)
+            .where(eq(committees.head_id, dbUser.id));
 
-          const committeeIds = memberRecords.map(m => m.committee_id);
+          const committeeIds = committeeRecords.map(c => c.id);
           if (committeeIds.length > 0) {
             const tagRecords = await db
               .select()
@@ -215,7 +211,7 @@ export async function PATCH(
     const [ticket] = await db
       .select({
         id: tickets.id,
-        status_value: ticket_statuses.value,
+        status: ticket_statuses.value,
         created_by: tickets.created_by,
         assigned_to: tickets.assigned_to,
         metadata: tickets.metadata,
@@ -226,8 +222,8 @@ export async function PATCH(
         group_id: tickets.group_id,
       })
       .from(tickets)
-      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
       .leftJoin(categories, eq(tickets.category_id, categories.id))
+      .leftJoin(ticket_statuses, eq(ticket_statuses.id, tickets.status_id))
       .where(eq(tickets.id, ticketId))
       .limit(1);
 
@@ -269,12 +265,12 @@ export async function PATCH(
         return NextResponse.json({ error: "User account not found" }, { status: 404 });
       }
 
-      const memberRecords = await db
-        .select({ committee_id: committee_members.committee_id })
-        .from(committee_members)
-        .where(eq(committee_members.user_id, dbUser.id));
+      const committeeRecords = await db
+        .select({ id: committees.id })
+        .from(committees)
+        .where(eq(committees.head_id, dbUser.id));
 
-      const committeeIds = memberRecords.map(m => m.committee_id);
+      const committeeIds = committeeRecords.map(c => c.id);
 
       if (committeeIds.length > 0) {
         const tagRecords = await db
@@ -298,9 +294,12 @@ export async function PATCH(
     // - Students can only reopen their own closed/resolved tickets
     // PRD v3.0: Reopening sets status to "reopened" (not "open")
 
+    const requestedStatus = typeof status === "string" ? status : null;
+    const canonicalStatus = requestedStatus ? getCanonicalStatus(requestedStatus) : null;
+
     // Calculate isReopening once for reuse throughout the function
-    const isReopening = status === TICKET_STATUS.REOPENED || status === "reopened";
-    const isClosingOrResolving = status === TICKET_STATUS.RESOLVED || status === "resolved";
+    const isReopening = canonicalStatus === TICKET_STATUS.REOPENED;
+    const isClosingOrResolving = canonicalStatus === TICKET_STATUS.RESOLVED;
 
     if (!isAdmin) {
       if (isCommittee) {
@@ -314,7 +313,8 @@ export async function PATCH(
         }
       } else {
         // Students can only reopen (closed/resolved -> reopened) their own tickets
-        const isClosedOrResolved = ticket.status_value === "RESOLVED";
+        const ticketCurrentStatus = getCanonicalStatus(ticket.status) || ticket.status?.toLowerCase() || "";
+        const isClosedOrResolved = ticketCurrentStatus === TICKET_STATUS.RESOLVED;
 
         if (!isReopening || !isClosedOrResolved) {
           return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -417,26 +417,31 @@ export async function PATCH(
         console.warn(`⚠️ Could not parse ticket metadata for ticket #${ticketId}:`, parseError);
       }
 
-      // Convert status to uppercase enum value before saving
-      // Status values in database are uppercase (OPEN, IN_PROGRESS, etc.)
-      const enumStatus = typeof status === 'string' ? status.toUpperCase() : status;
-
-      // Find status ID
-      const [statusRow] = await db.select({ id: ticket_statuses.id })
-        .from(ticket_statuses)
-        .where(eq(ticket_statuses.value, enumStatus))
-        .limit(1);
-
-      if (!statusRow) {
+      if (!canonicalStatus) {
         return NextResponse.json({ error: "Invalid status" }, { status: 400 });
       }
 
-      // Assign ticket to admin when they change status (if admin)
-      const updateData: Partial<typeof tickets.$inferInsert> = { status_id: statusRow.id, updated_at: new Date() };
+      // Get status_id from status value
+      const newStatusId = await getStatusIdByValue(canonicalStatus);
+      if (!newStatusId) {
+        return NextResponse.json({ error: `Invalid status: ${canonicalStatus}` }, { status: 400 });
+      }
 
-      // Set reopened_at timestamp when ticket is reopened (check enumStatus too)
-      if (isReopening || enumStatus === "REOPENED") {
-        updateData.reopened_at = new Date();
+      // Get ticket metadata
+      let metadata: Record<string, unknown> = {};
+      if (ticket.metadata && typeof ticket.metadata === 'object' && !Array.isArray(ticket.metadata)) {
+        metadata = { ...ticket.metadata as Record<string, unknown> };
+      }
+
+      // Assign ticket to admin when they change status (if admin)
+      const updateData: Partial<typeof tickets.$inferInsert> = { status_id: newStatusId, updated_at: new Date() };
+
+      // Set reopened_at timestamp in metadata when ticket is reopened
+      if (isReopening) {
+        metadata.reopened_at = new Date().toISOString();
+        // Increment reopen_count in metadata
+        const currentReopenCount = (metadata.reopen_count as number) || 0;
+        metadata.reopen_count = currentReopenCount + 1;
       }
 
       if (isAdmin) {
@@ -451,10 +456,13 @@ export async function PATCH(
         updateData.assigned_to = dbUser.id;
       }
 
-      // If resolving a ticket, set resolved_at
-      if (enumStatus === "RESOLVED") {
-        updateData.resolved_at = new Date();
+      // If resolving a ticket, set resolved_at in metadata
+      if (canonicalStatus === TICKET_STATUS.RESOLVED) {
+        metadata.resolved_at = new Date().toISOString();
       }
+
+      // Always update metadata
+      updateData.metadata = metadata as unknown;
 
       await db
         .update(tickets)
@@ -465,7 +473,7 @@ export async function PATCH(
       const [updatedTicket] = await db
         .select({
           id: tickets.id,
-          status_value: ticket_statuses.value,
+          status: ticket_statuses.value,
           created_by: tickets.created_by,
           category_id: tickets.category_id,
           metadata: tickets.metadata,
@@ -473,9 +481,9 @@ export async function PATCH(
           creator_email: users.email,
         })
         .from(tickets)
-        .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
         .leftJoin(categories, eq(tickets.category_id, categories.id))
         .leftJoin(users, eq(tickets.created_by, users.id))
+        .leftJoin(ticket_statuses, eq(ticket_statuses.id, tickets.status_id))
         .where(eq(tickets.id, ticketId))
         .limit(1);
 
@@ -489,7 +497,7 @@ export async function PATCH(
       const slackChannel = updatedMetadata?.slackChannel;
 
       // Optional Slack notify on close
-      if (updatedTicket && status === "closed") {
+      if (updatedTicket && canonicalStatus === TICKET_STATUS.RESOLVED) {
         const webhook = process.env.SLACK_WEBHOOK_URL;
         if (webhook) {
           try {
@@ -507,8 +515,9 @@ export async function PATCH(
       // Slack notification for ticket reopen
       // PRD v3.0: Reopening sets status to "reopened"
       // Check if ticket was reopened using enumStatus (calculated after status normalization)
-      const wasClosedOrResolved = ticket.status_value === "RESOLVED";
-      const isReopeningForSlack = enumStatus === "REOPENED" || isReopening;
+      const previousStatus = getCanonicalStatus(ticket.status) || ticket.status?.toLowerCase() || "";
+      const wasClosedOrResolved = previousStatus === TICKET_STATUS.RESOLVED;
+      const isReopeningForSlack = canonicalStatus === TICKET_STATUS.REOPENED || isReopening;
       if (updatedTicket && isReopeningForSlack && wasClosedOrResolved) {
         try {
           if (slackMessageTs && (updatedTicket.category_name === "Hostel" || updatedTicket.category_name === "College")) {

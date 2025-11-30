@@ -11,6 +11,7 @@ import { normalizeStatusForComparison } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import { getTicketStatusByValue } from "@/lib/status/getTicketStatuses";
 
 export default async function SuperAdminAnalyticsPage() {
   const { userId } = await auth();
@@ -23,7 +24,7 @@ export default async function SuperAdminAnalyticsPage() {
   const dbUser = await db
     .select({ id: users.id })
     .from(users)
-    .where(eq(users.clerk_id, userId))
+    .where(eq(users.external_id, userId))
     .limit(1)
     .then(([user]) => user);
 
@@ -43,22 +44,40 @@ export default async function SuperAdminAnalyticsPage() {
   };
   let allTickets: TicketAnalytics[] = [];
   try {
-    allTickets = await db
+    const allTicketsRaw = await db
       .select({
         id: tickets.id,
-        status: ticket_statuses.value,
+        status_id: tickets.status_id,
+        status_value: ticket_statuses.value,
         escalation_level: tickets.escalation_level,
         created_at: tickets.created_at,
-        resolved_at: tickets.resolved_at,
-        acknowledged_at: tickets.acknowledged_at,
         category_id: tickets.category_id,
         assigned_to: tickets.assigned_to,
         category_name: categories.name,
+        metadata: tickets.metadata,
       })
       .from(tickets)
-      .leftJoin(categories, eq(tickets.category_id, categories.id))
       .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
+      .leftJoin(categories, eq(tickets.category_id, categories.id))
       .orderBy(tickets.created_at);
+
+    // Extract metadata fields
+    allTickets = allTicketsRaw.map(t => {
+      let ticketMetadata: Record<string, unknown> = {};
+      if (t.metadata && typeof t.metadata === 'object' && !Array.isArray(t.metadata)) {
+        ticketMetadata = t.metadata as Record<string, unknown>;
+      }
+      const resolvedAt = ticketMetadata.resolved_at ? new Date(ticketMetadata.resolved_at as string) : null;
+      
+      return {
+        id: t.id,
+        status: t.status_value || null,
+        escalation_level: t.escalation_level || 0,
+        created_at: t.created_at,
+        resolved_at: resolvedAt,
+        category_name: t.category_name,
+      };
+    });
   } catch (error) {
     console.error('[Super Admin Analytics] Error fetching tickets:', error);
     // Continue with empty array
@@ -88,6 +107,10 @@ export default async function SuperAdminAnalyticsPage() {
     const normalizedStatus = normalizeStatusForComparison(t.status);
     return normalizedStatus === "resolved";
   });
+
+  // Fetch status labels from database
+  const awaitingStudentStatus = await getTicketStatusByValue("awaiting_student");
+  const awaitingStudentLabel = awaitingStudentStatus?.label || "Awaiting Student Response";
 
   // Time-based metrics
   const now = new Date();
@@ -138,7 +161,7 @@ export default async function SuperAdminAnalyticsPage() {
     staff_id: string;
     staff_first_name: string | null;
     staff_last_name: string | null;
-    staff_email: string;
+    staff_email: string | null;
     total: number;
     open: number;
     in_progress: number;
@@ -146,24 +169,33 @@ export default async function SuperAdminAnalyticsPage() {
   };
   let adminStatsRaw: AdminStatRaw[] = [];
   try {
-    adminStatsRaw = await db
+    const adminStatsRawWithFullName = await db
       .select({
         staff_id: users.id,
-        staff_first_name: users.first_name,
-        staff_last_name: users.last_name,
+        staff_full_name: users.full_name,
         staff_email: users.email,
         total: sql<number>`COUNT(${tickets.id})`.as('total'),
-        open: sql<number>`COUNT(CASE WHEN ${ticket_statuses.value} = 'OPEN' THEN 1 END)`.as('open'),
-        in_progress: sql<number>`COUNT(CASE WHEN ${ticket_statuses.value} IN ('IN_PROGRESS', 'AWAITING_STUDENT') THEN 1 END)`.as('in_progress'),
-        resolved: sql<number>`COUNT(CASE WHEN ${ticket_statuses.value} = 'RESOLVED' THEN 1 END)`.as('resolved'),
+        open: sql<number>`COUNT(CASE WHEN LOWER((SELECT value FROM ticket_statuses WHERE id = ${tickets.status_id})) = 'open' THEN 1 END)`.as('open'),
+        in_progress: sql<number>`COUNT(CASE WHEN LOWER((SELECT value FROM ticket_statuses WHERE id = ${tickets.status_id})) IN ('in_progress', 'awaiting_student') THEN 1 END)`.as('in_progress'),
+        resolved: sql<number>`COUNT(CASE WHEN LOWER((SELECT value FROM ticket_statuses WHERE id = ${tickets.status_id})) = 'resolved' THEN 1 END)`.as('resolved'),
       })
       .from(users)
       .innerJoin(roles, eq(users.role_id, roles.id))
       .leftJoin(tickets, eq(tickets.assigned_to, users.id))
-      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
       .where(inArray(roles.name, ['admin', 'super_admin']))
-      .groupBy(users.id, users.first_name, users.last_name, users.email)
+      .groupBy(users.id, users.full_name, users.email)
       .orderBy(sql`COUNT(${tickets.id}) DESC`);
+
+    // Transform to split full_name into first_name and last_name
+    adminStatsRaw = adminStatsRawWithFullName.map(s => {
+      const fullName = s.staff_full_name || "";
+      const nameParts = fullName.split(' ');
+      return {
+        ...s,
+        staff_first_name: nameParts[0] || null,
+        staff_last_name: nameParts.slice(1).join(' ') || null,
+      };
+    });
   } catch (error) {
     console.error('[Super Admin Analytics] Error fetching admin stats:', error);
     // Continue with empty array
@@ -200,13 +232,12 @@ export default async function SuperAdminAnalyticsPage() {
         category_id: tickets.category_id,
         category_name: categories.name,
         total: sql<number>`COUNT(${tickets.id})`.as('total'),
-        open: sql<number>`COUNT(CASE WHEN ${ticket_statuses.value} = 'OPEN' THEN 1 END)`.as('open'),
-        in_progress: sql<number>`COUNT(CASE WHEN ${ticket_statuses.value} IN ('IN_PROGRESS', 'AWAITING_STUDENT', 'AWAITING_STUDENT_RESPONSE') THEN 1 END)`.as('in_progress'),
-        resolved: sql<number>`COUNT(CASE WHEN ${ticket_statuses.value} = 'RESOLVED' THEN 1 END)`.as('resolved'),
+        open: sql<number>`COUNT(CASE WHEN LOWER((SELECT value FROM ticket_statuses WHERE id = ${tickets.status_id})) = 'open' THEN 1 END)`.as('open'),
+        in_progress: sql<number>`COUNT(CASE WHEN LOWER((SELECT value FROM ticket_statuses WHERE id = ${tickets.status_id})) IN ('in_progress', 'awaiting_student') THEN 1 END)`.as('in_progress'),
+        resolved: sql<number>`COUNT(CASE WHEN LOWER((SELECT value FROM ticket_statuses WHERE id = ${tickets.status_id})) = 'resolved' THEN 1 END)`.as('resolved'),
       })
       .from(tickets)
       .leftJoin(categories, eq(tickets.category_id, categories.id))
-      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
       .groupBy(tickets.category_id, categories.name)
       .orderBy(sql`COUNT(${tickets.id}) DESC`);
   } catch (error) {
@@ -384,7 +415,7 @@ export default async function SuperAdminAnalyticsPage() {
                         <Users className="h-6 w-6 text-blue-600 dark:text-blue-400" />
                       </div>
                       <div>
-                        <p className="text-sm font-semibold">Awaiting Student</p>
+                        <p className="text-sm font-semibold">{awaitingStudentLabel}</p>
                         <p className="text-xs text-muted-foreground">Waiting for response</p>
                       </div>
                     </div>

@@ -4,7 +4,7 @@
  * Supports: scoped access via primary_domain/scope and admin_assignments
  */
 
-import { db, users, roles, domains, scopes, admin_assignments } from "@/db";
+import { db, users, roles, domains, scopes, admin_assignments, admin_profiles } from "@/db";
 import { eq, and } from "drizzle-orm";
 import type { UserRole } from "@/types/auth";
 
@@ -206,7 +206,12 @@ export async function getUserRoleFromDB(clerkUserId: string): Promise<UserRole> 
       })
       .from(users)
       .leftJoin(roles, eq(users.role_id, roles.id))
-      .where(eq(users.clerk_id, clerkUserId))
+      .where(
+        and(
+          eq(users.auth_provider, 'clerk'),
+          eq(users.external_id, clerkUserId)
+        )
+      )
       .limit(1);
 
     if (!user || !user.roleName) {
@@ -245,9 +250,15 @@ export async function getUserRoles(clerkUserId: string): Promise<Array<{
       })
       .from(users)
       .leftJoin(roles, eq(users.role_id, roles.id))
-      .leftJoin(domains, eq(users.primary_domain_id, domains.id))
-      .leftJoin(scopes, eq(users.primary_scope_id, scopes.id))
-      .where(eq(users.clerk_id, clerkUserId))
+      .leftJoin(admin_profiles, eq(admin_profiles.user_id, users.id))
+      .leftJoin(domains, eq(admin_profiles.primary_domain_id, domains.id))
+      .leftJoin(scopes, eq(admin_profiles.primary_scope_id, scopes.id))
+      .where(
+        and(
+          eq(users.auth_provider, 'clerk'),
+          eq(users.external_id, clerkUserId)
+        )
+      )
       .limit(1);
 
     if (!userData || !userData.role) {
@@ -296,7 +307,7 @@ export async function getUserRoles(clerkUserId: string): Promise<Array<{
 
 /**
  * Set user's role in database
- * Updates users.role_id and optionally primary_domain_id/primary_scope_id
+ * Updates users.role_id and optionally admin_profiles.primary_domain_id/primary_scope_id
  */
 export async function setUserRole(
   clerkUserId: string,
@@ -315,7 +326,12 @@ export async function setUserRole(
     const [user] = await db
       .select({ id: users.id })
       .from(users)
-      .where(eq(users.clerk_id, clerkUserId))
+      .where(
+        and(
+          eq(users.auth_provider, 'clerk'),
+          eq(users.external_id, clerkUserId)
+        )
+      )
       .limit(1);
 
     if (!user) {
@@ -342,10 +358,40 @@ export async function setUserRole(
     await db.update(users)
       .set({
         role_id: roleId,
-        primary_domain_id: domainId,
-        primary_scope_id: scopeId,
       })
       .where(eq(users.id, user.id));
+
+    // Update or create admin profile with primary domain/scope
+    if (roleName === "admin" || roleName === "super_admin") {
+      const { admin_profiles } = await import("@/db/schema");
+      const { eq } = await import("drizzle-orm");
+      
+      // Check if admin profile exists
+      const [existingProfile] = await db
+        .select({ user_id: admin_profiles.user_id })
+        .from(admin_profiles)
+        .where(eq(admin_profiles.user_id, user.id))
+        .limit(1);
+
+      if (existingProfile) {
+        // Update existing profile
+        await db.update(admin_profiles)
+          .set({
+            primary_domain_id: domainId,
+            primary_scope_id: scopeId,
+            updated_at: new Date(),
+          })
+          .where(eq(admin_profiles.user_id, user.id));
+      } else {
+        // Create new profile
+        await db.insert(admin_profiles).values({
+          user_id: user.id,
+          primary_domain_id: domainId,
+          primary_scope_id: scopeId,
+          slack_user_id: "", // Default empty string - can be updated later
+        });
+      }
+    }
 
     // If promoting to admin or super_admin, delete student record if it exists
     // Admins and super_admins are not students, so their student record should be removed
@@ -411,7 +457,12 @@ export async function removeUserRole(
     const [user] = await db
       .select({ id: users.id })
       .from(users)
-      .where(eq(users.clerk_id, clerkUserId))
+      .where(
+        and(
+          eq(users.auth_provider, 'clerk'),
+          eq(users.external_id, clerkUserId)
+        )
+      )
       .limit(1);
 
     if (!user) {
@@ -424,10 +475,25 @@ export async function removeUserRole(
     await db.update(users)
       .set({
         role_id: studentRoleId,
-        primary_domain_id: null,
-        primary_scope_id: null,
       })
       .where(eq(users.id, user.id));
+
+    // Clear admin profile primary domain/scope
+    const [existingProfile] = await db
+      .select({ user_id: admin_profiles.user_id })
+      .from(admin_profiles)
+      .where(eq(admin_profiles.user_id, user.id))
+      .limit(1);
+
+    if (existingProfile) {
+      await db.update(admin_profiles)
+        .set({
+          primary_domain_id: null,
+          primary_scope_id: null,
+          updated_at: new Date(),
+        })
+        .where(eq(admin_profiles.user_id, user.id));
+    }
 
     // Also clear admin assignments? 
     // Probably yes if they are no longer admin.
@@ -465,9 +531,15 @@ export async function userHasRole(
       })
       .from(users)
       .leftJoin(roles, eq(users.role_id, roles.id))
-      .leftJoin(domains, eq(users.primary_domain_id, domains.id))
-      .leftJoin(scopes, eq(users.primary_scope_id, scopes.id))
-      .where(eq(users.clerk_id, clerkUserId))
+      .leftJoin(admin_profiles, eq(admin_profiles.user_id, users.id))
+      .leftJoin(domains, eq(admin_profiles.primary_domain_id, domains.id))
+      .leftJoin(scopes, eq(admin_profiles.primary_scope_id, scopes.id))
+      .where(
+        and(
+          eq(users.auth_provider, 'clerk'),
+          eq(users.external_id, clerkUserId)
+        )
+      )
       .limit(1);
 
     if (!userData || !userData.role) {

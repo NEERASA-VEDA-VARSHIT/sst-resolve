@@ -1,11 +1,12 @@
 // lib/tickets/createTicket.ts
-import { db, tickets, users, outbox, categories, subcategories } from "@/db";
-import { eq, and } from "drizzle-orm";
+import { db, tickets, users, outbox, categories, subcategories, sub_subcategories } from "@/db";
+import { eq, and, sql, or } from "drizzle-orm";
 import { TicketCreateInput } from "@/lib/validation/ticket";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 // findSPOCForTicket is imported dynamically from spoc-assignment.ts
-import { getStatusIdByValue } from "@/lib/status/status-helpers";
+import { TICKET_STATUS } from "@/conf/constants";
+import { getStatusIdByValue } from "@/lib/status/getTicketStatuses";
 
 /**
  * createTicket - core domain function
@@ -49,10 +50,8 @@ export async function createTicket(args: {
     if (role === "student") {
       // Update users table for personal info
       if (payload.profile.name) {
-        // Split name into first_name and last_name
-        const nameParts = String(payload.profile.name).trim().split(' ');
-        userUpdates.first_name = nameParts[0] || null;
-        userUpdates.last_name = nameParts.slice(1).join(' ').trim() || null;
+        // Store full name directly
+        userUpdates.full_name = String(payload.profile.name).trim() || null;
         profileUpdateNeeded = true;
       }
       if (payload.profile.email) {
@@ -92,14 +91,6 @@ export async function createTicket(args: {
               }
             })
         );
-      }
-      
-      if (payload.profile.batchYear) {
-        const year = parseInt(String(payload.profile.batchYear));
-        if (!isNaN(year)) {
-          studentUpdates.batch_year = year;
-          profileUpdateNeeded = true;
-        }
       }
       
       if (payload.profile.classSection) {
@@ -156,7 +147,7 @@ export async function createTicket(args: {
   }
 
   // Subcategory resolution (optional) - can't parallelize as it depends on categoryRecord
-  let subcategoryRecord;
+  let subcategoryRecord: { id: number; name: string } | undefined;
   if (payload.subcategoryId) {
     const [s] = await db
       .select({ id: subcategories.id, name: subcategories.name })
@@ -173,6 +164,24 @@ export async function createTicket(args: {
     subcategoryRecord = s;
   }
 
+  // Sub-subcategory resolution (optional) - depends on subcategoryRecord
+  let subSubcategoryRecord: { id: number; name: string } | undefined;
+  if (payload.subSubcategoryId && subcategoryRecord) {
+    const [ss] = await db
+      .select({ id: sub_subcategories.id, name: sub_subcategories.name })
+      .from(sub_subcategories)
+      .where(and(eq(sub_subcategories.id, payload.subSubcategoryId), eq(sub_subcategories.subcategory_id, subcategoryRecord.id)))
+      .limit(1);
+    subSubcategoryRecord = ss;
+  } else if (payload.subSubcategory && subcategoryRecord) {
+    const [ss] = await db
+      .select({ id: sub_subcategories.id, name: sub_subcategories.name })
+      .from(sub_subcategories)
+      .where(and(eq(sub_subcategories.name, payload.subSubcategory), eq(sub_subcategories.subcategory_id, subcategoryRecord.id)))
+      .limit(1);
+    subSubcategoryRecord = ss;
+  }
+
   // Build metadata object (store both ids and names)
   let metadata: Record<string, unknown> = {};
   if (subcategoryRecord) {
@@ -181,6 +190,14 @@ export async function createTicket(args: {
   } else if (payload.subcategory || payload.subcategoryId) {
     metadata.subcategory = payload.subcategory || null;
     metadata.subcategoryId = payload.subcategoryId || null;
+  }
+  
+  if (subSubcategoryRecord) {
+    metadata.subSubcategory = subSubcategoryRecord.name;
+    metadata.subSubcategoryId = subSubcategoryRecord.id;
+  } else if (payload.subSubcategory || payload.subSubcategoryId) {
+    metadata.subSubcategory = payload.subSubcategory || null;
+    metadata.subSubcategoryId = payload.subSubcategoryId || null;
   }
 
   // Merge details (payload.details may be stringified JSON from client)
@@ -247,7 +264,7 @@ export async function createTicket(args: {
   // Start fetching super admin in parallel (we'll need it either way)
   const superAdminPromise = findSuperAdminClerkId().then(async (superClerk) => {
     if (superClerk) {
-      const [u] = await db.select({ id: users.id }).from(users).where(eq(users.clerk_id, superClerk)).limit(1);
+      const [u] = await db.select({ id: users.id }).from(users).where(eq(users.external_id, superClerk)).limit(1);
       return u?.id || null;
     }
     return null;
@@ -278,7 +295,7 @@ export async function createTicket(args: {
     
     if (clerkAssigned) {
       // map clerkId to local users.id
-      const [u] = await db.select({ id: users.id }).from(users).where(eq(users.clerk_id, clerkAssigned)).limit(1);
+      const [u] = await db.select({ id: users.id }).from(users).where(eq(users.external_id, clerkAssigned)).limit(1);
       if (u) {
         assignedUserId = u.id;
       }
@@ -299,6 +316,12 @@ export async function createTicket(args: {
   // Sanitize description
   const safeDescription = sanitizeText(payload.description || null);
 
+  // Get status_id for OPEN status
+  const statusId = await getStatusIdByValue(TICKET_STATUS.OPEN);
+  if (!statusId) {
+    throw new Error(`Status "${TICKET_STATUS.OPEN}" not found in ticket_statuses table`);
+  }
+
   // Process attachments from images array
   let attachments: Array<{ url: string; type: string }> | null = null;
   if (payload.images && payload.images.length > 0) {
@@ -306,12 +329,6 @@ export async function createTicket(args: {
       url: url,
       type: 'image'
     }));
-  }
-
-  // Get the default OPEN status ID
-  const openStatusId = await getStatusIdByValue("OPEN");
-  if (!openStatusId) {
-    throw new Error("OPEN status not found in ticket_statuses table. Please seed the statuses.");
   }
 
   // Use a DB transaction to ensure ticket + outbox + profile updates consistency
@@ -339,11 +356,13 @@ export async function createTicket(args: {
     const insertValues = {
       created_by: dbUser.id,
       category_id: categoryRecord.id,
-      status_id: openStatusId, // Set the status_id to OPEN
+      status_id: statusId,
       description: safeDescription,
       location: payload.location || null,
       metadata: metadata && typeof metadata === 'object' && !Array.isArray(metadata) && Object.keys(metadata).length > 0 ? metadata : null,
       attachments: attachments,
+      ...(subcategoryRecord?.id ? { subcategory_id: subcategoryRecord.id } : {}),
+      ...(subSubcategoryRecord?.id ? { sub_subcategory_id: subSubcategoryRecord.id } : {}),
       ...(assignedUserId ? { assigned_to: assignedUserId } : {}),
     };
 
@@ -361,8 +380,10 @@ export async function createTicket(args: {
       attempts: 0,
     });
 
+    console.log(`[createTicket] ✅ Created ticket #${newTicket.id} and outbox event for notifications`);
     return newTicket;
   });
 
+  console.log(`[createTicket] ✅ Transaction completed for ticket #${result.id}`);
   return result;
 }

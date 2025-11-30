@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { tickets, users, ticket_statuses, categories } from "@/db/schema";
-import { eq, and, or, isNotNull, aliasedTable } from "drizzle-orm";
+import { tickets, users, categories, admin_profiles, ticket_statuses } from "@/db/schema";
+import { eq, and, or, isNotNull, aliasedTable, inArray } from "drizzle-orm";
 import { postThreadReplyToChannel } from "@/lib/integration/slack";
 import { sendEmail } from "@/lib/integration/email";
 import { verifyCronAuth } from "@/lib/cron-auth";
+import { getStatusIdByValue } from "@/lib/status/getTicketStatuses";
 
 /**
  * GET /api/cron/remind-spocs
@@ -25,39 +26,45 @@ export async function GET(request: NextRequest) {
     const reminders = [];
     const errors = [];
 
-    // Alias for SPOC user
+    // Alias for SPOC user and profile
     const spocUser = aliasedTable(users, "spoc_user");
+    const spocProfile = aliasedTable(admin_profiles, "spoc_profile");
 
     // Find all open/in_progress tickets that:
     // 1. Are assigned to a SPOC
     // 2. Have not been acknowledged OR have TAT that is due/overdue
+    // Get status IDs for filtering
+    const [openStatusId, inProgressStatusId, awaitingStudentStatusId, reopenedStatusId] = await Promise.all([
+      getStatusIdByValue("open"),
+      getStatusIdByValue("in_progress"),
+      getStatusIdByValue("awaiting_student"),
+      getStatusIdByValue("reopened"),
+    ]);
+
+    const statusIds = [openStatusId, inProgressStatusId, awaitingStudentStatusId, reopenedStatusId].filter((id): id is number => id !== null);
+
     const pendingTickets = await db
       .select({
         id: tickets.id,
-        status_value: ticket_statuses.value,
+        status: ticket_statuses.value,
         assigned_to: tickets.assigned_to,
         created_at: tickets.created_at,
-        acknowledged_at: tickets.acknowledged_at,
         metadata: tickets.metadata,
         category_name: categories.name,
         subcategory_id: tickets.subcategory_id,
-        user_number: users.phone,
+        creator_phone: users.phone,
         spoc_email: spocUser.email,
-        spoc_slack_id: spocUser.slack_user_id,
+        spoc_slack_id: spocProfile.slack_user_id,
       })
       .from(tickets)
-      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
+      .leftJoin(ticket_statuses, eq(ticket_statuses.id, tickets.status_id))
       .leftJoin(categories, eq(tickets.category_id, categories.id))
-      .leftJoin(users, eq(tickets.created_by, users.id)) // Creator
-      .leftJoin(spocUser, eq(tickets.assigned_to, spocUser.id)) // SPOC
+      .leftJoin(users, eq(tickets.created_by, users.id))
+      .leftJoin(spocUser, eq(tickets.assigned_to, spocUser.id))
+      .leftJoin(spocProfile, eq(spocProfile.user_id, spocUser.id))
       .where(
         and(
-          or(
-            eq(ticket_statuses.value, "OPEN"),
-            eq(ticket_statuses.value, "IN_PROGRESS"),
-            eq(ticket_statuses.value, "AWAITING_STUDENT"),
-            eq(ticket_statuses.value, "REOPENED")
-          ),
+          statusIds.length > 0 ? inArray(tickets.status_id, statusIds) : undefined,
           isNotNull(tickets.assigned_to)
         )
       );
@@ -69,7 +76,11 @@ export async function GET(request: NextRequest) {
         let reminderReason = "";
 
         // Case 1: Not acknowledged and created more than 2 hours ago
-        if (!ticket.acknowledged_at && ticket.created_at) {
+        // Check if ticket has acknowledgement_due_at set (indicates it was acknowledged)
+        const hasAcknowledged = ticket.metadata && typeof ticket.metadata === 'object' && 
+          (ticket.metadata as Record<string, unknown>).acknowledgedAt;
+        
+        if (!hasAcknowledged && ticket.created_at) {
           const hoursSinceCreation =
             (now.getTime() - new Date(ticket.created_at).getTime()) / (1000 * 60 * 60);
           if (hoursSinceCreation >= 2) {
@@ -79,7 +90,7 @@ export async function GET(request: NextRequest) {
         }
 
         // Case 2: Acknowledged but TAT is due/overdue
-        if (ticket.acknowledged_at && ticket.metadata) {
+        if (hasAcknowledged && ticket.metadata) {
           try {
             const details = ticket.metadata as Record<string, unknown>;
             const tatDate = details.tatDate && typeof details.tatDate === 'string' ? new Date(details.tatDate) : null;
@@ -154,7 +165,7 @@ export async function GET(request: NextRequest) {
         if (ticket.spoc_email) {
           try {
             const emailSubject = `Reminder: Ticket #${ticket.id} Requires Attention`;
-            const emailBody = `Reminder: ${reminderReason}\n\nTicket #${ticket.id}\nCategory: ${ticket.category_name}\nUser Phone: ${ticket.user_number || "N/A"}\n\nPlease take action on this ticket.`;
+            const emailBody = `Reminder: ${reminderReason}\n\nTicket #${ticket.id}\nCategory: ${ticket.category_name}\nUser Phone: ${ticket.creator_phone || "N/A"}\n\nPlease take action on this ticket.`;
             await sendEmail({
               to: ticket.spoc_email,
               subject: emailSubject,

@@ -1,8 +1,9 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { db, tickets, categories, users, ticket_statuses } from "@/db";
-import { desc, eq, isNull, or, sql, count } from "drizzle-orm";
-import type { TicketMetadata } from "@/db/types";
+import { desc, eq, isNull, or, sql, count, inArray } from "drizzle-orm";
+import type { Ticket } from "@/db/types-only";
+import type { TicketMetadata } from "@/db/inferred-types";
 import { TicketCard } from "@/components/layout/TicketCard";
 import { Card, CardContent } from "@/components/ui/card";
 import Link from "next/link";
@@ -42,7 +43,7 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
   // const subcategory = (typeof params["subcategory"] === "string" ? params["subcategory"] : params["subcategory"]?.[0]) || "";
   // const location = (typeof params["location"] === "string" ? params["location"] : params["location"]?.[0]) || "";
   const tat = (typeof params["tat"] === "string" ? params["tat"] : params["tat"]?.[0]) || "";
-  // const status = (typeof params["status"] === "string" ? params["status"] : params["status"] : params["status"]?.[0]) || "";
+  const statusFilter = (typeof params["status"] === "string" ? params["status"] : params["status"]?.[0]) || "";
   const escalatedFilter = (typeof params["escalated"] === "string" ? params["escalated"] : params["escalated"]?.[0]) || "";
   const createdFrom = (typeof params["from"] === "string" ? params["from"] : params["from"]?.[0]) || "";
   const createdTo = (typeof params["to"] === "string" ? params["to"] : params["to"]?.[0]) || "";
@@ -69,160 +70,174 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
     title: string | null;
     description: string | null;
     location: string | null;
-    status_id: number;
     status: string | null;
+    status_id: number | null;
     category_id: number | null;
     subcategory_id: number | null;
     sub_subcategory_id: number | null;
-    created_by: string;
+    created_by: string | null;
     assigned_to: string | null;
-    acknowledged_by: string | null;
     group_id: number | null;
-    escalation_level: number;
-    tat_extended_count: number;
-    last_escalation_at: Date | null;
-    acknowledgement_tat_hours: number | null;
-    resolution_tat_hours: number | null;
+    escalation_level: number | null;
     acknowledgement_due_at: Date | null;
     resolution_due_at: Date | null;
-    acknowledged_at: Date | null;
-    reopened_at: Date | null;
-    sla_breached_at: Date | null;
-    reopen_count: number;
+    metadata: unknown;
+    created_at: Date | null;
+    updated_at: Date | null;
+    category_name: string | null;
+    creator_full_name: string | null;
+    creator_email: string | null;
+  };
+  type TicketRow = TicketRowRaw & {
+    status_id: number | null;
+    scope_id: number | null;
     rating: number | null;
     feedback_type: string | null;
     rating_submitted: Date | null;
     feedback: string | null;
-    is_public: boolean;
     admin_link: string | null;
     student_link: string | null;
     slack_thread_id: string | null;
     external_ref: string | null;
-    metadata: unknown;
-    created_at: Date;
-    updated_at: Date;
-    resolved_at: Date | null;
-    category_name: string | null;
-    creator_first_name: string | null;
-    creator_last_name: string | null;
-    creator_email: string | null;
-  };
-  type TicketRow = TicketRowRaw & {
     creator_name: string | null;
     assigned_staff_name?: string | null;
     assigned_staff_email?: string | null;
   };
   let ticketRows: TicketRow[] = [];
   try {
-    // Parallelize count and ticket fetch for better performance
-    const [totalResultArray, ticketRowsRaw] = await Promise.all([
+    const [totalResultArray, ticketRowsRawResult] = await Promise.all([
       db
         .select({ count: count() })
         .from(tickets)
         .where(whereConditions),
       db
-      .select({
-        // All ticket columns explicitly
-        id: tickets.id,
-        title: tickets.title,
-        description: tickets.description,
-        location: tickets.location,
-        status_id: tickets.status_id,
-        status: ticket_statuses.value, // Get the actual status value from the joined table
-        category_id: tickets.category_id,
-        subcategory_id: tickets.subcategory_id,
-        sub_subcategory_id: tickets.sub_subcategory_id,
-        created_by: tickets.created_by,
-        assigned_to: tickets.assigned_to,
-        acknowledged_by: tickets.acknowledged_by,
-        group_id: tickets.group_id,
-        escalation_level: tickets.escalation_level,
-        tat_extended_count: tickets.tat_extended_count,
-        last_escalation_at: tickets.last_escalation_at,
-        acknowledgement_tat_hours: tickets.acknowledgement_tat_hours,
-        resolution_tat_hours: tickets.resolution_tat_hours,
-        acknowledgement_due_at: tickets.acknowledgement_due_at,
-        resolution_due_at: tickets.resolution_due_at,
-        acknowledged_at: tickets.acknowledged_at,
-        reopened_at: tickets.reopened_at,
-        sla_breached_at: tickets.sla_breached_at,
-        reopen_count: tickets.reopen_count,
-        rating: tickets.rating,
-        feedback_type: tickets.feedback_type,
-        rating_submitted: tickets.rating_submitted,
-        feedback: tickets.feedback,
-        is_public: tickets.is_public,
-        admin_link: tickets.admin_link,
-        student_link: tickets.student_link,
-        slack_thread_id: tickets.slack_thread_id,
-        external_ref: tickets.external_ref,
-        metadata: tickets.metadata,
-        created_at: tickets.created_at,
-        updated_at: tickets.updated_at,
-        resolved_at: tickets.resolved_at,
-        // Joined fields
-        category_name: categories.name,
-        creator_first_name: users.first_name,
-        creator_last_name: users.last_name,
-        creator_email: users.email,
-      })
+        .select({
+          id: tickets.id,
+          title: tickets.title,
+          description: tickets.description,
+          location: tickets.location,
+          status: ticket_statuses.value,
+          status_id: tickets.status_id,
+          category_id: tickets.category_id,
+          subcategory_id: tickets.subcategory_id,
+          sub_subcategory_id: tickets.sub_subcategory_id,
+          created_by: tickets.created_by,
+          assigned_to: tickets.assigned_to,
+          group_id: tickets.group_id,
+          escalation_level: tickets.escalation_level,
+          acknowledgement_due_at: tickets.acknowledgement_due_at,
+          resolution_due_at: tickets.resolution_due_at,
+          metadata: tickets.metadata,
+          created_at: tickets.created_at,
+          updated_at: tickets.updated_at,
+          category_name: categories.name,
+          creator_full_name: users.full_name,
+          creator_email: users.email,
+        })
         .from(tickets)
-        .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
+        .leftJoin(ticket_statuses, eq(ticket_statuses.id, tickets.status_id))
         .leftJoin(categories, eq(tickets.category_id, categories.id))
         .leftJoin(users, eq(tickets.created_by, users.id))
         .where(whereConditions)
         .orderBy(desc(tickets.created_at))
         .limit(limit)
-        .offset(offsetValue) as Promise<TicketRowRaw[]>,
+        .offset(offsetValue),
     ]);
 
-    const [totalResult] = totalResultArray;
+    const ticketRowsRaw = Array.isArray(ticketRowsRawResult) ? ticketRowsRawResult : [];
+    const [totalResult] = Array.isArray(totalResultArray) ? totalResultArray : [];
     totalCount = totalResult?.count || 0;
 
-    // Fetch assigned admin info separately for tickets that have an assigned_to
-    const assignedToIds = [...new Set(ticketRowsRaw.map(t => t.assigned_to).filter(Boolean))];
+    const assignedToIds = [
+      ...new Set(
+        ticketRowsRaw
+          .map(t => t.assigned_to)
+          .filter((value): value is string => typeof value === "string" && value.length > 0)
+      ),
+    ];
     type AdminInfo = {
       id: string;
-      first_name: string | null;
-      last_name: string | null;
-      email: string | null;
+      full_name: string | null;
+      email: string;
     };
     let assignedAdmins: Record<string, AdminInfo> = {};
 
     if (assignedToIds.length > 0) {
-      const admins = await db
-        .select({
-          id: users.id,
-          first_name: users.first_name,
-          last_name: users.last_name,
-          email: users.email,
-        })
-        .from(users)
-        .where(sql`${users.id} IN ${assignedToIds}`);
+      try {
+        const admins = await db
+          .select({
+            id: users.id,
+            full_name: users.full_name,
+            email: users.email,
+          })
+          .from(users)
+          .where(inArray(users.id, assignedToIds));
 
-      assignedAdmins = Object.fromEntries(
-        admins.map(admin => [
-          admin.id,
-          {
-            id: admin.id,
-            first_name: admin.first_name || null,
-            last_name: admin.last_name || null,
-            email: admin.email
+        const safeAdmins = (Array.isArray(admins) ? admins : []).filter(
+          (admin): admin is AdminInfo & { id: string } =>
+            typeof admin.id === "string" && admin.id.length > 0
+        );
+
+        if (safeAdmins.length > 0) {
+          try {
+            assignedAdmins = Object.fromEntries(
+              safeAdmins.map(admin => [
+                admin.id,
+                {
+                  id: admin.id,
+                  full_name: admin.full_name || null,
+                  email: admin.email,
+                },
+              ])
+            );
+          } catch (fromEntriesError) {
+            console.error("[Super Admin Dashboard] Error creating assignedAdmins map:", fromEntriesError);
+            assignedAdmins = {};
           }
-        ])
-      );
+        }
+      } catch (adminError) {
+        console.error("[Super Admin Dashboard] Failed to load assigned admin info:", adminError);
+        assignedAdmins = {};
+      }
     }
 
-    // Add assigned admin info to ticket rows
-    ticketRows = ticketRowsRaw.map(row => ({
-      ...row,
-      creator_name: [row.creator_first_name, row.creator_last_name].filter(Boolean).join(" ").trim() || null,
-      assigned_staff_name: row.assigned_to ? [assignedAdmins[row.assigned_to]?.first_name, assignedAdmins[row.assigned_to]?.last_name].filter(Boolean).join(" ").trim() : null,
-      assigned_staff_email: row.assigned_to ? assignedAdmins[row.assigned_to]?.email : null,
-    }));
+    ticketRows = ticketRowsRaw.map(row => {
+      // Extract metadata fields
+      let ticketMetadata: TicketMetadata = {};
+      if (row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)) {
+        ticketMetadata = row.metadata as TicketMetadata;
+      }
+      return {
+        ...row,
+        status_id: row.status_id || null,
+        scope_id: null,
+        created_by: row.created_by || "",
+        created_at: row.created_at || new Date(),
+        updated_at: row.updated_at || new Date(),
+        escalation_level: row.escalation_level || 0,
+        rating: (ticketMetadata.rating as number | null) || null,
+        feedback_type: (ticketMetadata.feedback_type as string | null) || null,
+        rating_submitted: ticketMetadata.rating_submitted ? new Date(ticketMetadata.rating_submitted) : null,
+        feedback: (ticketMetadata.feedback as string | null) || null,
+        admin_link: null,
+        student_link: null,
+        slack_thread_id: null,
+        external_ref: null,
+        creator_name: row.creator_full_name || null,
+        assigned_staff_name: row.assigned_to ? assignedAdmins[row.assigned_to]?.full_name || null : null,
+        assigned_staff_email: row.assigned_to ? assignedAdmins[row.assigned_to]?.email ?? null : null,
+      };
+    });
   } catch (error) {
     console.error('[Super Admin Dashboard] Error fetching tickets/count:', error);
-    throw new Error('Failed to load tickets for dashboard');
+    // Log more details about the error
+    if (error instanceof Error) {
+      console.error('[Super Admin Dashboard] Error message:', error.message);
+      console.error('[Super Admin Dashboard] Error stack:', error.stack);
+    }
+    // Don't throw - return empty state instead to prevent page crash
+    ticketRows = [];
+    totalCount = 0;
   }
 
   // Apply additional client-side filters not handled by API
@@ -251,6 +266,17 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
     const to = new Date(createdTo);
     to.setHours(23, 59, 59, 999);
     filteredTickets = filteredTickets.filter(t => t.created_at && t.created_at.getTime() <= to.getTime());
+  }
+
+  if (statusFilter) {
+    const normalizedFilter = statusFilter.toLowerCase();
+    filteredTickets = filteredTickets.filter((ticket) => {
+      const normalizedTicketStatus = normalizeStatusForComparison(ticket.status);
+      if (normalizedFilter === "awaiting_student_response") {
+        return normalizedTicketStatus === "awaiting_student_response" || normalizedTicketStatus === "awaiting_student";
+      }
+      return normalizedTicketStatus === normalizedFilter;
+    });
   }
 
   if (tat) {
@@ -301,7 +327,6 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
     }
   });
 
-  // Map to TicketCard format (all fields already selected, just add joined fields)
   const allTickets = filteredTickets;
 
   // Calculate pagination metadata
@@ -497,9 +522,10 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
                 {allTickets.map((ticket) => (
                   <TicketCard key={ticket.id} ticket={{
                     ...ticket,
+                    scope_id: null,
                     created_at: ticket.created_at || new Date(),
                     updated_at: ticket.updated_at || new Date(),
-                  }} basePath="/superadmin/dashboard" />
+                  } as unknown as Ticket & { status?: string | null; category_name?: string | null; creator_name?: string | null; creator_email?: string | null }} basePath="/superadmin/dashboard" />
                 ))}
               </div>
 

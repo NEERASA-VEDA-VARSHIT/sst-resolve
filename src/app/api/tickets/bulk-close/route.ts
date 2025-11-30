@@ -2,11 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { eq, inArray } from "drizzle-orm";
 import { db, tickets } from "@/db";
-import { BulkCloseTicketsSchema } from "@/schema/ticket.schema";
+import type { TicketInsert } from "@/db/inferred-types";
+import { BulkCloseTicketsSchema } from "@/schemas/business/ticket";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
-import { statusToEnum, getStatusIdByValue } from "@/lib/status/status-helpers";
-import type { TicketMetadata } from "@/db/types";
+import { getCanonicalStatus, TICKET_STATUS } from "@/conf/constants";
+import type { TicketMetadata } from "@/db/inferred-types";
+import { getStatusIdByValue } from "@/lib/status/getTicketStatuses";
 
 /**
  * ============================================
@@ -47,17 +49,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Validation failed", details: parsed.error.issues }, { status: 400 });
     }
 
-    const { ids, comment, status } = parsed.data;
-    const targetStatusValue = statusToEnum(status || "closed"); // Convert to uppercase enum
+    const { ticket_ids } = parsed.data;
+    const comment = ""; // Bulk close doesn't use comments
+    const status = TICKET_STATUS.RESOLVED; // Bulk close always resolves
+    const targetStatusValue = getCanonicalStatus(status || TICKET_STATUS.RESOLVED) || TICKET_STATUS.RESOLVED;
 
-    // Get status ID for the target status
-    const targetStatusId = await getStatusIdByValue(targetStatusValue.toUpperCase());
-    if (!targetStatusId) {
-      return NextResponse.json({ error: `Status "${targetStatusValue}" not found` }, { status: 400 });
+    // Get status ID for resolved status
+    const resolvedStatusId = await getStatusIdByValue(targetStatusValue);
+    if (!resolvedStatusId) {
+      return NextResponse.json({ error: "Resolved status not found in database" }, { status: 500 });
     }
 
     // Fetch the tickets to modify
-    const rows = await db.select().from(tickets).where(inArray(tickets.id, ids));
+    const rows = await db.select().from(tickets).where(inArray(tickets.id, ticket_ids));
     if (rows.length === 0) {
       return NextResponse.json({ error: "No tickets found for the provided ids" }, { status: 404 });
     }
@@ -83,10 +87,13 @@ export async function POST(request: NextRequest) {
         metadata.comments = comments;
       }
 
-      const updateData: { status_id: number; updated_at: Date; metadata: TicketMetadata } = {
-        status_id: targetStatusId,
+      // Set resolved_at in metadata
+      metadata.resolved_at = now.toISOString();
+
+      const updateData: Partial<TicketInsert> = {
+        status_id: resolvedStatusId,
         updated_at: now,
-        metadata: metadata,
+        metadata: metadata as unknown,
       };
 
       await db

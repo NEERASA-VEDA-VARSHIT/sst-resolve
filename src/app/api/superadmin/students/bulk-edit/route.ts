@@ -2,26 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { students } from "@/db/schema";
+import type { StudentInsert } from "@/db/inferred-types";
 import { inArray } from "drizzle-orm";
-import { z } from "zod";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
+import { BulkEditStudentsSchema } from "@/schemas/business/student";
 
 /**
  * PATCH /api/superadmin/students/bulk-edit
  * Update multiple students at once with the same field values
  * Only super admins can access this endpoint
  */
-
-const BulkEditSchema = z.object({
-    student_ids: z.array(z.number()).min(1, "At least one student must be selected"),
-    updates: z.object({
-        hostel_id: z.number().nullable().optional(),
-        batch_id: z.number().nullable().optional(),
-        class_section_id: z.number().nullable().optional(),
-        batch_year: z.number().nullable().optional(),
-        department: z.string().max(120).nullable().optional(),
-    }),
-});
 
 export async function PATCH(request: NextRequest) {
     try {
@@ -42,7 +32,7 @@ export async function PATCH(request: NextRequest) {
 
         // Parse request body
         const body = await request.json();
-        const parsed = BulkEditSchema.safeParse(body);
+        const parsed = BulkEditStudentsSchema.safeParse(body);
         if (!parsed.success) {
             return NextResponse.json(
                 { error: "Invalid request data", details: parsed.error.format() },
@@ -75,15 +65,15 @@ export async function PATCH(request: NextRequest) {
         }
 
         // Perform bulk update
-        const updateData: Record<string, unknown> = {
+        const updateData: Partial<StudentInsert> = {
             ...updates,
             updated_at: new Date(),
         };
 
         // Remove undefined values
         Object.keys(updateData).forEach((key) => {
-            if (updateData[key] === undefined) {
-                delete updateData[key];
+            if (updateData[key as keyof typeof updateData] === undefined) {
+                delete updateData[key as keyof typeof updateData];
             }
         });
 

@@ -10,8 +10,6 @@ import {
   BarChart3,
   UserCheck,
   User,
-  Bell,
-  ListChecks,
   GraduationCap,
   LucideIcon,
 } from "lucide-react";
@@ -179,12 +177,6 @@ export function getNavItemsForRole(role: UserRole, mounted: boolean): NavItem[] 
             show: true,
           },
           {
-            title: "Forms",
-            href: "/superadmin/dashboard/forms",
-            icon: FileText,
-            show: true,
-          },
-          {
             title: "Committees",
             href: "/superadmin/dashboard/committees",
             icon: Users,
@@ -200,18 +192,6 @@ export function getNavItemsForRole(role: UserRole, mounted: boolean): NavItem[] 
             title: "Ticket Assignment",
             href: "/superadmin/settings/ticket-assignment",
             icon: UserCheck,
-            show: true,
-          },
-          {
-            title: "Notifications",
-            href: "/superadmin/settings/notifications",
-            icon: Bell,
-            show: true,
-          },
-          {
-            title: "Ticket Statuses",
-            href: "/superadmin/settings/ticket-statuses",
-            icon: ListChecks,
             show: true,
           },
         ]

@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { hostels, students } from "@/db/schema";
+import type { HostelInsert } from "@/db/inferred-types";
 import { eq } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
@@ -98,12 +99,10 @@ export async function PATCH(
 		}
 
 		const body = await request.json();
-		const { name, code, capacity, is_active } = body;
+		const { name, is_active } = body;
 
 		// Build update object
-		const updates: Record<string, unknown> = {
-			updated_at: new Date(),
-		};
+		const updates: Partial<HostelInsert> = {};
 
 		if (name !== undefined) {
 			if (typeof name !== "string" || name.trim().length === 0) {
@@ -125,14 +124,6 @@ export async function PATCH(
 			}
 
 			updates.name = name.trim();
-		}
-
-		if (code !== undefined) {
-			updates.code = code?.trim() || null;
-		}
-
-		if (capacity !== undefined) {
-			updates.capacity = capacity ? parseInt(capacity) : null;
 		}
 
 		if (is_active !== undefined) {
@@ -218,7 +209,6 @@ export async function DELETE(
 			.update(hostels)
 			.set({
 				is_active: false,
-				updated_at: new Date(),
 			})
 			.where(eq(hostels.id, hostelId))
 			.returning();

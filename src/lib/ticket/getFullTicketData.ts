@@ -10,9 +10,8 @@ import {
   students,
   categories,
   hostels,
-  ticket_statuses
 } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import {
   getCategorySchema,
   getSubcategoryById,
@@ -21,60 +20,102 @@ import {
   getCategoryProfileFields
 } from "@/lib/category/categories";
 import { extractDynamicFields } from "@/lib/ticket/formatDynamicFields";
+import { buildStatusDisplay } from "@/conf/constants";
 
 export async function getFullTicketData(ticketId: number, userId: string) {
+  let debugStep = "start";
   try {
     // Validate inputs
+    debugStep = "validate-inputs";
     if (!ticketId || !userId) {
       console.error('[getFullTicketData] Invalid inputs:', { ticketId, userId });
       return null;
     }
 
     // 1. Fetch ticket with creator and student info in ONE query
-    const [ticketData] = await db
-      .select({
-        // Ticket fields
-        ticket_id: tickets.id,
-        ticket_status_value: ticket_statuses.value,
-        ticket_status_label: ticket_statuses.label,
-        ticket_status_badge_color: ticket_statuses.badge_color,
-        ticket_description: tickets.description,
-        ticket_location: tickets.location,
-        ticket_created_by: tickets.created_by,
-        ticket_category_id: tickets.category_id,
-        ticket_assigned_to: tickets.assigned_to,
-        ticket_metadata: tickets.metadata,
-        // ticket_attachments: tickets.attachments, // Removed as it's not in schema
-        ticket_escalation_level: tickets.escalation_level,
-        ticket_created_at: tickets.created_at,
-        ticket_updated_at: tickets.updated_at,
-        ticket_resolved_at: tickets.resolved_at,
-        ticket_reopened_at: tickets.reopened_at,
-        ticket_due_at: tickets.resolution_due_at,
-        ticket_acknowledged_at: tickets.acknowledged_at,
-        ticket_rating: tickets.rating,
-        ticket_feedback: tickets.feedback,
-        ticket_tat_extended_count: tickets.tat_extended_count,
-        // User fields
-        user_first_name: users.first_name,
-        user_last_name: users.last_name,
-        user_email: users.email,
-        // Student fields
-        student_roll_no: students.roll_no,
-        student_hostel_id: students.hostel_id,
-        student_hostel_name: hostels.name,
-        student_room_no: students.room_no,
-      })
-      .from(tickets)
-      .leftJoin(users, eq(users.id, tickets.created_by))
-      .leftJoin(students, eq(students.user_id, tickets.created_by))
-      .leftJoin(hostels, eq(hostels.id, students.hostel_id))
-      .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
-      .where(eq(tickets.id, ticketId))
-      .limit(1);
+    debugStep = "fetch-ticket";
+    const ticketRows = await db.execute(sql`
+      SELECT
+        t.id AS ticket_id,
+        ts.value AS ticket_status,
+        t.description AS ticket_description,
+        t.location AS ticket_location,
+        t.created_by AS ticket_created_by,
+        t.category_id AS ticket_category_id,
+        t.assigned_to AS ticket_assigned_to,
+        t.metadata AS ticket_metadata,
+        t.escalation_level AS ticket_escalation_level,
+        t.created_at AS ticket_created_at,
+        t.updated_at AS ticket_updated_at,
+        t.resolution_due_at AS ticket_due_at,
+        t.acknowledgement_due_at AS ticket_acknowledgement_due_at,
+        u.full_name AS user_full_name,
+        u.email AS user_email,
+        s.roll_no AS student_roll_no,
+        s.hostel_id AS student_hostel_id,
+        h.name AS student_hostel_name,
+        s.room_no AS student_room_no
+      FROM tickets t
+      LEFT JOIN ticket_statuses ts ON ts.id = t.status_id
+      LEFT JOIN users u ON u.id = t.created_by
+      LEFT JOIN students s ON s.user_id = t.created_by
+      LEFT JOIN hostels h ON h.id = s.hostel_id
+      WHERE t.id = ${ticketId}
+      LIMIT 1
+    `);
+    const ticketData = ticketRows[0] as {
+      ticket_id: number;
+      ticket_status: string | null;
+      ticket_description: string | null;
+      ticket_location: string | null;
+      ticket_created_by: string;
+      ticket_category_id: number | null;
+      ticket_assigned_to: string | null;
+      ticket_metadata: unknown;
+      ticket_escalation_level: number | null;
+      ticket_created_at: Date | null;
+      ticket_updated_at: Date | null;
+      ticket_due_at: Date | null;
+      ticket_acknowledgement_due_at: Date | null;
+      user_full_name: string | null;
+      user_email: string | null;
+      student_roll_no: string | null;
+      student_hostel_id: number | null;
+      student_hostel_name: string | null;
+      student_room_no: string | null;
+    } | undefined;
+    debugStep = "fetch-ticket:done";
 
     if (!ticketData) {
       return null;
+    }
+
+    // Build status display from constants
+    let statusDisplay: { value: string; label: string; badge_color: string } | null = null;
+    if (ticketData.ticket_status) {
+      debugStep = "fetch-status-value";
+      // Fetch status from database instead of using hardcoded constants
+      const { getTicketStatusByValue } = await import("@/lib/status/getTicketStatuses");
+      const statusValue = ticketData.ticket_status;
+      if (statusValue) {
+        const statusRecord = await getTicketStatusByValue(statusValue);
+        if (statusRecord) {
+          statusDisplay = {
+            value: statusRecord.value.toLowerCase(),
+            label: statusRecord.label || statusRecord.value,
+            badge_color: statusRecord.badge_color || "default",
+          };
+        }
+      }
+    }
+
+    if (!statusDisplay) {
+      const fallback = buildStatusDisplay("open");
+      statusDisplay = fallback || {
+        value: "unknown",
+        label: "Unknown",
+        badge_color: "default",
+      };
     }
 
     // Ensure user owns this ticket
@@ -97,6 +138,7 @@ export async function getFullTicketData(ticketId: number, userId: string) {
     const subcategoryId = typeof metadata?.subcategoryId === 'number' ? metadata.subcategoryId : null;
     const subSubcategoryId = typeof metadata?.subSubcategoryId === 'number' ? metadata.subSubcategoryId : null;
     
+    debugStep = "fetch-related-data";
     const [
       category,
       categorySchema,
@@ -127,13 +169,13 @@ export async function getFullTicketData(ticketId: number, userId: string) {
     ]);
 
     // 6-7. Fetch assigned staff and SPOC info in parallel
+    debugStep = "fetch-staff-spoc";
     const [assignedStaffResult, spocResult] = await Promise.all([
       // Fetch assigned staff info (if assigned)
       ticketData.ticket_assigned_to
         ? db
             .select({
-              user_first_name: users.first_name,
-              user_last_name: users.last_name,
+              user_full_name: users.full_name,
               user_email: users.email,
             })
             .from(users)
@@ -153,8 +195,7 @@ export async function getFullTicketData(ticketId: number, userId: string) {
               if (categoryData?.default_admin_id) {
                 const [spocData] = await db
                   .select({
-                    user_first_name: users.first_name,
-                    user_last_name: users.last_name,
+                    user_full_name: users.full_name,
                     user_email: users.email,
                   })
                   .from(users)
@@ -173,19 +214,20 @@ export async function getFullTicketData(ticketId: number, userId: string) {
 
     const assignedStaff = assignedStaffResult.length > 0
       ? {
-          name: [assignedStaffResult[0].user_first_name, assignedStaffResult[0].user_last_name].filter(Boolean).join(' ').trim() || "Unknown",
+          name: assignedStaffResult[0].user_full_name || "Unknown",
           email: assignedStaffResult[0].user_email || null,
         }
       : null;
 
     const spoc = spocResult.length > 0
       ? {
-          name: [spocResult[0].user_first_name, spocResult[0].user_last_name].filter(Boolean).join(' ').trim() || "Unknown",
+          name: spocResult[0].user_full_name || "Unknown",
           email: spocResult[0].user_email || null,
         }
       : null;
 
     // 8. Extract dynamic fields using helper
+    debugStep = "extract-dynamic-fields";
     const dynamicFields = categorySchema && typeof categorySchema === 'object' && !Array.isArray(categorySchema)
       ? extractDynamicFields(metadata, categorySchema as Record<string, unknown>)
       : [];
@@ -197,6 +239,7 @@ export async function getFullTicketData(ticketId: number, userId: string) {
       type?: string;
       [key: string]: unknown;
     };
+    debugStep = "process-comments";
     const visibleComments = comments
       .filter((c: Comment) => !c?.isInternal && c?.type !== "super_admin_note")
       .map((c: Comment) => ({
@@ -211,6 +254,7 @@ export async function getFullTicketData(ticketId: number, userId: string) {
       }));
 
     // 10. Build timeline
+    debugStep = "build-timeline";
     const timeline = [
       {
         title: "Created",
@@ -219,9 +263,9 @@ export async function getFullTicketData(ticketId: number, userId: string) {
         textColor: "text-primary",
         icon: "Calendar",
       },
-      ticketData.ticket_acknowledged_at && {
+      ticketData.ticket_acknowledgement_due_at && {
         title: "Acknowledged",
-        date: ticketData.ticket_acknowledged_at,
+        date: ticketData.ticket_acknowledgement_due_at,
         color: "bg-green-100 dark:bg-green-900/30",
         textColor: "text-green-600 dark:text-green-400",
         icon: "CheckCircle2",
@@ -233,9 +277,10 @@ export async function getFullTicketData(ticketId: number, userId: string) {
         textColor: "text-blue-600 dark:text-blue-400",
         icon: "Clock",
       },
-      ticketData.ticket_resolved_at && {
+      // Note: resolved_at doesn't exist in schema, using resolution_due_at as fallback
+      ticketData.ticket_due_at && {
         title: "Resolved",
-        date: ticketData.ticket_resolved_at,
+        date: ticketData.ticket_due_at,
         color: "bg-emerald-100 dark:bg-emerald-900/30",
         textColor: "text-emerald-600 dark:text-emerald-400",
         icon: "CheckCircle2",
@@ -256,31 +301,30 @@ export async function getFullTicketData(ticketId: number, userId: string) {
       : null;
 
     // Build the hydrated response
+    debugStep = "build-response";
     return {
       ticket: {
         id: ticketData.ticket_id,
-        status: ticketData.ticket_status_value ? {
-          value: ticketData.ticket_status_value,
-          label: ticketData.ticket_status_label || ticketData.ticket_status_value,
-          badge_color: ticketData.ticket_status_badge_color,
-        } : null,
-        description: ticketData.ticket_description,
-        location: ticketData.ticket_location,
+        status: statusDisplay,
+        description: ticketData.ticket_description || null,
+        location: ticketData.ticket_location || null,
         created_by: ticketData.ticket_created_by,
-        category_id: ticketData.ticket_category_id,
-        assigned_to: ticketData.ticket_assigned_to,
-        metadata: ticketData.ticket_metadata,
+        category_id: ticketData.ticket_category_id || null,
+        assigned_to: ticketData.ticket_assigned_to || null,
+        metadata: (ticketData.ticket_metadata && typeof ticketData.ticket_metadata === 'object' && !Array.isArray(ticketData.ticket_metadata))
+          ? ticketData.ticket_metadata
+          : {},
         attachments: [], // Placeholder
         escalation_level: ticketData.ticket_escalation_level,
         created_at: ticketData.ticket_created_at,
         updated_at: ticketData.ticket_updated_at,
-        resolved_at: ticketData.ticket_resolved_at,
-        reopened_at: ticketData.ticket_reopened_at,
+        resolved_at: null, // Field doesn't exist in schema
+        reopened_at: null, // Field doesn't exist in schema
         due_at: ticketData.ticket_due_at,
-        acknowledged_at: ticketData.ticket_acknowledged_at,
-        rating: ticketData.ticket_rating,
-        feedback: ticketData.ticket_feedback,
-        tat_extended_count: ticketData.ticket_tat_extended_count,
+        acknowledged_at: ticketData.ticket_acknowledgement_due_at ? new Date(ticketData.ticket_acknowledgement_due_at) : null,
+        rating: null, // Field doesn't exist in schema
+        feedback: null, // Field doesn't exist in schema
+        tat_extended_count: null, // Field doesn't exist in schema
       },
       category: category ? {
         id: category.id,
@@ -299,29 +343,32 @@ export async function getFullTicketData(ticketId: number, userId: string) {
         slug: subSubcategory.slug,
       } : null,
       creator: {
-        name: [ticketData.user_first_name, ticketData.user_last_name].filter(Boolean).join(' ').trim(),
-        email: ticketData.user_email,
+        name: ticketData.user_full_name || null,
+        email: ticketData.user_email || null,
       },
       student: {
-        roll_no: ticketData.student_roll_no,
-        hostel_id: ticketData.student_hostel_id,
-        hostel_name: ticketData.student_hostel_name,
-        room_no: ticketData.student_room_no,
+        roll_no: ticketData.student_roll_no || null,
+        hostel_id: ticketData.student_hostel_id || null,
+        hostel_name: ticketData.student_hostel_name || null,
+        room_no: ticketData.student_room_no || null,
       },
-      assignedStaff,
-      spoc,
-      profileFields,
-      dynamicFields,
-      comments: visibleComments,
-      timeline,
-      categorySchema,
+      assignedStaff: assignedStaff || null,
+      spoc: spoc || null,
+      profileFields: Array.isArray(profileFields) ? profileFields : [],
+      dynamicFields: Array.isArray(dynamicFields) ? dynamicFields : [],
+      comments: Array.isArray(visibleComments) ? visibleComments : [],
+      timeline: Array.isArray(timeline) ? timeline : [],
+      categorySchema: categorySchema || null,
       sla: {
         expectedAckTime,
         expectedResolutionTime,
       },
     };
   } catch (error) {
-    console.error('[getFullTicketData] Error fetching ticket data:', error);
+    console.error('[getFullTicketData] Error fetching ticket data (step:', debugStep, '):', error);
+    if (error && typeof error === "object" && "stack" in error) {
+      console.error("[getFullTicketData] stack:", (error as Error).stack);
+    }
     return null;
   }
 }

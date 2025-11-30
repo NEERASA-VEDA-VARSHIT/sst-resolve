@@ -22,16 +22,6 @@ function capitalize(str: string): string {
 	return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
 }
 
-function splitFullName(name: string): { first_name: string; last_name: string } {
-	if (!name) return { first_name: "", last_name: "" };
-	const parts = name.trim().split(/\s+/);
-	if (parts.length === 0) return { first_name: "", last_name: "" };
-	if (parts.length === 1) return { first_name: parts[0], last_name: "" };
-	const first_name = parts[0];
-	const last_name = parts.slice(1).join(" ");
-	return { first_name, last_name };
-}
-
 function cleanFullName(name: string): string {
 	if (!name) return name;
 	// Trim and capitalize each word
@@ -66,7 +56,6 @@ async function loadMasterDataCache(): Promise<MasterDataCache> {
 		db.select({
 			id: hostels.id,
 			name: hostels.name,
-			code: hostels.code,
 			is_active: hostels.is_active,
 		}).from(hostels).where(eq(hostels.is_active, true)),
 		db.select({
@@ -77,7 +66,6 @@ async function loadMasterDataCache(): Promise<MasterDataCache> {
 		db.select({
 			id: batches.id,
 			batch_year: batches.batch_year,
-			display_name: batches.display_name,
 			is_active: batches.is_active,
 		}).from(batches).where(eq(batches.is_active, true)),
 	]);
@@ -164,8 +152,42 @@ function validateRow(row: CSVRow, rowIndex: number, cache: MasterDataCache): Val
 		});
 	}
 
-	// Optional field validations - check against master tables
-	if (row.hostel && row.hostel.trim()) {
+	// Mobile is required
+	if (!cleanedMobileNum) {
+		errors.push({
+			row: rowIndex,
+			field: "mobile",
+			message: "Mobile number is required",
+			value: row.mobile,
+		});
+	} else if (cleanedMobileNum.length !== 10) {
+		errors.push({
+			row: rowIndex,
+			field: "mobile",
+			message: "Mobile must be 10 digits",
+			value: row.mobile,
+		});
+	}
+
+	// Room number is required
+	if (!row.room_number || !row.room_number.trim()) {
+		errors.push({
+			row: rowIndex,
+			field: "room_number",
+			message: "Room number is required",
+			value: row.room_number,
+		});
+	}
+
+	// Hostel is required
+	if (!row.hostel || !row.hostel.trim()) {
+		errors.push({
+			row: rowIndex,
+			field: "hostel",
+			message: "Hostel is required",
+			value: row.hostel,
+		});
+	} else {
 		const hostelId = cache.hostels.get(row.hostel.trim().toLowerCase());
 		if (!hostelId) {
 			const validHostels = Array.from(cache.hostels.keys()).map(h => capitalize(h)).join(", ");
@@ -178,7 +200,15 @@ function validateRow(row: CSVRow, rowIndex: number, cache: MasterDataCache): Val
 		}
 	}
 
-	if (row.class_section && row.class_section.trim()) {
+	// Class section is required
+	if (!row.class_section || !row.class_section.trim()) {
+		errors.push({
+			row: rowIndex,
+			field: "class_section",
+			message: "Class section is required",
+			value: row.class_section,
+		});
+	} else {
 		const sectionId = cache.class_sections.get(row.class_section.trim().toUpperCase());
 		if (!sectionId) {
 			const validSections = Array.from(cache.class_sections.keys()).join(", ");
@@ -191,7 +221,15 @@ function validateRow(row: CSVRow, rowIndex: number, cache: MasterDataCache): Val
 		}
 	}
 
-	if (row.batch_year) {
+	// Batch year is required
+	if (!row.batch_year || !row.batch_year.trim()) {
+		errors.push({
+			row: rowIndex,
+			field: "batch_year",
+			message: "Batch year is required",
+			value: row.batch_year,
+		});
+	} else {
 		const year = parseInt(row.batch_year);
 		const batchId = cache.batches.get(year);
 		if (isNaN(year)) {
@@ -212,12 +250,13 @@ function validateRow(row: CSVRow, rowIndex: number, cache: MasterDataCache): Val
 		}
 	}
 
-	if (cleanedMobileNum && cleanedMobileNum.length !== 10) {
+	// Department is required
+	if (!row.department || !row.department.trim()) {
 		errors.push({
 			row: rowIndex,
-			field: "mobile",
-			message: "Mobile must be 10 digits",
-			value: row.mobile,
+			field: "department",
+			message: "Department is required",
+			value: row.department,
 		});
 	}
 
@@ -313,25 +352,16 @@ export async function POST(request: NextRequest) {
 
 			try {
 				// Clean and resolve data to IDs
-				const nameParts = splitFullName(row.full_name);
 				const cleanedData = {
 					email: cleanEmail(row.email),
-					first_name: nameParts.first_name,
-					last_name: nameParts.last_name,
+					full_name: cleanFullName(row.full_name),
 					user_number: row.user_number.trim(),
-					hostel_id: row.hostel?.trim()
-						? masterDataCache.hostels.get(row.hostel.trim().toLowerCase()) || null
-						: null,
-					room_number: row.room_number?.trim() || null,
-					class_section_id: row.class_section?.trim()
-						? masterDataCache.class_sections.get(row.class_section.trim().toUpperCase()) || null
-						: null,
-					batch_id: row.batch_year
-						? masterDataCache.batches.get(parseInt(row.batch_year)) || null
-						: null,
-					batch_year: row.batch_year ? parseInt(row.batch_year) : null,
-					mobile: row.mobile ? cleanMobile(row.mobile) : null,
-					department: row.department?.trim() || null,
+					hostel_id: masterDataCache.hostels.get(row.hostel!.trim().toLowerCase())!,
+					room_number: row.room_number!.trim(),
+					class_section_id: masterDataCache.class_sections.get(row.class_section!.trim().toUpperCase())!,
+					batch_id: masterDataCache.batches.get(parseInt(row.batch_year!))!,
+					mobile: cleanMobile(row.mobile!),
+					department: row.department!.trim(),
 				};
 
 				// Find user by email
@@ -346,9 +376,8 @@ export async function POST(request: NextRequest) {
 					await db
 						.update(users)
 						.set({
-							first_name: cleanedData.first_name,
-							last_name: cleanedData.last_name,
-							phone: cleanedData.mobile || null,
+							full_name: cleanedData.full_name,
+							phone: cleanedData.mobile,
 							updated_at: new Date(),
 						})
 						.where(eq(users.id, existingUser.id));
@@ -370,10 +399,7 @@ export async function POST(request: NextRequest) {
 								hostel_id: cleanedData.hostel_id,
 								class_section_id: cleanedData.class_section_id,
 								batch_id: cleanedData.batch_id,
-								batch_year: cleanedData.batch_year,
 								department: cleanedData.department,
-								source: "csv", // Track that this was updated via CSV
-								last_synced_at: new Date(), // Track sync time
 								updated_at: new Date(),
 							})
 							.where(eq(students.id, existingStudent.id));
@@ -388,11 +414,7 @@ export async function POST(request: NextRequest) {
 							hostel_id: cleanedData.hostel_id,
 							class_section_id: cleanedData.class_section_id,
 							batch_id: cleanedData.batch_id,
-							batch_year: cleanedData.batch_year,
 							department: cleanedData.department,
-							source: "csv", // Track data source
-							last_synced_at: new Date(),
-							active: true, // New students are active by default
 						});
 
 						created++;
@@ -419,11 +441,11 @@ export async function POST(request: NextRequest) {
 					const [newUser] = await db
 						.insert(users)
 						.values({
-							clerk_id: `pending_${cleanedData.email}`, // Temporary, will be updated on first login
+							auth_provider: "manual",
+							external_id: `pending_${cleanedData.email}`, // Temporary, will be updated on first login
 							email: cleanedData.email,
-							first_name: cleanedData.first_name,
-							last_name: cleanedData.last_name,
-							phone: cleanedData.mobile || null,
+							full_name: cleanedData.full_name,
+							phone: cleanedData.mobile,
 							role_id: studentRole.id,
 						})
 						.returning();
@@ -435,11 +457,7 @@ export async function POST(request: NextRequest) {
 						hostel_id: cleanedData.hostel_id,
 						class_section_id: cleanedData.class_section_id,
 						batch_id: cleanedData.batch_id,
-						batch_year: cleanedData.batch_year,
 						department: cleanedData.department,
-						source: "csv", // Track data source
-						last_synced_at: new Date(),
-						active: true, // New students are active by default
 					});
 
 					created++;

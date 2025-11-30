@@ -60,8 +60,10 @@ export function buildTimeline(ticket: TicketData, normalizedStatus: string): Tim
     });
   }
 
+  
+
   // Add awaiting student response entry if applicable
-  if ((normalizedStatus === "awaiting_student_response" || normalizedStatus === "awaiting_student" || normalizedStatus.includes("awaiting")) && ticket.updated_at) {
+  if (( normalizedStatus === "awaiting_student" || normalizedStatus.includes("awaiting")) && ticket.updated_at) {
     entries.push({
       title: "Awaiting Student Response",
       icon: "MessageSquare",

@@ -30,14 +30,14 @@ interface EscalationRule {
   scope_id: number | null;
   level: number;
   user_id: string | null;
+  tat_hours?: number | null;
   domain?: { id: number; name: string };
   scope?: { id: number; name: string };
   user?: {
     id: string;
-    first_name: string | null;
-    last_name: string | null;
+    full_name: string | null;
     email: string | null;
-    clerk_id: string | null;
+    external_id: string | null;
   };
   notify_channel: string;
   created_at: Date | string | null;
@@ -77,6 +77,7 @@ export function EscalationManager({ categoryName, categoryId }: EscalationManage
     level: "1",
     scope_id: "all",
     user_id: "",
+    tat_hours: "48",
     notify_channel: "slack",
   });
 
@@ -106,14 +107,19 @@ export function EscalationManager({ categoryName, categoryId }: EscalationManage
     try {
       const response = await fetch("/api/escalation-rules");
       if (response.ok) {
-        const data = await response.json();
-        // Filter rules by domain_id matching categoryId
-        const filteredRules = (data.rules || []).filter(
-          (rule: EscalationRule) => rule.domain_id === categoryId
-        );
-        // Sort by level
-        filteredRules.sort((a: EscalationRule, b: EscalationRule) => a.level - b.level);
-        setEscalationRules(filteredRules);
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const data = await response.json();
+          // Filter rules by domain_id matching categoryId
+          const filteredRules = (data.rules || []).filter(
+            (rule: EscalationRule) => rule.domain_id === categoryId
+          );
+          // Sort by level
+          filteredRules.sort((a: EscalationRule, b: EscalationRule) => a.level - b.level);
+          setEscalationRules(filteredRules);
+        } else {
+          console.error("Server returned non-JSON response when fetching escalation rules");
+        }
       } else {
         toast.error("Failed to fetch escalation rules");
       }
@@ -127,8 +133,13 @@ export function EscalationManager({ categoryName, categoryId }: EscalationManage
     try {
       const response = await fetch("/api/admin/list");
       if (response.ok) {
-        const data = await response.json();
-        setAdminUsers(data.admins || []);
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const data = await response.json();
+          setAdminUsers(data.admins || []);
+        } else {
+          console.error("Server returned non-JSON response when fetching admins");
+        }
       }
     } catch (error) {
       console.error("Error fetching admins:", error);
@@ -139,8 +150,13 @@ export function EscalationManager({ categoryName, categoryId }: EscalationManage
     try {
       const response = await fetch("/api/admin/master-data");
       if (response.ok) {
-        const data = await response.json();
-        setScopes(data.scopes || []);
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const data = await response.json();
+          setScopes(data.scopes || []);
+        } else {
+          console.error("Server returned non-JSON response when fetching scopes");
+        }
       }
     } catch (error) {
       console.error("Error fetching scopes:", error);
@@ -153,6 +169,7 @@ export function EscalationManager({ categoryName, categoryId }: EscalationManage
       level: String((escalationRules.length > 0 ? Math.max(...escalationRules.map(r => r.level)) : 0) + 1),
       scope_id: "all",
       user_id: "",
+      tat_hours: "48",
       notify_channel: "slack",
     });
     setIsDialogOpen(true);
@@ -164,6 +181,7 @@ export function EscalationManager({ categoryName, categoryId }: EscalationManage
       level: String(rule.level),
       scope_id: rule.scope_id ? String(rule.scope_id) : "all",
       user_id: rule.user_id || "",
+      tat_hours: String(rule.tat_hours || 48),
       notify_channel: rule.notify_channel || "slack",
     });
     setIsDialogOpen(true);
@@ -181,6 +199,7 @@ export function EscalationManager({ categoryName, categoryId }: EscalationManage
       level: "1",
       scope_id: "all",
       user_id: "",
+      tat_hours: "48",
       notify_channel: "slack",
     });
   };
@@ -195,6 +214,7 @@ export function EscalationManager({ categoryName, categoryId }: EscalationManage
         scope_id: formData.scope_id === "all" ? null : parseInt(formData.scope_id, 10),
         level: parseInt(formData.level, 10),
         user_id: formData.user_id && formData.user_id !== "none" ? formData.user_id : null,
+        tat_hours: parseInt(formData.tat_hours, 10) || 48,
         notify_channel: formData.notify_channel,
       };
 
@@ -215,8 +235,13 @@ export function EscalationManager({ categoryName, categoryId }: EscalationManage
         handleCloseDialog();
         fetchEscalationRules();
       } else {
-        const error = await response.json();
-        toast.error(error.error || "Failed to save escalation rule");
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const error = await response.json();
+          toast.error(error.error || "Failed to save escalation rule");
+        } else {
+          toast.error(`Failed to save escalation rule (${response.status} ${response.statusText})`);
+        }
       }
     } catch (error) {
       console.error("Error saving escalation rule:", error);
@@ -240,8 +265,13 @@ export function EscalationManager({ categoryName, categoryId }: EscalationManage
         setDeletingRuleId(null);
         fetchEscalationRules();
       } else {
-        const error = await response.json();
-        toast.error(error.error || "Failed to delete escalation rule");
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const error = await response.json();
+          toast.error(error.error || "Failed to delete escalation rule");
+        } else {
+          toast.error(`Failed to delete escalation rule (${response.status} ${response.statusText})`);
+        }
       }
     } catch (error) {
       console.error("Error deleting escalation rule:", error);
@@ -350,13 +380,20 @@ export function EscalationManager({ categoryName, categoryId }: EscalationManage
                       {rule.scope && (
                         <Badge variant="secondary">{rule.scope.name}</Badge>
                       )}
-                      {!rule.scope && categoryName === "Hostel" && (
-                        <Badge variant="secondary">All Hostels</Badge>
+                      {!rule.scope && (
+                        <Badge variant="outline" className="text-xs">
+                          Global
+                        </Badge>
+                      )}
+                      {rule.tat_hours && (
+                        <Badge variant="outline" className="text-xs">
+                          TAT: {rule.tat_hours}h
+                        </Badge>
                       )}
                     </div>
                     {rule.user ? (
                       <div className="space-y-1">
-                        <p className="font-medium">{[rule.user.first_name, rule.user.last_name].filter(Boolean).join(' ')}</p>
+                        <p className="font-medium">{rule.user.full_name || 'Unknown'}</p>
                         {rule.user.email && (
                           <p className="text-sm text-muted-foreground">{rule.user.email}</p>
                         )}
@@ -465,6 +502,23 @@ export function EscalationManager({ categoryName, categoryId }: EscalationManage
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="tat_hours">
+                TAT (Hours) <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="tat_hours"
+                type="number"
+                min="1"
+                value={formData.tat_hours}
+                onChange={(e) => setFormData({ ...formData, tat_hours: e.target.value })}
+                required
+              />
+              <p className="text-xs text-muted-foreground">
+                Turnaround time in hours for this escalation level (e.g., 48 for 2 days)
+              </p>
             </div>
 
             <div className="space-y-2">

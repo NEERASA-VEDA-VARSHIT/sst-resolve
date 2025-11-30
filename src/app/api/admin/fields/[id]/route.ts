@@ -5,7 +5,6 @@ import { category_fields, field_options } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
-import { archiveAndDeleteField } from "@/lib/archive/deleteFieldWithArchive";
 import type { InferSelectModel } from "drizzle-orm";
 
 export async function PATCH(
@@ -45,7 +44,7 @@ export async function PATCH(
     if (body.help_text !== undefined) updateData.help_text = body.help_text;
     if (body.validation_rules !== undefined) updateData.validation_rules = body.validation_rules;
     if (body.display_order !== undefined) updateData.display_order = body.display_order;
-    if (body.active !== undefined) updateData.active = body.active;
+    if (body.active !== undefined) updateData.is_active = body.active;
     if (body.assigned_admin_id !== undefined) {
       updateData.assigned_admin_id = body.assigned_admin_id === null || body.assigned_admin_id === "" ? null : String(body.assigned_admin_id);
     }
@@ -62,6 +61,30 @@ export async function PATCH(
 
     // Update options if provided
     if (body.options && Array.isArray(body.options)) {
+      // Validate for duplicate values (case-insensitive) before deleting existing
+      if (body.options.length > 0) {
+        const valueSet = new Set<string>();
+        const duplicates: string[] = [];
+        for (const opt of body.options) {
+          const normalizedValue = String(opt.value || "").trim().toLowerCase();
+          if (!normalizedValue) {
+            return NextResponse.json({ 
+              error: "Option values cannot be empty" 
+            }, { status: 400 });
+          }
+          if (valueSet.has(normalizedValue)) {
+            duplicates.push(opt.value);
+          }
+          valueSet.add(normalizedValue);
+        }
+        
+        if (duplicates.length > 0) {
+          return NextResponse.json({ 
+            error: `Duplicate option values detected: ${duplicates.join(", ")}. Each option must have a unique value (case-insensitive).` 
+          }, { status: 400 });
+        }
+      }
+
       // Delete existing options
       await db.delete(field_options).where(eq(field_options.field_id, fieldId));
 
@@ -76,7 +99,7 @@ export async function PATCH(
         const optionValues = body.options.map((opt: OptionInput, index: number) => ({
           field_id: fieldId,
           label: opt.label || opt.value,
-          value: opt.value,
+          value: String(opt.value).trim(), // Trim whitespace
           display_order: opt.display_order || index,
           active: opt.active !== false,
         }));
@@ -125,21 +148,21 @@ export async function DELETE(
       return NextResponse.json({ error: "Invalid field ID" }, { status: 400 });
     }
 
-    // Smart deletion: Archive only if tickets use it, then hard delete
-    const result = await archiveAndDeleteField({
-      fieldId,
-      deletedBy: userId, // Clerk user ID
-      deletionReason: "Deleted via admin panel",
-    });
+    // Delete options first (safe even though field_options has cascade)
+    await db.delete(field_options).where(eq(field_options.field_id, fieldId));
 
-    return NextResponse.json({ 
+    const [deletedField] = await db
+      .delete(category_fields)
+      .where(eq(category_fields.id, fieldId))
+      .returning({ name: category_fields.name });
+
+    if (!deletedField) {
+      return NextResponse.json({ error: "Field not found" }, { status: 404 });
+    }
+
+    return NextResponse.json({
       success: true,
-      archived: result.archived,
-      ticket_count: result.ticket_count,
-      field_name: result.field_name,
-      message: result.archived 
-        ? `Field "${result.field_name}" deleted and archived. ${result.ticket_count} existing tickets will still display this field.`
-        : `Field "${result.field_name}" deleted permanently (no tickets were using it).`
+      message: `Field "${deletedField.name}" deleted successfully.`,
     });
   } catch (error) {
     console.error("Error deleting field:", error);

@@ -4,7 +4,7 @@
  */
 
 import { db, users, students } from "@/db";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 
 /**
  * Check if a student profile exists and is linked
@@ -17,15 +17,19 @@ export async function hasStudentProfile(clerkUserId: string): Promise<boolean> {
     const result = await db
       .select({ 
         studentId: students.id,
-        active: students.active,
       })
       .from(users)
       .innerJoin(students, eq(students.user_id, users.id))
-      .where(eq(users.clerk_id, clerkUserId))
+      .where(
+        and(
+          eq(users.auth_provider, 'clerk'),
+          eq(users.external_id, clerkUserId)
+        )
+      )
       .limit(1);
 
-    // Profile exists and is active
-    return result.length > 0 && result[0].active === true;
+    // Profile exists (students table doesn't have is_active field)
+    return result.length > 0;
   } catch (error) {
     console.error("[Student Profile Check] Error:", error);
     // On error, allow access (fail open to avoid blocking legitimate users)

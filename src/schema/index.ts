@@ -2,24 +2,42 @@
  * Central export for all Zod validation schemas
  */
 
-// Ticket schemas
-export * from "./ticket.schema";
+// Ticket schemas (business layer)
 export {
+  TicketStatus,
+  TicketWorkflowStatusSchema,
+  TicketCategory,
+  CommentType,
   CreateTicketSchema,
   UpdateTicketSchema,
   AddCommentSchema,
   SetTATSchema,
   RateTicketSchema,
   ReassignTicketSchema,
-  TicketFilterSchema,
+  BulkCloseTicketsSchema,
   TicketDetailsSchema,
-} from "./ticket.schema";
+  TicketFilterSchema,
+  TicketDbUpdateSchema,
+  AssignTicketSchema,
+  EscalateTicketSchema,
+  ForwardTicketSchema,
+  UpdateTicketStatusSchema,
+} from "@/schemas/business/ticket";
 
-// Student schemas
-export * from "./student.schema";
+// Student schemas (exported from new business layer)
 export {
   UpdateStudentMobileSchema,
-  UpdateStudentProfileSchema, // DEPRECATED - kept for backward compatibility
-  LinkUserNumberSchema, // DEPRECATED - kept for backward compatibility
-} from "./student.schema";
+  UpdateStudentProfileSchema,
+  UpdateStudentProfileFullSchema,
+  AdminUpdateStudentSchema,
+  BulkEditStudentsSchema,
+} from "@/schemas/business/student";
+
+// Ticket form schema (UI)
+export {
+  ticketFormSchema,
+  validateDynamicField,
+  validateProfileField,
+} from "@/schemas/business/ticketForm";
+export type { TicketFormData } from "@/schemas/business/ticketForm";
 

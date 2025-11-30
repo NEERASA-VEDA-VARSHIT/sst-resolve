@@ -1,13 +1,14 @@
 /**
  * Reusable TicketStatusBadge component
- * Now works with dynamic ticket_statuses table
+ * Works with tickets.status field (string) or status display object
  */
 
 import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
+import { getStatusMeta } from "@/conf/constants";
+import { cn, formatStatus, normalizeStatusForComparison } from "@/lib/utils";
 
 interface TicketStatusBadgeProps {
-  // New: Accept status object from ticket_statuses table
+  // Accept status object (from buildStatusDisplay) or status value string
   status?: {
     value: string;
     label: string;
@@ -23,15 +24,18 @@ export function TicketStatusBadge({
   statusValue,
   className = ""
 }: TicketStatusBadgeProps) {
-  // Use status object if provided, otherwise fall back to statusValue
-  const label = status?.label || statusValue || "Unknown";
-  const badgeColor = status?.badge_color || "outline";
+  const normalizedValue = normalizeStatusForComparison(status?.value || statusValue);
+  const meta = getStatusMeta(normalizedValue);
+
+  // Use status object if provided, otherwise fall back to metadata or formatted value
+  const label = status?.label || meta?.label || formatStatus(normalizedValue || statusValue || "Unknown");
+  const badgeColor = status?.badge_color || meta?.badgeColor || "outline";
 
   // Map badge_color from database to Badge variant and custom colors
   // Match STATUS_STYLES from TicketCard for consistency across dashboard and detail page
   const getVariantAndColor = (color: string | null, statusValue?: string) => {
     const normalizedColor = color?.toLowerCase().trim() || "";
-    const normalizedStatus = statusValue?.toLowerCase() || "";
+    const normalizedStatus = statusValue ? normalizeStatusForComparison(statusValue) : "";
     
     // Priority 1: Check status value first (match dashboard STATUS_STYLES exactly)
     if (normalizedStatus === "in_progress" || normalizedStatus.includes("in_progress")) {
