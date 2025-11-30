@@ -146,11 +146,10 @@ export default function SuperAdminStudentsPage() {
 	useEffect(() => {
 		fetchStudents();
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [pagination.page, hostelFilter, batchYearFilter]);
+	}, [pagination.page, hostelFilter, batchYearFilter, search]);
 
 	const handleSearch = () => {
-		setPagination({ ...pagination, page: 1 });
-		fetchStudents();
+		setPagination((prev) => ({ ...prev, page: 1 }));
 	};
 
 	const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -239,7 +238,11 @@ export default function SuperAdminStudentsPage() {
 								<Input
 									placeholder="Search by name, email, or roll number..."
 									value={search}
-									onChange={(e) => setSearch(e.target.value)}
+									onChange={(e) => {
+										setSearch(e.target.value);
+										// Reset to page 1 when search changes
+										setPagination((prev) => ({ ...prev, page: 1 }));
+									}}
 									onKeyPress={handleKeyPress}
 								/>
 								<Button onClick={handleSearch}>
@@ -386,6 +389,7 @@ export default function SuperAdminStudentsPage() {
 															<TableHead>Hostel</TableHead>
 															<TableHead>Room</TableHead>
 															<TableHead>Section</TableHead>
+															<TableHead>Department</TableHead>
 															<TableHead>Phone</TableHead>
 															<TableHead>Actions</TableHead>
 														</TableRow>
@@ -424,6 +428,15 @@ export default function SuperAdminStudentsPage() {
 																	{student.class_section ? (
 																		<Badge variant="secondary">
 																			{student.class_section}
+																		</Badge>
+																	) : (
+																		<span className="text-muted-foreground">—</span>
+																	)}
+																</TableCell>
+																<TableCell>
+																	{student.department ? (
+																		<Badge variant="outline">
+																			{student.department}
 																		</Badge>
 																	) : (
 																		<span className="text-muted-foreground">—</span>
@@ -474,6 +487,7 @@ export default function SuperAdminStudentsPage() {
 										<TableHead>Hostel</TableHead>
 										<TableHead>Room</TableHead>
 										<TableHead>Section</TableHead>
+										<TableHead>Department</TableHead>
 										<TableHead>Phone</TableHead>
 										<TableHead>Actions</TableHead>
 									</TableRow>
@@ -512,6 +526,15 @@ export default function SuperAdminStudentsPage() {
 												{student.class_section ? (
 													<Badge variant="secondary">
 														{student.class_section}
+													</Badge>
+												) : (
+													<span className="text-muted-foreground">—</span>
+												)}
+											</TableCell>
+											<TableCell>
+												{student.department ? (
+													<Badge variant="outline">
+														{student.department}
 													</Badge>
 												) : (
 													<span className="text-muted-foreground">—</span>
