@@ -108,12 +108,31 @@ export function DynamicFieldDisplay({ field }: DynamicFieldDisplayProps) {
     return null;
   }
 
+  // Get icon based on field type
+  const getFieldIcon = () => {
+    switch (field.fieldType) {
+      case 'select':
+        return '📋';
+      case 'date':
+        return '📅';
+      case 'number':
+        return '🔢';
+      case 'boolean':
+        return '✓';
+      default:
+        return '📝';
+    }
+  };
+
   return (
-    <div className="space-y-2 p-3 rounded-lg bg-background/50 border border-border/50">
-      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-        {sanitize(field.label)}
-      </p>
-      <div className="text-base font-medium">{displayValue}</div>
+    <div className="p-4 rounded-lg bg-muted/50 border">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-sm">{getFieldIcon()}</span>
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+          {sanitize(field.label)}
+        </p>
+      </div>
+      <div className="text-sm font-semibold break-words">{displayValue}</div>
     </div>
   );
 }

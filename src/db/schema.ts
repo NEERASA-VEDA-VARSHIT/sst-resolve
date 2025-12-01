@@ -532,6 +532,9 @@ import {
       created_by: uuid("created_by").references(() => users.id, {
         onDelete: "set null",
       }),
+      committee_id: integer("committee_id").references(() => committees.id, {
+        onDelete: "set null",
+      }),
       is_archived: boolean("is_archived").default(false),
       created_at: timestamp("created_at").defaultNow(),
       updated_at: timestamp("updated_at").defaultNow(),
@@ -539,6 +542,7 @@ import {
     (table) => ({
       createdByIdx: index("idx_ticket_groups_created_by").on(table.created_by),
       archivedIdx: index("idx_ticket_groups_archived").on(table.is_archived),
+      committeeIdx: index("idx_ticket_groups_committee").on(table.committee_id),
     })
   );
   

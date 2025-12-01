@@ -9,7 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ArrowLeft, Clock, AlertCircle, MessageSquare, User, MapPin, FileText, Image as ImageIcon, CheckCircle2 } from "lucide-react";
-import { db, tickets, ticket_committee_tags, committees, categories, ticket_statuses } from "@/db";
+import { db, tickets, ticket_committee_tags, committees, categories, ticket_statuses, ticket_groups } from "@/db";
 import { eq, inArray, and } from "drizzle-orm";
 import type { TicketMetadata } from "@/db/inferred-types";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
@@ -36,6 +36,7 @@ export default async function CommitteeTicketPage({ params }: { params: Promise<
       location: tickets.location,
       created_by: tickets.created_by,
       category_id: tickets.category_id,
+      group_id: tickets.group_id,
       metadata: tickets.metadata,
       due_at: tickets.resolution_due_at,
       created_at: tickets.created_at,
@@ -69,8 +70,9 @@ export default async function CommitteeTicketPage({ params }: { params: Promise<
     canAccess = true;
   }
 
-  // Check if ticket is tagged to any of the user's committees
+  // Check if ticket is tagged to any of the user's committees OR in a group assigned to their committee
   if (!canAccess && committeeIds.length > 0) {
+    // Check direct tags
     const tagRecords = await db
       .select()
       .from(ticket_committee_tags)
@@ -84,6 +86,19 @@ export default async function CommitteeTicketPage({ params }: { params: Promise<
 
     if (tagRecords.length > 0) {
       canAccess = true;
+    } else {
+      // Check if ticket is in a group assigned to their committee
+      if (ticket.group_id) {
+        const [group] = await db
+          .select({ committee_id: ticket_groups.committee_id })
+          .from(ticket_groups)
+          .where(eq(ticket_groups.id, ticket.group_id))
+          .limit(1);
+
+        if (group?.committee_id && committeeIds.includes(group.committee_id)) {
+          canAccess = true;
+        }
+      }
     }
   }
 

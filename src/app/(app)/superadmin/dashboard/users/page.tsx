@@ -119,10 +119,10 @@ export default async function SuperAdminUsersPage() {
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-2">
             <UsersIcon className="w-8 h-8" />
-            User & Staff Management
+            Staff Management
           </h1>
           <p className="text-muted-foreground mt-1">
-            Manage user roles and staff assignments across the system
+            Manage staff members, user roles, and assignments across the system
           </p>
         </div>
       </div>

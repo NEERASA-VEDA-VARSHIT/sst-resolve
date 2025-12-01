@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth, clerkClient } from "@clerk/nextjs/server";
-import { db, tickets, ticket_committee_tags, committees, categories, users, ticket_statuses } from "@/db";
+import { db, tickets, ticket_committee_tags, committees, categories, users, ticket_statuses, ticket_groups } from "@/db";
 import { getStatusIdByValue } from "@/lib/status/getTicketStatuses";
 import { eq, and, inArray, sql } from "drizzle-orm";
 import { sendEmail, getStatusUpdateEmail } from "@/lib/integration/email";
@@ -61,6 +61,7 @@ export async function GET(
         created_by: tickets.created_by,
         assigned_to: tickets.assigned_to,
         category_id: tickets.category_id,
+        group_id: tickets.group_id,
         // Join fields
         category_name: categories.name,
         creator_full_name: users.full_name,
@@ -99,7 +100,7 @@ export async function GET(
         .limit(1);
 
       if (!committeeCat || ticketRecord.category_id !== committeeCat.id) {
-        // Check if tagged
+        // Check if tagged OR in a group assigned to their committee
         const dbUser = await getOrCreateUser(userId);
         if (dbUser) {
           const committeeRecords = await db
@@ -109,6 +110,7 @@ export async function GET(
 
           const committeeIds = committeeRecords.map(c => c.id);
           if (committeeIds.length > 0) {
+            // Check direct tags
             const tagRecords = await db
               .select()
               .from(ticket_committee_tags)
@@ -121,7 +123,20 @@ export async function GET(
               .limit(1);
 
             if (tagRecords.length === 0) {
-              return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+              // Check if ticket is in a group assigned to their committee
+              if (ticketRecord.group_id) {
+                const [group] = await db
+                  .select({ committee_id: ticket_groups.committee_id })
+                  .from(ticket_groups)
+                  .where(eq(ticket_groups.id, ticketRecord.group_id))
+                  .limit(1);
+
+                if (!group?.committee_id || !committeeIds.includes(group.committee_id)) {
+                  return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+                }
+              } else {
+                return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+              }
             }
           } else {
             return NextResponse.json({ error: "Forbidden" }, { status: 403 });

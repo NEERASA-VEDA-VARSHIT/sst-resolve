@@ -50,6 +50,7 @@ interface AdminUser {
   email: string;
   domain: string | null;
   scope: string | null;
+  role?: string; // "admin" or "super_admin"
 }
 
 interface Scope {
@@ -497,6 +498,7 @@ export function EscalationManager({ categoryName, categoryId }: EscalationManage
                   {adminUsers.map((admin) => (
                     <SelectItem key={admin.id} value={admin.id}>
                       {admin.name}
+                      {admin.role === "super_admin" && " (Super Admin)"}
                       {admin.domain && ` (${admin.domain}${admin.scope ? ` - ${admin.scope}` : ""})`}
                     </SelectItem>
                   ))}

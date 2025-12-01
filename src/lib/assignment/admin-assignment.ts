@@ -36,7 +36,7 @@ export async function getAdminAssignment(clerkUserId: string): Promise<AdminAssi
     }
 
     const userData = user[0];
-    const validRoles = ["admin", "committee_head", "super_admin"];
+    const validRoles = ["admin", "committee", "super_admin"];
 
     if (!userData.roleName || !validRoles.includes(userData.roleName)) {
       return { domain: null, scope: null };
@@ -123,7 +123,7 @@ export async function getAdminsForDomainScope(
           eq(domains.name, domain),
           or(
             eq(roles.name, "admin"),
-            eq(roles.name, "committee_head"),
+            eq(roles.name, "committee"),
             eq(roles.name, "super_admin")
           ),
           scope ? eq(scopes.name, scope) : isNull(admin_profiles.primary_scope_id)

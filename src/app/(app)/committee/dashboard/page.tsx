@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { db, tickets, ticket_committee_tags, committees, categories, ticket_statuses } from "@/db";
+import { db, tickets, ticket_committee_tags, committees, categories, ticket_statuses, ticket_groups } from "@/db";
 import { desc, eq, inArray } from "drizzle-orm";
 import type { Ticket } from "@/db/types-only";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
@@ -114,20 +114,47 @@ export default async function CommitteeDashboardPage({
     });
 
   // Get tickets tagged to committees this user belongs to with joins
+  // Also include tickets from groups assigned to their committees
   type TicketWithExtras = typeof tickets.$inferSelect & {
     status?: string | null;
     category_name?: string | null;
   };
   let taggedTickets: TicketWithExtras[] = [];
   if (committeeIds.length > 0) {
+    // Get tickets directly tagged to committees
     const tagRecords = await db
       .select({ ticket_id: ticket_committee_tags.ticket_id })
       .from(ticket_committee_tags)
       .where(inArray(ticket_committee_tags.committee_id, committeeIds));
 
-    const taggedTicketIds = tagRecords.map(t => t.ticket_id);
+    // Get tickets from groups assigned to committees
+    const groupRecords = await db
+      .select({ id: ticket_groups.id })
+      .from(ticket_groups)
+      .where(inArray(ticket_groups.committee_id, committeeIds));
+
+    const groupIds = groupRecords.map(g => g.id);
     
-    if (taggedTicketIds.length > 0) {
+    // Get ticket IDs from groups
+    const groupTicketIds: number[] = [];
+    if (groupIds.length > 0) {
+      const groupTickets = await db
+        .select({ id: tickets.id })
+        .from(tickets)
+        .where(inArray(tickets.group_id, groupIds));
+      groupTicketIds.push(...groupTickets.map(t => t.id));
+    }
+
+    // Combine directly tagged tickets and group tickets
+    const taggedTicketIds = [
+      ...tagRecords.map(t => t.ticket_id),
+      ...groupTicketIds
+    ];
+    
+    // Remove duplicates
+    const uniqueTaggedTicketIds = Array.from(new Set(taggedTicketIds));
+    
+    if (uniqueTaggedTicketIds.length > 0) {
       const taggedTicketRows = await db
         .select({
           id: tickets.id,

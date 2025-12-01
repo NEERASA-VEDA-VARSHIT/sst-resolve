@@ -165,12 +165,6 @@ export function getNavItemsForRole(role: UserRole, mounted: boolean): NavItem[] 
             show: true,
           },
           {
-            title: "Users",
-            href: "/superadmin/dashboard/users",
-            icon: Users,
-            show: true,
-          },
-          {
             title: "Students",
             href: "/superadmin/students",
             icon: GraduationCap,

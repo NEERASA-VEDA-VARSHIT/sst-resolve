@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { db, users, domains, scopes, roles, students, admin_profiles } from "@/db";
+import { db, users, domains, scopes, roles, students, admin_profiles, committees } from "@/db";
 import { eq, inArray } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
@@ -21,7 +21,7 @@ export async function GET() {
             return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }
 
-        // Fetch users with admin, super_admin, or committee_head role
+        // Fetch users with admin, super_admin, or committee role
         const staffMembers = await db
             .select({
                 id: users.id,
@@ -41,21 +41,59 @@ export async function GET() {
             .leftJoin(admin_profiles, eq(admin_profiles.user_id, users.id))
             .leftJoin(domains, eq(admin_profiles.primary_domain_id, domains.id))
             .leftJoin(scopes, eq(admin_profiles.primary_scope_id, scopes.id))
-            .where(inArray(roles.name, ["admin", "super_admin", "committee_head"]));
+            .where(inArray(roles.name, ["admin", "super_admin", "committee"]));
 
-        const formattedStaff = staffMembers.map((staff) => ({
-            id: staff.id,
-            clerkUserId: staff.external_id, // Map external_id to clerkUserId for backward compatibility
-            fullName: staff.full_name || "Unknown",
-            email: staff.email,
-            slackUserId: staff.slackUserId,
-            whatsappNumber: staff.phone, // Map phone to whatsappNumber
-            role: staff.role,
-            domain: staff.domain,
-            scope: staff.scope,
-            createdAt: staff.createdAt,
-            updatedAt: staff.updatedAt,
-        }));
+        // Fetch committees for committee members
+        const committeeMembers = staffMembers.filter(s => s.role === "committee");
+        const committeeMemberIds = committeeMembers.map(s => s.id);
+        const committeesMap = new Map<string, { id: number; name: string; description: string | null }>();
+        
+        if (committeeMemberIds.length > 0) {
+            const committeeRecords = await db
+                .select({
+                    id: committees.id,
+                    name: committees.name,
+                    description: committees.description,
+                    head_id: committees.head_id,
+                })
+                .from(committees)
+                .where(inArray(committees.head_id, committeeMemberIds));
+            
+            for (const committee of committeeRecords) {
+                if (committee.head_id) {
+                    committeesMap.set(committee.head_id, {
+                        id: committee.id,
+                        name: committee.name,
+                        description: committee.description,
+                    });
+                }
+            }
+        }
+
+        const formattedStaff = staffMembers.map((staff) => {
+            // Check if this user is a committee member and has a committee
+            const committee = staff.role === "committee" 
+                ? committeesMap.get(staff.id) 
+                : null;
+            return {
+                id: staff.id,
+                clerkUserId: staff.external_id, // Map external_id to clerkUserId for backward compatibility
+                fullName: staff.full_name || "Unknown",
+                email: staff.email,
+                slackUserId: staff.slackUserId,
+                whatsappNumber: staff.phone, // Map phone to whatsappNumber
+                role: staff.role,
+                domain: staff.domain,
+                scope: staff.scope,
+                committee: committee ? {
+                    id: committee.id,
+                    name: committee.name,
+                    description: committee.description,
+                } : null,
+                createdAt: staff.createdAt,
+                updatedAt: staff.updatedAt,
+            };
+        });
 
         return NextResponse.json({ staff: formattedStaff });
     } catch (error) {
@@ -163,7 +201,7 @@ export async function POST(request: NextRequest) {
         }
 
         // If promoting from student, delete student record
-        const elevatedRoles: string[] = ["admin", "super_admin", "committee_head"];
+        const elevatedRoles: string[] = ["admin", "super_admin", "committee"];
         if (elevatedRoles.includes(role)) {
             const [studentRecord] = await db.select().from(students).where(eq(students.user_id, targetUser.id)).limit(1);
             if (studentRecord) {

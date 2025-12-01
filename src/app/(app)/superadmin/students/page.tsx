@@ -8,7 +8,7 @@ import { StudentBulkUpload } from "@/components/admin/StudentBulkUpload";
 import { AddSingleStudentDialog } from "@/components/admin/AddSingleStudentDialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { BulkEditDialog } from "@/components/admin/BulkEditDialog";
-import { Edit2, Users, Upload, Search, ChevronLeft, ChevronRight, UserPlus, Pencil, ChevronDown, ChevronUp } from "lucide-react";
+import { Edit2, Users, Upload, Search, ChevronLeft, ChevronRight, UserPlus, Pencil, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
 import { EditStudentDialog } from "@/components/admin/EditStudentDialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -27,6 +27,17 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
+import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { toast } from "sonner";
 
 interface Student {
 	student_id: number;
@@ -81,6 +92,8 @@ export default function SuperAdminStudentsPage() {
 	const [editingStudentId, setEditingStudentId] = useState<number | null>(null);
 	const [showEditDialog, setShowEditDialog] = useState(false);
 	const [expandedBatches, setExpandedBatches] = useState<Set<number>>(new Set());
+	const [deletingStudentId, setDeletingStudentId] = useState<number | null>(null);
+	const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
 	const toggleStudent = (studentId: number) => {
 		setSelectedStudents((prev) =>
@@ -168,6 +181,30 @@ export default function SuperAdminStudentsPage() {
 			}
 			return newSet;
 		});
+	};
+
+	const handleDelete = async () => {
+		if (!deletingStudentId) return;
+
+		try {
+			const response = await fetch(`/api/superadmin/students/${deletingStudentId}`, {
+				method: "DELETE",
+			});
+
+			if (response.ok) {
+				const data = await response.json();
+				toast.success(data.message || "Student deleted successfully");
+				setIsDeleteDialogOpen(false);
+				setDeletingStudentId(null);
+				fetchStudents();
+			} else {
+				const error = await response.json();
+				toast.error(error.error || "Failed to delete student");
+			}
+		} catch (error) {
+			console.error("Delete error:", error);
+			toast.error("Failed to delete student");
+		}
 	};
 
 	// Group students by batch year
@@ -448,16 +485,29 @@ export default function SuperAdminStudentsPage() {
 																	)}
 																</TableCell>
 																<TableCell>
-																	<Button
-																		variant="ghost"
-																		size="sm"
-																		onClick={() => {
-																			setEditingStudentId(student.student_id);
-																			setShowEditDialog(true);
-																		}}
-																	>
-																		<Pencil className="w-4 h-4" />
-																	</Button>
+																	<div className="flex items-center gap-2">
+																		<Button
+																			variant="ghost"
+																			size="sm"
+																			onClick={() => {
+																				setEditingStudentId(student.student_id);
+																				setShowEditDialog(true);
+																			}}
+																		>
+																			<Pencil className="w-4 h-4" />
+																		</Button>
+																		<Button
+																			variant="ghost"
+																			size="sm"
+																			onClick={() => {
+																				setDeletingStudentId(student.student_id);
+																				setIsDeleteDialogOpen(true);
+																			}}
+																			className="text-destructive hover:text-destructive"
+																		>
+																			<Trash2 className="w-4 h-4" />
+																		</Button>
+																	</div>
 																</TableCell>
 															</TableRow>
 														))}
@@ -546,16 +596,29 @@ export default function SuperAdminStudentsPage() {
 												)}
 											</TableCell>
 											<TableCell>
-												<Button
-													variant="ghost"
-													size="sm"
-													onClick={() => {
-														setEditingStudentId(student.student_id);
-														setShowEditDialog(true);
-													}}
-												>
-													<Pencil className="w-4 h-4" />
-												</Button>
+												<div className="flex items-center gap-2">
+													<Button
+														variant="ghost"
+														size="sm"
+														onClick={() => {
+															setEditingStudentId(student.student_id);
+															setShowEditDialog(true);
+														}}
+													>
+														<Pencil className="w-4 h-4" />
+													</Button>
+													<Button
+														variant="ghost"
+														size="sm"
+														onClick={() => {
+															setDeletingStudentId(student.student_id);
+															setIsDeleteDialogOpen(true);
+														}}
+														className="text-destructive hover:text-destructive"
+													>
+														<Trash2 className="w-4 h-4" />
+													</Button>
+												</div>
 											</TableCell>
 										</TableRow>
 									))}
@@ -668,6 +731,34 @@ export default function SuperAdminStudentsPage() {
 					}}
 				/>
 			)}
+
+			{/* Delete Confirmation Dialog */}
+			<AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>Are you sure?</AlertDialogTitle>
+						<AlertDialogDescription>
+							This action cannot be undone. This will permanently delete the student record.
+							{deletingStudentId && (
+								<span className="block mt-2 text-sm text-muted-foreground">
+									Note: If the student has ticket history, deletion will be blocked. Use deactivate instead.
+								</span>
+							)}
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel onClick={() => setDeletingStudentId(null)}>
+							Cancel
+						</AlertDialogCancel>
+						<AlertDialogAction
+							onClick={handleDelete}
+							className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+						>
+							Delete
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
 		</div>
 	);
 }

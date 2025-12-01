@@ -215,7 +215,7 @@ export function AdminActions({
 			});
 			if (response.ok) {
 				toast.success("Ticket deleted successfully");
-				router.push("/admin");
+				router.push(isSuperAdmin ? "/superadmin/dashboard" : "/admin");
 			} else {
 				const error = await response.json().catch(() => ({ error: "Failed to delete ticket" }));
 				toast.error(error.error || "Failed to delete ticket");

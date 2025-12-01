@@ -26,7 +26,8 @@ import {
     Building2,
     Pencil,
     Loader2,
-    ArrowLeft
+    ArrowLeft,
+    Trash2
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -38,6 +39,17 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface Domain {
     id: number;
@@ -52,6 +64,7 @@ interface Scope {
     domain_id: number;
     name: string;
     description: string | null;
+    student_field_key: string | null;
     is_active: boolean;
     created_at: string;
 }
@@ -69,13 +82,59 @@ export default function DomainsPage() {
 
     // Scope dialog state
     const [scopeDialog, setScopeDialog] = useState(false);
-    const [scopeForm, setScopeForm] = useState({ name: "", description: "", domain_id: "" });
+    const [scopeForm, setScopeForm] = useState({ 
+        name: "", 
+        description: "", 
+        domain_id: "",
+        student_field_key: "" as string | null
+    });
     const [editingScope, setEditingScope] = useState<Scope | null>(null);
     const [scopeLoading, setScopeLoading] = useState(false);
+    
+    // Delete dialog state
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+    const [deletingItem, setDeletingItem] = useState<{ type: "domain" | "scope"; id: number; name: string } | null>(null);
+    
+    // Master data for scope form dropdowns
+    const [hostels, setHostels] = useState<Array<{ id: number; name: string }>>([]);
+    const [classSections, setClassSections] = useState<Array<{ id: number; name: string }>>([]);
+    const [batches, setBatches] = useState<Array<{ id: number; batch_year: number }>>([]);
+    const [loadingMasterData, setLoadingMasterData] = useState(false);
 
     useEffect(() => {
         fetchData();
+        fetchMasterData();
     }, []);
+
+    const fetchMasterData = async () => {
+        setLoadingMasterData(true);
+        try {
+            // Fetch hostels (active only)
+            const hostelsRes = await fetch("/api/superadmin/hostels?active=true");
+            if (hostelsRes.ok) {
+                const hostelsData = await hostelsRes.json();
+                setHostels(hostelsData.hostels || []);
+            }
+
+            // Fetch class sections (active only)
+            const sectionsRes = await fetch("/api/superadmin/class-sections?active=true");
+            if (sectionsRes.ok) {
+                const sectionsData = await sectionsRes.json();
+                setClassSections(sectionsData.class_sections || []);
+            }
+
+            // Fetch batches (active only)
+            const batchesRes = await fetch("/api/superadmin/batches?active=true");
+            if (batchesRes.ok) {
+                const batchesData = await batchesRes.json();
+                setBatches(batchesData.batches || []);
+            }
+        } catch (error) {
+            console.error("Error fetching master data:", error);
+        } finally {
+            setLoadingMasterData(false);
+        }
+    };
 
     const fetchData = async () => {
         try {
@@ -171,6 +230,7 @@ export default function DomainsPage() {
                         name: scopeForm.name,
                         description: scopeForm.description,
                         domain_id: parseInt(scopeForm.domain_id),
+                        student_field_key: scopeForm.student_field_key || null,
                     }),
                 });
 
@@ -191,6 +251,7 @@ export default function DomainsPage() {
                         name: scopeForm.name,
                         description: scopeForm.description,
                         domain_id: parseInt(scopeForm.domain_id),
+                        student_field_key: scopeForm.student_field_key || null,
                     }),
                 });
 
@@ -217,22 +278,72 @@ export default function DomainsPage() {
                 name: scope.name,
                 description: scope.description || "",
                 domain_id: scope.domain_id.toString(),
+                student_field_key: scope.student_field_key || null,
             });
         } else {
-            setScopeForm({ name: "", description: "", domain_id: selectedDomain?.toString() || "" });
+            setScopeForm({ 
+                name: "", 
+                description: "", 
+                domain_id: selectedDomain?.toString() || "",
+                student_field_key: null,
+            });
         }
+        // Refresh master data when opening dialog
+        fetchMasterData();
         setScopeDialog(true);
     };
 
     const closeScopeDialog = () => {
         setScopeDialog(false);
         setEditingScope(null);
-        setScopeForm({ name: "", description: "", domain_id: "" });
+        setScopeForm({ name: "", description: "", domain_id: "", student_field_key: null });
     };
 
     const filteredScopes = selectedDomain
         ? scopes.filter(s => s.domain_id === selectedDomain)
         : [];
+
+    // ==================== DELETE HANDLERS ====================
+    const handleDelete = async () => {
+        if (!deletingItem) return;
+
+        try {
+            const endpoint = deletingItem.type === "domain" 
+                ? `/api/superadmin/domains/${deletingItem.id}`
+                : `/api/superadmin/scopes/${deletingItem.id}`;
+
+            const res = await fetch(endpoint, {
+                method: "DELETE",
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                toast.success(data.message || `${deletingItem.type === "domain" ? "Domain" : "Scope"} deleted successfully`);
+                setDeleteDialogOpen(false);
+                setDeletingItem(null);
+                fetchData();
+                // Clear selection if deleted domain was selected
+                if (deletingItem.type === "domain" && selectedDomain === deletingItem.id) {
+                    setSelectedDomain(null);
+                }
+            } else {
+                const error = await res.json();
+                toast.error(error.error || `Failed to delete ${deletingItem.type}`);
+            }
+        } catch (error) {
+            console.error("Delete error:", error);
+            toast.error(`Failed to delete ${deletingItem.type}`);
+        }
+    };
+
+    const openDeleteDialog = (type: "domain" | "scope", item: Domain | Scope) => {
+        setDeletingItem({
+            type,
+            id: item.id,
+            name: item.name,
+        });
+        setDeleteDialogOpen(true);
+    };
 
     return (
         <div className="container mx-auto py-8 space-y-6">
@@ -297,16 +408,29 @@ export default function DomainsPage() {
                                                 {domain.description || "-"}
                                             </TableCell>
                                             <TableCell className="text-right space-x-2">
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        openDomainDialog(domain);
-                                                    }}
-                                                >
-                                                    <Pencil className="h-4 w-4" />
-                                                </Button>
+                                                <div className="flex items-center gap-1">
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            openDomainDialog(domain);
+                                                        }}
+                                                    >
+                                                        <Pencil className="h-4 w-4" />
+                                                    </Button>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            openDeleteDialog("domain", domain);
+                                                        }}
+                                                        className="text-destructive hover:text-destructive"
+                                                    >
+                                                        <Trash2 className="h-4 w-4" />
+                                                    </Button>
+                                                </div>
                                             </TableCell>
                                         </TableRow>
                                     ))
@@ -349,6 +473,7 @@ export default function DomainsPage() {
                                 <TableHeader>
                                     <TableRow>
                                         <TableHead>Name</TableHead>
+                                        <TableHead>Type</TableHead>
                                         <TableHead>Description</TableHead>
                                         <TableHead className="text-right">Actions</TableHead>
                                     </TableRow>
@@ -356,7 +481,7 @@ export default function DomainsPage() {
                                 <TableBody>
                                     {filteredScopes.length === 0 ? (
                                         <TableRow>
-                                            <TableCell colSpan={3} className="text-center text-muted-foreground">
+                                            <TableCell colSpan={4} className="text-center text-muted-foreground">
                                                 No scopes found for this domain
                                             </TableCell>
                                         </TableRow>
@@ -364,17 +489,38 @@ export default function DomainsPage() {
                                         filteredScopes.map((scope) => (
                                             <TableRow key={scope.id}>
                                                 <TableCell className="font-medium">{scope.name}</TableCell>
+                                                <TableCell>
+                                                    {scope.student_field_key ? (
+                                                        <Badge variant="secondary" className="text-xs">
+                                                            Dynamic ({scope.student_field_key.replace("_id", "")})
+                                                        </Badge>
+                                                    ) : (
+                                                        <Badge variant="outline" className="text-xs">
+                                                            Fixed
+                                                        </Badge>
+                                                    )}
+                                                </TableCell>
                                                 <TableCell className="text-sm text-muted-foreground">
                                                     {scope.description || "-"}
                                                 </TableCell>
                                                 <TableCell className="text-right space-x-2">
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        onClick={() => openScopeDialog(scope)}
-                                                    >
-                                                        <Pencil className="h-4 w-4" />
-                                                    </Button>
+                                                    <div className="flex items-center gap-1">
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={() => openScopeDialog(scope)}
+                                                        >
+                                                            <Pencil className="h-4 w-4" />
+                                                        </Button>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={() => openDeleteDialog("scope", scope)}
+                                                            className="text-destructive hover:text-destructive"
+                                                        >
+                                                            <Trash2 className="h-4 w-4" />
+                                                        </Button>
+                                                    </div>
                                                 </TableCell>
                                             </TableRow>
                                         ))
@@ -458,13 +604,88 @@ export default function DomainsPage() {
                             </Select>
                         </div>
                         <div>
+                            <Label htmlFor="scope-student-field">Student Field Key (Optional)</Label>
+                            <Select
+                                value={scopeForm.student_field_key || "none"}
+                                onValueChange={(value) => {
+                                    const newFieldKey = value === "none" ? null : value;
+                                    // Clear scope name when changing field key type
+                                    setScopeForm({ 
+                                        ...scopeForm, 
+                                        student_field_key: newFieldKey,
+                                        name: "" // Reset name when changing field type
+                                    });
+                                }}
+                            >
+                                <SelectTrigger id="scope-student-field">
+                                    <SelectValue placeholder="Select student field (for dynamic scopes)" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="none">None (Fixed Scope)</SelectItem>
+                                    <SelectItem value="hostel_id">Hostel ID (Dynamic from Student)</SelectItem>
+                                    <SelectItem value="class_section_id">Class Section ID (Dynamic from Student)</SelectItem>
+                                    <SelectItem value="batch_id">Batch ID (Dynamic from Student)</SelectItem>
+                                </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground mt-1">
+                                {scopeForm.student_field_key 
+                                    ? "This scope will be dynamically resolved from the student's " + scopeForm.student_field_key.replace("_id", "") + ". Select the value from the dropdown below."
+                                    : "This is a fixed scope (not based on student data). Enter a custom name below."}
+                            </p>
+                        </div>
+                        <div>
                             <Label htmlFor="scope-name">Scope Name *</Label>
-                            <Input
-                                id="scope-name"
-                                value={scopeForm.name}
-                                onChange={(e) => setScopeForm({ ...scopeForm, name: e.target.value })}
-                                placeholder="e.g., Neeladri, Velankani"
-                            />
+                            {scopeForm.student_field_key ? (
+                                // Show dropdown based on selected student field
+                                (() => {
+                                    let options: Array<{ value: string; label: string }> = [];
+                                    let placeholder = "Select a value";
+
+                                    if (scopeForm.student_field_key === "hostel_id") {
+                                        options = hostels.map(h => ({ value: h.name, label: h.name }));
+                                        placeholder = "Select a hostel";
+                                    } else if (scopeForm.student_field_key === "class_section_id") {
+                                        options = classSections.map(s => ({ value: s.name, label: s.name }));
+                                        placeholder = "Select a class section";
+                                    } else if (scopeForm.student_field_key === "batch_id") {
+                                        options = batches.map(b => ({ value: `Batch ${b.batch_year}`, label: `Batch ${b.batch_year}` }));
+                                        placeholder = "Select a batch";
+                                    }
+
+                                    return (
+                                        <Select
+                                            value={scopeForm.name}
+                                            onValueChange={(value) => setScopeForm({ ...scopeForm, name: value })}
+                                            disabled={loadingMasterData}
+                                        >
+                                            <SelectTrigger id="scope-name">
+                                                <SelectValue placeholder={placeholder} />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {options.length === 0 ? (
+                                                    <SelectItem value="" disabled>
+                                                        {loadingMasterData ? "Loading..." : "No options available"}
+                                                    </SelectItem>
+                                                ) : (
+                                                    options.map((option) => (
+                                                        <SelectItem key={option.value} value={option.value}>
+                                                            {option.label}
+                                                        </SelectItem>
+                                                    ))
+                                                )}
+                                            </SelectContent>
+                                        </Select>
+                                    );
+                                })()
+                            ) : (
+                                // Show text input for fixed scopes
+                                <Input
+                                    id="scope-name"
+                                    value={scopeForm.name}
+                                    onChange={(e) => setScopeForm({ ...scopeForm, name: e.target.value })}
+                                    placeholder="e.g., Neeladri, Velankani"
+                                />
+                            )}
                         </div>
                         <div>
                             <Label htmlFor="scope-description">Description</Label>
@@ -488,6 +709,39 @@ export default function DomainsPage() {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            {/* ==================== DELETE CONFIRMATION DIALOG ==================== */}
+            <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This action cannot be undone. This will permanently delete the {deletingItem?.type === "domain" ? "domain" : "scope"} <strong>{deletingItem?.name}</strong>.
+                            {deletingItem?.type === "domain" && (
+                                <span className="block mt-2 text-sm text-muted-foreground">
+                                    Note: If the domain has associated categories or scopes, deletion will be blocked.
+                                </span>
+                            )}
+                            {deletingItem?.type === "scope" && (
+                                <span className="block mt-2 text-sm text-muted-foreground">
+                                    Note: If the scope has assigned categories, deletion will be blocked.
+                                </span>
+                            )}
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel onClick={() => setDeletingItem(null)}>
+                            Cancel
+                        </AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={handleDelete}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                            Delete
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 }

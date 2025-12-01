@@ -50,6 +50,11 @@ interface StaffMember {
   role: string;
   domain: string;
   scope: string | null;
+  committee: {
+    id: number;
+    name: string;
+    description: string | null;
+  } | null;
   createdAt: Date | null;
   updatedAt: Date | null;
 }
@@ -894,7 +899,7 @@ export default function StaffManagementPage() {
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
                 <Input
-                  placeholder="Search by name, email, Slack ID..."
+                  placeholder="Search by name, email, Slack ID, committee..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-10"
@@ -951,6 +956,7 @@ export default function StaffManagementPage() {
                   <TableHead>Role</TableHead>
                   <TableHead>Domain</TableHead>
                   <TableHead>Scope</TableHead>
+                  <TableHead>Committee</TableHead>
                   <TableHead>Slack ID</TableHead>
                   <TableHead>WhatsApp</TableHead>
                   <TableHead>Actions</TableHead>
@@ -960,7 +966,7 @@ export default function StaffManagementPage() {
                 {loading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
-                      {Array.from({ length: 8 }).map((_, j) => (
+                      {Array.from({ length: 9 }).map((_, j) => (
                         <TableCell key={j}>
                           <Skeleton className="h-4 w-full" />
                         </TableCell>
@@ -969,7 +975,7 @@ export default function StaffManagementPage() {
                   ))
                 ) : filteredStaff.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8">
+                    <TableCell colSpan={9} className="text-center py-8">
                       {staff.length === 0 ? (
                         <>
                           <Users className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-50" />
@@ -1009,8 +1015,14 @@ export default function StaffManagementPage() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge variant={member.role === "super_admin" ? "destructive" : "default"}>
-                            {member.role === "super_admin" ? "Super Admin" : "Admin"}
+                          <Badge variant={
+                            member.role === "super_admin" ? "destructive" : 
+                            member.role === "committee" ? "secondary" : 
+                            "default"
+                          }>
+                            {member.role === "super_admin" ? "Super Admin" : 
+                             member.role === "committee" ? "Committee" : 
+                             "Admin"}
                           </Badge>
                         </TableCell>
                         <TableCell>
@@ -1023,6 +1035,16 @@ export default function StaffManagementPage() {
                             <Badge variant="secondary" className="flex items-center gap-1 w-fit">
                               <MapPin className="w-3 h-3" />
                               {member.scope}
+                            </Badge>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {member.committee ? (
+                            <Badge variant="outline" className="flex items-center gap-1 w-fit bg-purple-50 dark:bg-purple-950/20 border-purple-200 dark:border-purple-800">
+                              <Users className="w-3 h-3 text-purple-600 dark:text-purple-400" />
+                              {member.committee.name}
                             </Badge>
                           ) : (
                             <span className="text-muted-foreground">—</span>

@@ -15,7 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Search, User, Users, Mail, Shield, UserCheck, UserX, Loader2, Building2, GraduationCap, MapPin, Settings, MessageSquare, Phone } from "lucide-react";
+import { Search, User, Users, Mail, Shield, UserCheck, UserX, Loader2, Building2, GraduationCap, MapPin, Settings, MessageSquare, Phone, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import type { Roles } from "@/types/globals";
 import {
@@ -66,7 +66,14 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
   const [, setLoadingMasterData] = useState(true);
   const [isStaffDialogOpen, setIsStaffDialogOpen] = useState(false);
   const [selectedUserForStaff, setSelectedUserForStaff] = useState<User | null>(null);
+  const [editingStaff, setEditingStaff] = useState<StaffMember | null>(null);
+  const [formMode, setFormMode] = useState<"select" | "create">("select");
+  const [clerkUsers, setClerkUsers] = useState<Array<{ id: string; firstName: string | null; lastName: string | null; emailAddresses?: Array<{ emailAddress: string }>; name?: string; email?: string }>>([]);
   const [staffFormData, setStaffFormData] = useState({
+    clerkUserId: "",
+    email: "",
+    firstName: "",
+    lastName: "",
     domain: "",
     scope: "",
     role: "admin",
@@ -74,11 +81,31 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
     whatsappNumber: "",
   });
   const [savingStaff, setSavingStaff] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     fetchStaff();
     fetchMasterData();
+    fetchClerkUsers();
   }, []);
+
+  const fetchClerkUsers = async () => {
+    try {
+      const response = await fetch("/api/admin/list");
+      if (response.ok) {
+        const data = await response.json();
+        const uniqueUsers = (data.admins || []).reduce((acc: typeof clerkUsers, user: typeof clerkUsers[0]) => {
+          if (!acc.find(u => u.id === user.id)) {
+            acc.push(user);
+          }
+          return acc;
+        }, []);
+        setClerkUsers(uniqueUsers);
+      }
+    } catch (error) {
+      console.error("Error fetching Clerk users:", error);
+    }
+  };
 
   const fetchStaff = async () => {
     try {
@@ -194,13 +221,18 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
         const user = users.find(u => u.id === userId);
         if (user) {
           setSelectedUserForStaff(user);
-          setStaffFormData({
+          setStaffFormData(prev => ({
+            ...prev,
+            clerkUserId: user.id,
+            email: user.emailAddresses[0]?.emailAddress || "",
+            firstName: "",
+            lastName: "",
             domain: "",
             scope: "",
             role: role === "super_admin" ? "super_admin" : "admin",
             slackUserId: "",
             whatsappNumber: "",
-          });
+          }));
           setIsStaffDialogOpen(true);
         }
       }
@@ -239,32 +271,100 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
     }
   };
 
-  const handleOpenStaffDialog = (user: User) => {
-    const existingStaff = getStaffAssignment(user.id);
-    setSelectedUserForStaff(user);
-    if (existingStaff) {
+  const handleOpenStaffDialog = (user?: User, staffMember?: StaffMember) => {
+    if (staffMember) {
+      // Editing existing staff member
+      setEditingStaff(staffMember);
+      setSelectedUserForStaff(null);
+      setFormMode("select");
       setStaffFormData({
-        domain: existingStaff.domain,
-        scope: existingStaff.scope || "",
-        role: existingStaff.role,
-        slackUserId: existingStaff.slackUserId || "",
-        whatsappNumber: existingStaff.whatsappNumber || "",
+        clerkUserId: staffMember.clerkUserId || "",
+        email: staffMember.email || "",
+        firstName: "",
+        lastName: "",
+        domain: staffMember.domain,
+        scope: staffMember.scope || "",
+        role: staffMember.role,
+        slackUserId: staffMember.slackUserId || "",
+        whatsappNumber: staffMember.whatsappNumber || "",
       });
+    } else if (user) {
+      // Assigning staff to existing user
+      const existingStaff = getStaffAssignment(user.id);
+      setEditingStaff(null);
+      setSelectedUserForStaff(user);
+      setFormMode("select");
+      if (existingStaff) {
+        setStaffFormData({
+          clerkUserId: user.id,
+          email: user.emailAddresses[0]?.emailAddress || "",
+          firstName: "",
+          lastName: "",
+          domain: existingStaff.domain,
+          scope: existingStaff.scope || "",
+          role: existingStaff.role,
+          slackUserId: existingStaff.slackUserId || "",
+          whatsappNumber: existingStaff.whatsappNumber || "",
+        });
+      } else {
+        const userRole = user.publicMetadata?.role || "student";
+        setStaffFormData({
+          clerkUserId: user.id,
+          email: user.emailAddresses[0]?.emailAddress || "",
+          firstName: "",
+          lastName: "",
+          domain: "",
+          scope: "",
+          role: userRole === "super_admin" ? "super_admin" : "admin",
+          slackUserId: "",
+          whatsappNumber: "",
+        });
+      }
     } else {
-      const userRole = user.publicMetadata?.role || "student";
+      // Creating new staff member
+      setEditingStaff(null);
+      setSelectedUserForStaff(null);
+      setFormMode("create");
       setStaffFormData({
+        clerkUserId: "",
+        email: "",
+        firstName: "",
+        lastName: "",
         domain: "",
         scope: "",
-        role: userRole === "super_admin" ? "super_admin" : "admin",
+        role: "admin",
         slackUserId: "",
         whatsappNumber: "",
       });
     }
+    setErrors({});
     setIsStaffDialogOpen(true);
   };
 
   const handleSaveStaff = async () => {
-    if (!selectedUserForStaff) return;
+    // Validation
+    if (formMode === "select" && !editingStaff && !staffFormData.clerkUserId) {
+      setErrors({ clerkUserId: "Please select a user" });
+      toast.error("Please select a user");
+      return;
+    }
+
+    // For select mode, we need either editingStaff or selectedUserForStaff
+    if (formMode === "select" && !editingStaff && !selectedUserForStaff) {
+      toast.error("Please select a user");
+      return;
+    }
+
+    if (formMode === "create") {
+      if (!staffFormData.email || !staffFormData.firstName || !staffFormData.lastName) {
+        setErrors({
+          email: !staffFormData.email ? "Email is required" : "",
+          firstName: !staffFormData.firstName ? "First name is required" : "",
+          lastName: !staffFormData.lastName ? "Last name is required" : "",
+        });
+        return;
+      }
+    }
 
     if (!staffFormData.domain) {
       toast.error("Please select a domain");
@@ -272,28 +372,60 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
     }
 
     if (staffFormData.domain === "Hostel" && !staffFormData.scope) {
-      toast.error("Please select a hostel scope");
+      toast.error("Please select a scope for Hostel domain");
       return;
     }
 
     setSavingStaff(true);
     try {
-      const existingStaff = getStaffAssignment(selectedUserForStaff.id);
-      const payload = {
-        clerkUserId: selectedUserForStaff.id,
-        domain: staffFormData.domain,
-        scope: staffFormData.domain === "College" ? null : (staffFormData.scope || null),
+      type StaffPayload = {
+        domain: string | null;
+        scope: string | null;
+        role: string;
+        slackUserId: string | null;
+        whatsappNumber: string | null;
+        clerkUserId?: string | null;
+        newUser?: {
+          email: string;
+          firstName: string;
+          lastName: string;
+          phone: string | null;
+        };
+      };
+
+      const payload: StaffPayload = {
+        domain: staffFormData.domain || null,
+        scope: staffFormData.scope || null,
         role: staffFormData.role,
         slackUserId: staffFormData.slackUserId || null,
         whatsappNumber: staffFormData.whatsappNumber || null,
       };
 
+      if (formMode === "select") {
+        // For select mode, use clerkUserId from editingStaff or selectedUserForStaff
+        if (editingStaff) {
+          payload.clerkUserId = editingStaff.clerkUserId;
+        } else if (selectedUserForStaff) {
+          payload.clerkUserId = selectedUserForStaff.id;
+        } else {
+          payload.clerkUserId = staffFormData.clerkUserId || null;
+        }
+      } else {
+        // Create new user
+        payload.newUser = {
+          email: staffFormData.email.trim(),
+          firstName: staffFormData.firstName.trim(),
+          lastName: staffFormData.lastName.trim(),
+          phone: staffFormData.whatsappNumber || null,
+        };
+      }
+
       let response;
-      if (existingStaff) {
+      if (editingStaff) {
         response = await fetch("/api/admin/staff", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: existingStaff.id, ...payload }),
+          body: JSON.stringify({ id: editingStaff.id, ...payload }),
         });
       } else {
         response = await fetch("/api/admin/staff", {
@@ -304,10 +436,13 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
       }
 
       if (response.ok) {
-        toast.success(existingStaff ? "Staff assignment updated" : "Staff assignment created");
+        toast.success(editingStaff ? "Staff member updated" : "Staff member created");
         setIsStaffDialogOpen(false);
         setSelectedUserForStaff(null);
+        setEditingStaff(null);
+        setErrors({});
         await fetchStaff();
+        window.location.reload(); // Reload to refresh user list
       } else {
         const error = await response.json();
         toast.error(error.error || "Failed to save staff assignment");
@@ -317,6 +452,33 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
       toast.error("Failed to save staff assignment");
     } finally {
       setSavingStaff(false);
+    }
+  };
+
+  const handleDeleteStaff = async (staffId: string) => {
+    if (!confirm("Are you sure you want to remove this staff assignment? The user will be reverted to student role.")) {
+      return;
+    }
+
+    setLoading(`delete-${staffId}`);
+    try {
+      const response = await fetch(`/api/admin/staff?id=${staffId}`, {
+        method: "DELETE",
+      });
+
+      if (response.ok) {
+        toast.success("Staff assignment removed");
+        await fetchStaff();
+        window.location.reload();
+      } else {
+        const error = await response.json();
+        toast.error(error.error || "Failed to remove staff assignment");
+      }
+    } catch (error) {
+      console.error("Error deleting staff:", error);
+      toast.error("Failed to remove staff assignment");
+    } finally {
+      setLoading(null);
     }
   };
 
@@ -656,15 +818,33 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
                               )}
                             </Button>
                             {(currentRole === "admin" || currentRole === "super_admin") && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleOpenStaffDialog(user)}
-                                className="text-primary hover:bg-primary/10"
-                                title="Configure Staff Assignment"
-                              >
-                                <Settings className="w-3 h-3" />
-                              </Button>
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleOpenStaffDialog(user)}
+                                  className="text-primary hover:bg-primary/10"
+                                  title="Configure Staff Assignment"
+                                >
+                                  <Settings className="w-3 h-3" />
+                                </Button>
+                                {staffAssignment && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleDeleteStaff(staffAssignment.id.toString())}
+                                    disabled={loading === `delete-${staffAssignment.id}`}
+                                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                    title="Remove Staff Assignment"
+                                  >
+                                    {loading === `delete-${staffAssignment.id}` ? (
+                                      <Loader2 className="w-3 h-3 animate-spin" />
+                                    ) : (
+                                      <Trash2 className="w-3 h-3" />
+                                    )}
+                                  </Button>
+                                )}
+                              </>
                             )}
                             {currentRole !== "student" && (
                               <Button
@@ -696,14 +876,179 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
 
       {/* Staff Assignment Dialog */}
       <Dialog open={isStaffDialogOpen} onOpenChange={setIsStaffDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Staff Assignment</DialogTitle>
+            <DialogTitle>{editingStaff ? "Edit Staff Member" : "Add Staff Member"}</DialogTitle>
             <DialogDescription>
-              {selectedUserForStaff && `Configure staff assignment for ${selectedUserForStaff.name || ""}`.trim()}
+              {editingStaff 
+                ? `Update staff assignment for ${editingStaff.fullName}`
+                : formMode === "select"
+                ? "Select an existing user from Clerk to assign as staff"
+                : "Create a new user account and assign them as staff. They will need to sign up with Clerk using this email."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            {!editingStaff && (
+              <div className="space-y-2">
+                <Label>User Selection Mode</Label>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant={formMode === "select" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setFormMode("select")}
+                  >
+                    Select Existing User
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={formMode === "create" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setFormMode("create")}
+                  >
+                    Create New User
+                  </Button>
+                </div>
+              </div>
+            )}
+            {editingStaff && (
+              <div className="p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg">
+                <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                  Editing: {editingStaff.fullName}
+                </p>
+                {editingStaff.email && (
+                  <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">{editingStaff.email}</p>
+                )}
+              </div>
+            )}
+            {formMode === "select" && !editingStaff && (
+              <div className="space-y-2">
+                <Label htmlFor="clerkUserId">Select User *</Label>
+                <Select
+                  value={staffFormData.clerkUserId || undefined}
+                  onValueChange={(value) => {
+                    setStaffFormData({ ...staffFormData, clerkUserId: value === "none" ? "" : value });
+                    setErrors({ ...errors, clerkUserId: "" });
+                    const selectedUser = clerkUsers.find(u => u.id === value);
+                    if (selectedUser) {
+                      setSelectedUserForStaff({
+                        id: selectedUser.id,
+                        name: selectedUser.name || (selectedUser.firstName && selectedUser.lastName ? `${selectedUser.firstName} ${selectedUser.lastName}` : null),
+                        emailAddresses: selectedUser.emailAddresses || (selectedUser.email ? [{ emailAddress: selectedUser.email }] : []),
+                        publicMetadata: {},
+                      });
+                    }
+                  }}
+                  required={formMode === "select"}
+                >
+                  <SelectTrigger id="clerkUserId" className={errors.clerkUserId ? "border-destructive" : ""}>
+                    <SelectValue placeholder="Select a user" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {clerkUsers
+                      .filter(user => {
+                        // When creating, exclude users already in staff
+                        if (!editingStaff && staff.find(s => s.clerkUserId === user.id)) {
+                          return false;
+                        }
+                        return true;
+                      })
+                      .map((user) => {
+                        const displayName = user.name ||
+                          (user.firstName && user.lastName
+                            ? `${user.firstName} ${user.lastName}`
+                            : user.emailAddresses?.[0]?.emailAddress ||
+                            user.email ||
+                            user.id);
+                        return (
+                          <SelectItem key={user.id} value={user.id}>
+                            {displayName}
+                          </SelectItem>
+                        );
+                      })}
+                  </SelectContent>
+                </Select>
+                {selectedUserForStaff && (
+                  <div className="p-3 bg-muted rounded-lg space-y-1">
+                    <p className="text-sm font-medium">{selectedUserForStaff.name || "No name"}</p>
+                    {selectedUserForStaff.emailAddresses[0]?.emailAddress && (
+                      <p className="text-xs text-muted-foreground">{selectedUserForStaff.emailAddresses[0].emailAddress}</p>
+                    )}
+                  </div>
+                )}
+                {errors.clerkUserId && (
+                  <p className="text-sm text-destructive">{errors.clerkUserId}</p>
+                )}
+              </div>
+            )}
+            {formMode === "create" && !editingStaff && (
+              <div className="space-y-4 p-4 border rounded-lg bg-muted/30">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="firstName">First Name *</Label>
+                    <Input
+                      id="firstName"
+                      value={staffFormData.firstName}
+                      onChange={(e) => {
+                        setStaffFormData({ ...staffFormData, firstName: e.target.value });
+                        setErrors({ ...errors, firstName: "" });
+                      }}
+                      placeholder="John"
+                      className={errors.firstName ? "border-destructive" : ""}
+                      required={formMode === "create"}
+                    />
+                    {errors.firstName && (
+                      <p className="text-sm text-destructive">{errors.firstName}</p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="lastName">Last Name *</Label>
+                    <Input
+                      id="lastName"
+                      value={staffFormData.lastName}
+                      onChange={(e) => {
+                        setStaffFormData({ ...staffFormData, lastName: e.target.value });
+                        setErrors({ ...errors, lastName: "" });
+                      }}
+                      placeholder="Doe"
+                      className={errors.lastName ? "border-destructive" : ""}
+                      required={formMode === "create"}
+                    />
+                    {errors.lastName && (
+                      <p className="text-sm text-destructive">{errors.lastName}</p>
+                    )}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email *</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={staffFormData.email}
+                    onChange={(e) => {
+                      setStaffFormData({ ...staffFormData, email: e.target.value });
+                      setErrors({ ...errors, email: "" });
+                    }}
+                    onBlur={(e) => {
+                      const email = e.target.value.trim();
+                      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                        setErrors({ ...errors, email: "Please enter a valid email address" });
+                      }
+                    }}
+                    placeholder="john.doe@example.com"
+                    className={errors.email ? "border-destructive" : ""}
+                    required={formMode === "create"}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    User must sign up with Clerk using this email address.
+                  </p>
+                  {errors.email && (
+                    <p className="text-sm text-destructive">{errors.email}</p>
+                  )}
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="domain">Domain *</Label>

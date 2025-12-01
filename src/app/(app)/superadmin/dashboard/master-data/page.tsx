@@ -438,7 +438,7 @@ export default function MasterDataPage() {
 					</CardHeader>
 					<CardContent className="flex justify-end">
 						<Button asChild size="sm">
-							<Link href="/superadmin/dashboard/staff">Open Admins</Link>
+							<Link href="/superadmin/dashboard/staff">Open Staff</Link>
 						</Button>
 					</CardContent>
 				</Card>

@@ -453,15 +453,9 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
               </Link>
             </Button>
             <Button variant="outline" asChild>
-              <Link href="/superadmin/dashboard/users">
-                <Users className="w-4 h-4 mr-2" />
-                User & Staff Management
-              </Link>
-            </Button>
-            <Button variant="outline" asChild>
               <Link href="/superadmin/dashboard/staff">
-                <Building2 className="w-4 h-4 mr-2" />
-                SPOC Management
+                <Shield className="w-4 h-4 mr-2" />
+                Staff Management
               </Link>
             </Button>
             <Button variant="outline" asChild>

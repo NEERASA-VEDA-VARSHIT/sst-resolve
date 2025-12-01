@@ -83,6 +83,7 @@ export function FieldDialog({
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
   const [loadingStaff, setLoadingStaff] = useState(false);
   const [inheritFromSubcategory, setInheritFromSubcategory] = useState(true);
+  const [slugManuallyEdited, setSlugManuallyEdited] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     slug: "",
@@ -139,6 +140,7 @@ export function FieldDialog({
         assigned_admin_id: field.assigned_admin_id || null,
       });
       setOptions(field.options || []);
+      setSlugManuallyEdited(true); // Editing existing field means slug is pre-set
     } else {
       setInheritFromSubcategory(true);
       setFormData({
@@ -153,6 +155,7 @@ export function FieldDialog({
         assigned_admin_id: null,
       });
       setOptions([]);
+      setSlugManuallyEdited(false); // New field, allow auto-generation
     }
   }, [field, open]);
 
@@ -167,7 +170,15 @@ export function FieldDialog({
     setFormData((prev) => ({
       ...prev,
       name,
-      slug: prev.slug || generateSlug(name),
+      slug: slugManuallyEdited ? prev.slug : generateSlug(name),
+    }));
+  };
+
+  const handleSlugChange = (slug: string) => {
+    setSlugManuallyEdited(true);
+    setFormData((prev) => ({
+      ...prev,
+      slug,
     }));
   };
 
@@ -297,9 +308,7 @@ export function FieldDialog({
               <Input
                 id="slug"
                 value={formData.slug}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, slug: e.target.value }))
-                }
+                onChange={(e) => handleSlugChange(e.target.value)}
                 placeholder="e.g., vendor, date, room_type"
                 required
               />

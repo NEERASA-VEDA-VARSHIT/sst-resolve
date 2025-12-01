@@ -169,7 +169,7 @@ export async function DELETE(
     // Soft delete
     const [updated] = await db
       .update(categories)
-      .set({ active: false, updated_at: new Date() })
+      .set({ is_active: false, updated_at: new Date() })
       .where(eq(categories.id, categoryId))
       .returning();
 

@@ -470,6 +470,12 @@ export default function TicketForm(props: TicketFormProps) {
       if (field.field_type === "boolean") {
         const isBool = fv === true || fv === false || fv === "true" || fv === "false";
         if (!isBool) newErrors[field.slug] = `${field.name} is required`;
+      } else if (field.field_type === "upload") {
+        // For upload fields, check if it's an array with at least one image
+        const images = Array.isArray(fv) ? fv : (fv ? [fv] : []);
+        if (images.length === 0) {
+          newErrors[field.slug] = `${field.name} is required`;
+        }
       } else {
         if (fv === undefined || fv === null || (typeof fv === "string" && fv.trim() === "")) {
           newErrors[field.slug] = `${field.name} is required`;
@@ -793,15 +799,61 @@ export default function TicketForm(props: TicketFormProps) {
     );
   }
 
+  // Create field-specific image upload handler
+  const createImageUploadHandler = useCallback((fieldSlug: string) => {
+    return async (file: File) => {
+      setImagesUploading(true);
+      try {
+        const allowed = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+        if (!allowed.includes(file.type)) throw new Error("Only JPEG/PNG/WebP images allowed");
+        const max = 10 * 1024 * 1024;
+        if (file.size > max) throw new Error("Image exceeds 10MB");
+
+        const fd = new FormData();
+        fd.append("file", file);
+        const res = await fetch("/api/tickets/attachments/upload", { method: "POST", body: fd });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ error: "upload failed" }));
+          throw new Error(err.error || "Upload failed");
+        }
+        const contentType = res.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+          throw new Error("Server returned non-JSON response");
+        }
+        const data = await res.json();
+        
+        // Store image in the specific field slug
+        setForm((prev) => {
+          const currentImages = Array.isArray(prev.details?.[fieldSlug]) 
+            ? (prev.details[fieldSlug] as string[])
+            : prev.details?.[fieldSlug] 
+              ? [String(prev.details[fieldSlug])]
+              : [];
+          
+          return {
+            ...prev,
+            details: {
+              ...(prev.details || {}),
+              [fieldSlug]: [...currentImages, data.url],
+            },
+          };
+        });
+        toast.success("Image uploaded");
+      } catch (err: unknown) {
+        console.error("Upload failed:", err);
+        const errorMessage = err instanceof Error ? err.message : "Image upload failed";
+        toast.error(errorMessage);
+      } finally {
+        setImagesUploading(false);
+      }
+    };
+  }, []);
+
   const DynamicFieldsSectionMemo = useMemo(() => {
     const fields = currentSubcategory?.fields || [];
     if (!fields || fields.length === 0) return null;
     
-    // Filter out upload fields since they're handled by the dedicated Attachments section
-    const nonUploadFields = fields.filter(f => f.field_type !== "upload");
-    if (nonUploadFields.length === 0) return null;
-    
-    const sorted = nonUploadFields.slice().sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
+    const sorted = fields.slice().sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
     
 
     
@@ -815,11 +867,13 @@ export default function TicketForm(props: TicketFormProps) {
             value={form.details[f.slug]}
             onChange={(val) => setDetail(f.slug, val)}
             error={errors[f.slug]}
+            onImageUpload={f.field_type === "upload" ? createImageUploadHandler(f.slug) : undefined}
+            imagesUploading={f.field_type === "upload" ? imagesUploading : false}
           />
         ))}
       </div>
     );
-  }, [currentSubcategory?.fields, form.details, errors, setDetail]);
+  }, [currentSubcategory?.fields, form.details, errors, setDetail, createImageUploadHandler, imagesUploading]);
 
   const ProfileFieldsSectionMemo = useMemo(() => {
     const pf = currentSchema?.profileFields || [];
@@ -887,18 +941,37 @@ export default function TicketForm(props: TicketFormProps) {
     );
   }, [currentSubcategory?.fields, form.description, errors.description, setFormPartial, setErrors]);
 
-  const ImageUploaderMemo = useMemo(() => {
-    // Only show if subcategory has an "upload" type field
+  // General image upload section (always available, optional)
+  const GeneralImageUploadMemo = useMemo(() => {
+    // Check if there are any upload type fields in dynamic fields
     const hasUploadField = currentSubcategory?.fields?.some(
       (field) => field.field_type === 'upload'
     );
     
-    if (!hasUploadField) return null;
-    
+    // If there are upload fields, they're handled in dynamic fields section
+    // Still show general upload for additional images
     const images: string[] = (form.details?.images as string[]) || [];
+    
     return (
       <div className="space-y-2 border-t pt-4">
-        <h3 className="text-base sm:text-lg font-semibold">Attachments</h3>
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          <Label htmlFor="general-images" className="text-sm sm:text-base font-semibold">
+            Attachments
+            {hasUploadField && (
+              <span className="text-xs text-muted-foreground ml-2 font-normal">(Additional images)</span>
+            )}
+          </Label>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger>
+                <HelpCircle className="w-4 h-4 text-muted-foreground" />
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Upload images to help explain your issue (jpg/png/webp). Max 10MB each. Optional.</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
         <p className="text-xs sm:text-sm text-muted-foreground">Upload images to help explain your issue (jpg/png/webp). Max 10MB each.</p>
 
         <div className="flex gap-3 items-center">
@@ -908,6 +981,7 @@ export default function TicketForm(props: TicketFormProps) {
             accept="image/*"
             className="hidden"
             multiple
+            id="general-images"
             onChange={(e) => handleImageFiles(e.target.files)}
           />
           <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()} disabled={imagesUploading}>
@@ -1039,7 +1113,7 @@ export default function TicketForm(props: TicketFormProps) {
 
                 {DescriptionEditorMemo}
 
-                {ImageUploaderMemo}
+                {GeneralImageUploadMemo}
 
                 <Separator />
 

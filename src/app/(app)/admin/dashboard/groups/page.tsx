@@ -1,7 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { db, tickets, categories, ticket_statuses } from "@/db";
-import { desc, eq } from "drizzle-orm";
+import { db, tickets, categories, ticket_statuses, ticket_groups } from "@/db";
+import { desc, eq, isNotNull } from "drizzle-orm";
 import { TicketGrouping } from "@/components/admin/TicketGrouping";
 import { SelectableTicketList } from "@/components/admin/SelectableTicketList";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -71,6 +71,32 @@ export default async function AdminGroupsPage() {
       return true;
     });
 
+    // Fetch ticket groups to calculate stats
+    const allGroups = await db
+      .select()
+      .from(ticket_groups)
+      .where(eq(ticket_groups.is_archived, false));
+
+    // Count tickets in groups (grouped tickets)
+    const groupedTicketIds = await db
+      .select({ id: tickets.id })
+      .from(tickets)
+      .where(isNotNull(tickets.group_id));
+
+    const groupedTicketIdSet = new Set(groupedTicketIds.map(t => t.id));
+    
+    // Filter grouped tickets based on admin assignment
+    const groupedTickets = allTickets.filter(ticket => groupedTicketIdSet.has(ticket.id));
+    
+    // Available tickets are those not in any group
+    const availableTickets = allTickets.filter(ticket => !groupedTicketIdSet.has(ticket.id));
+
+    // Calculate stats
+    const activeGroupsCount = allGroups.length;
+    const groupedTicketsCount = groupedTickets.length;
+    const availableTicketsCount = availableTickets.length;
+    const totalTicketsCount = allTickets.length;
+
       return (
         <div className="space-y-6">
           {/* Header */}
@@ -98,7 +124,7 @@ export default async function AdminGroupsPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-muted-foreground">Total Tickets</p>
-                    <p className="text-2xl font-bold mt-1">{allTickets.length}</p>
+                    <p className="text-2xl font-bold mt-1">{totalTicketsCount}</p>
                   </div>
                   <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
                     <Package className="w-6 h-6 text-primary" />
@@ -111,7 +137,8 @@ export default async function AdminGroupsPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-muted-foreground">Available</p>
-                    <p className="text-2xl font-bold mt-1">{allTickets.length}</p>
+                    <p className="text-2xl font-bold mt-1">{availableTicketsCount}</p>
+                    <p className="text-xs text-muted-foreground mt-1">Not in any group</p>
                   </div>
                   <div className="h-12 w-12 rounded-full bg-blue-500/10 flex items-center justify-center">
                     <CheckCircle2 className="w-6 h-6 text-blue-500" />
@@ -124,8 +151,8 @@ export default async function AdminGroupsPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-muted-foreground">Active Groups</p>
-                    <p className="text-2xl font-bold mt-1">-</p>
-                    <p className="text-xs text-muted-foreground mt-1">See below</p>
+                    <p className="text-2xl font-bold mt-1">{activeGroupsCount}</p>
+                    <p className="text-xs text-muted-foreground mt-1">Non-archived groups</p>
                   </div>
                   <div className="h-12 w-12 rounded-full bg-emerald-500/10 flex items-center justify-center">
                     <Users className="w-6 h-6 text-emerald-500" />
@@ -138,8 +165,8 @@ export default async function AdminGroupsPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-muted-foreground">Grouped Tickets</p>
-                    <p className="text-2xl font-bold mt-1">-</p>
-                    <p className="text-xs text-muted-foreground mt-1">See below</p>
+                    <p className="text-2xl font-bold mt-1">{groupedTicketsCount}</p>
+                    <p className="text-xs text-muted-foreground mt-1">In groups</p>
                   </div>
                   <div className="h-12 w-12 rounded-full bg-purple-500/10 flex items-center justify-center">
                     <TrendingUp className="w-6 h-6 text-purple-500" />

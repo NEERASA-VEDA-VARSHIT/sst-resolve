@@ -76,6 +76,7 @@ export async function POST(
 				created_by: tickets.created_by,
 				category_id: tickets.category_id,
 				metadata: tickets.metadata,
+				group_id: tickets.group_id,
 			})
 			.from(tickets)
 			.where(eq(tickets.id, ticketId))
@@ -169,6 +170,73 @@ export async function POST(
 			.update(tickets)
 			.set(updateData)
 			.where(eq(tickets.id, ticketId));
+
+		// If ticket is in a group, apply the same TAT to all tickets in that group
+		if (ticket.group_id) {
+			const groupTickets = await db
+				.select({
+					id: tickets.id,
+					metadata: tickets.metadata,
+				})
+				.from(tickets)
+				.where(eq(tickets.group_id, ticket.group_id));
+
+			// Update all tickets in the group with the same TAT
+			for (const groupTicket of groupTickets) {
+				// Skip the ticket we just updated
+				if (groupTicket.id === ticketId) continue;
+
+				let groupTicketMetadata: TicketMetadata = {};
+				
+				if (groupTicket.metadata) {
+					try {
+						groupTicketMetadata = typeof groupTicket.metadata === 'string'
+							? JSON.parse(groupTicket.metadata) as TicketMetadata
+							: groupTicket.metadata as TicketMetadata;
+					} catch (e) {
+						// If parse fails, start with empty metadata
+						groupTicketMetadata = {};
+					}
+				}
+
+				// Track TAT extension if this ticket already had a TAT (check BEFORE updating)
+				const wasExtension = !!groupTicketMetadata.tat;
+				const previousTAT = groupTicketMetadata.tat || "";
+				const previousTATDate = groupTicketMetadata.tatDate || "";
+
+				// Apply the same TAT to this group ticket
+				groupTicketMetadata.tat = tatText;
+				groupTicketMetadata.tatDate = tatDate.toISOString();
+				groupTicketMetadata.tatSetAt = new Date().toISOString();
+				groupTicketMetadata.tatSetBy = "System (Group Sync)";
+
+				if (wasExtension) {
+					groupTicketMetadata.tatExtensions = groupTicketMetadata.tatExtensions || [];
+					groupTicketMetadata.tatExtensions.push({
+						previousTAT: previousTAT,
+						newTAT: tatText,
+						previousTATDate: previousTATDate,
+						newTATDate: tatDate.toISOString(),
+						extendedAt: new Date().toISOString(),
+						extendedBy: userId,
+					});
+				} else {
+					groupTicketMetadata.tatExtensions = [];
+				}
+
+				// Update the group ticket
+				const groupTicketUpdateData: Partial<TicketInsert> = {
+					metadata: groupTicketMetadata as unknown,
+					updated_at: new Date(),
+					resolution_due_at: tatDate,
+				};
+
+				await db
+					.update(tickets)
+					.set(groupTicketUpdateData)
+					.where(eq(tickets.id, groupTicket.id));
+			}
+		}
 
 		// Send email notification to student
 		if (ticket.created_by) {

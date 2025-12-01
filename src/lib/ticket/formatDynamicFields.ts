@@ -30,11 +30,22 @@ const SYSTEM_FIELDS = [
   'originalEmailMessageId',
   'originalEmailSubject',
   'tatDate',
+  'tat',
+  'tatSetAt',
+  'tatSetBy',
+  'tatExtensions',
+  'tatPauseStart',
+  'tatPausedDuration',
+  'lastReminderDate',
   'comments',
   'images',
   'profile',
   'used_field_ids',
   'dynamic_fields',
+  'browser',
+  'device',
+  'userAgent',
+  'extra',
 ];
 
 /**
@@ -81,9 +92,9 @@ function isProfileField(key: string): boolean {
  */
 function formatLabel(key: string): string {
   return key
-    .replace(/([A-Z])/g, ' $1') // camelCase to spaces
+    .replace(/([A-Z])/g, ' $1') // camelCase to spaces (e.g., "issueType" -> "issue Type")
     .replace(/[_-]/g, ' ') // snake_case/kebab-case to spaces
-    .replace(/^./, str => str.toUpperCase()) // capitalize first letter
+    .replace(/\b\w/g, str => str.toUpperCase()) // capitalize first letter of each word
     .trim();
 }
 
@@ -94,13 +105,34 @@ function findFieldDefinition(
   key: string,
   fieldDefs: FieldDefinition[]
 ): FieldDefinition | undefined {
-  const normalizedKey = key.toLowerCase().replace(/\s+/g, '-');
+  // Normalize key for comparison (lowercase, replace spaces/hyphens/underscores)
+  const normalizedKey = key.toLowerCase().replace(/[\s_-]/g, '-');
   
-  return fieldDefs.find(
-    f => f.slug === key || 
-         f.name === key || 
-         f.slug === normalizedKey
-  );
+  return fieldDefs.find(f => {
+    if (!f) return false;
+    
+    // Exact matches
+    if (f.slug === key || f.name === key) return true;
+    
+    // Normalized slug match
+    const normalizedSlug = (f.slug || '').toLowerCase().replace(/[\s_-]/g, '-');
+    if (normalizedSlug === normalizedKey) return true;
+    
+    // Normalized name match
+    const normalizedName = (f.name || '').toLowerCase().replace(/[\s_-]/g, '-');
+    if (normalizedName === normalizedKey) return true;
+    
+    // Partial match (for camelCase like "issueType" matching "Issue Type")
+    const keyWords = normalizedKey.split('-');
+    const slugWords = normalizedSlug.split('-');
+    const nameWords = normalizedName.split('-');
+    
+    // Check if all key words are in slug or name
+    const matchesSlug = keyWords.length > 0 && keyWords.every(word => slugWords.includes(word));
+    const matchesName = keyWords.length > 0 && keyWords.every(word => nameWords.includes(word));
+    
+    return matchesSlug || matchesName;
+  });
 }
 
 /**
@@ -133,19 +165,50 @@ function resolveSelectValue(
         
         if (fieldWithOptions?.options && Array.isArray(fieldWithOptions.options)) {
           type Option = { value?: string; label?: string };
-          const option = fieldWithOptions.options.find(
+          const rawValueStr = String(rawValue).toLowerCase().trim();
+          
+          // Try exact match first
+          let option = fieldWithOptions.options.find(
             (opt: Option) => 
-              opt && (opt.value === String(rawValue) || opt.label === String(rawValue))
+              opt && (opt.value?.toLowerCase() === rawValueStr || opt.label?.toLowerCase() === rawValueStr)
           );
+          
+          // If no exact match, try partial match (for incomplete values like "nu")
+          if (!option) {
+            option = fieldWithOptions.options.find(
+              (opt: Option) => 
+                opt && (
+                  opt.value?.toLowerCase().startsWith(rawValueStr) ||
+                  opt.label?.toLowerCase().startsWith(rawValueStr) ||
+                  rawValueStr.startsWith(opt.value?.toLowerCase() || '') ||
+                  rawValueStr.startsWith(opt.label?.toLowerCase() || '')
+                )
+            );
+          }
           
           if (option?.label) return option.label;
         }
       }
     } else {
       // Use options from field definition
-      const option = fieldDef.options.find(
-        opt => opt && (opt.value === String(rawValue) || opt.label === String(rawValue))
+      const rawValueStr = String(rawValue).toLowerCase().trim();
+      
+      // Try exact match first
+      let option = fieldDef.options.find(
+        opt => opt && (opt.value?.toLowerCase() === rawValueStr || opt.label?.toLowerCase() === rawValueStr)
       );
+      
+      // If no exact match, try partial match (for incomplete values)
+      if (!option) {
+        option = fieldDef.options.find(
+          opt => opt && (
+            opt.value?.toLowerCase().startsWith(rawValueStr) ||
+            opt.label?.toLowerCase().startsWith(rawValueStr) ||
+            rawValueStr.startsWith(opt.value?.toLowerCase() || '') ||
+            rawValueStr.startsWith(opt.label?.toLowerCase() || '')
+          )
+        );
+      }
       
       if (option?.label) return option.label;
     }
@@ -223,14 +286,60 @@ export function extractDynamicFields(
   }
   
   const dynamicFields: DynamicField[] = [];
+  const processedKeys = new Set<string>();
   
   try {
     const fieldDefs = extractFieldDefinitions(categorySchema);
     
-    // Use Object.keys with additional safety
+    // First, check metadata.dynamic_fields (new format with field_id)
+    if (metadata.dynamic_fields && typeof metadata.dynamic_fields === 'object' && !Array.isArray(metadata.dynamic_fields)) {
+      const dynamicFieldsObj = metadata.dynamic_fields as Record<string, { field_id?: number; value?: unknown }>;
+      
+      Object.keys(dynamicFieldsObj).forEach(key => {
+        const fieldData = dynamicFieldsObj[key];
+        if (!fieldData || typeof fieldData !== 'object') return;
+        
+        const value = fieldData.value;
+        if (value === null || value === undefined || value === '') return;
+        
+        // Skip nested objects (except arrays)
+        if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+          return;
+        }
+        
+        // Find field definition
+        const fieldDef = findFieldDefinition(key, fieldDefs);
+        
+        // Determine label
+        const label = fieldDef?.name || formatLabel(key);
+        
+        // Determine field type
+        const fieldType = fieldDef?.field_type || 'text';
+        
+        // Resolve display value (especially for select fields)
+        let displayValue: unknown = value;
+        if (fieldType === 'select' && fieldDef) {
+          displayValue = resolveSelectValue(value, fieldDef, categorySchema);
+        }
+        
+        dynamicFields.push({
+          key,
+          value: displayValue,
+          label,
+          fieldType,
+        });
+        
+        processedKeys.add(key);
+      });
+    }
+    
+    // Then, check top-level metadata keys (backward compatibility)
     const metadataKeys = Object.keys(metadata);
     
     metadataKeys.forEach(key => {
+      // Skip if already processed from dynamic_fields
+      if (processedKeys.has(key)) return;
+      
       // Skip system fields
       if (SYSTEM_FIELDS.includes(key)) return;
       

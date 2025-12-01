@@ -68,6 +68,7 @@ export function CategoryDialog({ open, onClose, category }: CategoryDialogProps)
   const [admins, setAdmins] = useState<Admin[]>([]);
   const [loadingDomains, setLoadingDomains] = useState(false);
   const [loadingAdmins, setLoadingAdmins] = useState(false);
+  const [slugManuallyEdited, setSlugManuallyEdited] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     slug: "",
@@ -173,6 +174,7 @@ export function CategoryDialog({ open, onClose, category }: CategoryDialogProps)
         scope_id: category.scope_id || null,
         default_admin_id: category.default_admin_id || null,
       });
+      setSlugManuallyEdited(true); // When editing, slug is already set, so mark as manually edited
     } else {
       setFormData({
         name: "",
@@ -186,6 +188,7 @@ export function CategoryDialog({ open, onClose, category }: CategoryDialogProps)
         scope_id: null,
         default_admin_id: null,
       });
+      setSlugManuallyEdited(false); // Reset when creating new category
     }
   }, [category, open]);
 
@@ -200,7 +203,16 @@ export function CategoryDialog({ open, onClose, category }: CategoryDialogProps)
     setFormData((prev) => ({
       ...prev,
       name,
-      slug: prev.slug || generateSlug(name),
+      // Only auto-generate slug if it hasn't been manually edited
+      slug: slugManuallyEdited ? prev.slug : generateSlug(name),
+    }));
+  };
+
+  const handleSlugChange = (slug: string) => {
+    setSlugManuallyEdited(true); // Mark as manually edited when user types in slug field
+    setFormData((prev) => ({
+      ...prev,
+      slug,
     }));
   };
 
@@ -278,9 +290,7 @@ export function CategoryDialog({ open, onClose, category }: CategoryDialogProps)
               <Input
                 id="slug"
                 value={formData.slug}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, slug: e.target.value }))
-                }
+                onChange={(e) => handleSlugChange(e.target.value)}
                 placeholder="e.g., maintenance, food, wifi"
                 required
               />

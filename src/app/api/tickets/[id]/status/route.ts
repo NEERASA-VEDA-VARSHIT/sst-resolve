@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import { tickets, outbox, ticket_committee_tags, committees, ticket_statuses } from "@/db/schema";
+import { tickets, outbox, ticket_committee_tags, committees, ticket_statuses, ticket_groups } from "@/db/schema";
 import { getStatusIdByValue } from "@/lib/status/getTicketStatuses";
 import type { TicketInsert } from "@/db/inferred-types";
 import { eq, sql, and, inArray } from "drizzle-orm";
@@ -122,6 +122,7 @@ export async function PATCH(
         );
       }
 
+      // Check direct tags
       const [tagRecord] = await db
         .select({ ticket_id: ticket_committee_tags.ticket_id })
         .from(ticket_committee_tags)
@@ -134,10 +135,26 @@ export async function PATCH(
         .limit(1);
 
       if (!tagRecord) {
-        return NextResponse.json(
-          { error: "You can only update tickets tagged to your committee" },
-          { status: 403 }
-        );
+        // Check if ticket is in a group assigned to their committee
+        if (ticket.group_id) {
+          const [group] = await db
+            .select({ committee_id: ticket_groups.committee_id })
+            .from(ticket_groups)
+            .where(eq(ticket_groups.id, ticket.group_id))
+            .limit(1);
+
+          if (!group?.committee_id || !committeeIds.includes(group.committee_id)) {
+            return NextResponse.json(
+              { error: "You can only update tickets tagged to your committee or in groups assigned to your committee" },
+              { status: 403 }
+            );
+          }
+        } else {
+          return NextResponse.json(
+            { error: "You can only update tickets tagged to your committee or in groups assigned to your committee" },
+            { status: 403 }
+          );
+        }
       }
 
       if (newStatus !== TICKET_STATUS.RESOLVED) {

@@ -33,6 +33,7 @@ interface Ticket {
   description: string | null;
   location?: string | null;
   created_at: Date | string;
+  category_name?: string | null;
   // Legacy fields kept for backward compatibility with API responses
   user_number?: string | null;
   category?: string | null;
@@ -545,7 +546,7 @@ export function TicketGrouping({ selectedTicketIds, onGroupCreated }: TicketGrou
                       {group.ticketCount} ticket{group.ticketCount !== 1 ? "s" : ""}
                     </Badge>
                     <span className="text-xs text-muted-foreground">
-                      {new Date(group.created_at).toLocaleDateString()}
+                      {group.created_at ? new Date(group.created_at).toLocaleDateString() : "N/A"}
                     </span>
                   </div>
                   <div className="space-y-1.5">
@@ -553,7 +554,7 @@ export function TicketGrouping({ selectedTicketIds, onGroupCreated }: TicketGrou
                       <div key={ticket.id} className="text-sm flex items-center justify-between p-1.5 rounded-md hover:bg-accent/50 transition-colors">
                         <span className="text-muted-foreground font-mono">#{ticket.id}</span>
                         <Badge variant="outline" className="text-xs">
-                          {ticket.status || "Unknown"}
+                          {ticket.category_name || "Unknown"}
                         </Badge>
                       </div>
                     ))}

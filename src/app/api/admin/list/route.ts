@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth, clerkClient } from "@clerk/nextjs/server";
 import { db, users, roles, domains, scopes, admin_profiles } from "@/db";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
 
@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
 		const { searchParams } = new URL(request.url);
 		const includeCommittee = searchParams.get("include_committee") === "true";
 
-		// Get admins from users table
+		// Get admins and super admins from users table
 		const adminUsers = await db
 			.select({
 				id: users.id,
@@ -43,13 +43,14 @@ export async function GET(request: NextRequest) {
 				email: users.email,
 				domain: domains.name,
 				scope: scopes.name,
+				role_name: roles.name,
 			})
 			.from(users)
 			.leftJoin(roles, eq(users.role_id, roles.id))
 			.leftJoin(admin_profiles, eq(admin_profiles.user_id, users.id))
 			.leftJoin(domains, eq(admin_profiles.primary_domain_id, domains.id))
 			.leftJoin(scopes, eq(admin_profiles.primary_scope_id, scopes.id))
-			.where(eq(roles.name, "admin"));
+			.where(inArray(roles.name, ["admin", "super_admin"]));
 
 		const adminsWithExternalId = adminUsers.filter((admin) => !!admin.external_id && admin.external_id.startsWith("user_"));
 		const client = await clerkClient();
@@ -80,6 +81,7 @@ export async function GET(request: NextRequest) {
 						email: primaryEmail,
 						domain: admin.domain,
 						scope: admin.scope,
+						role: admin.role_name || "admin",
 					};
 				} catch (error) {
 					console.error("Error processing admin user", admin.external_id, error);
@@ -90,6 +92,7 @@ export async function GET(request: NextRequest) {
 						email: admin.email || "",
 						domain: admin.domain,
 						scope: admin.scope,
+						role: admin.role_name || "admin",
 					};
 				}
 			})

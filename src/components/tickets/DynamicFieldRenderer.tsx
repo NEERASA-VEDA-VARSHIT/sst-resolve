@@ -1,8 +1,11 @@
 "use client";
 
+import { useRef } from "react";
+import Image from "next/image";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -11,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ImageIcon, Trash2, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /* -----------------------------
@@ -45,6 +49,8 @@ interface DynamicFieldRendererProps {
   value: unknown;
   onChange: (value: unknown) => void;
   error?: string;
+  onImageUpload?: (file: File) => Promise<void>;
+  imagesUploading?: boolean;
 }
 
 /* -----------------------------
@@ -56,8 +62,10 @@ export function DynamicFieldRenderer({
   value,
   onChange,
   error,
+  onImageUpload,
+  imagesUploading = false,
 }: DynamicFieldRendererProps) {
-
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const placeholder = field.placeholder ?? ""; // normalize
   const helpText = field.help_text ?? "";
 
@@ -230,19 +238,106 @@ export function DynamicFieldRenderer({
           </div>
         );
 
-      case "upload":
+      case "upload": {
+        const images: string[] = Array.isArray(value) ? value : (value ? [String(value)] : []);
+        
+        const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+          const files = e.target.files;
+          if (!files || files.length === 0) return;
+          
+          if (onImageUpload) {
+            // Use the provided upload handler (from TicketForm)
+            // Upload each file sequentially
+            for (let i = 0; i < files.length; i++) {
+              try {
+                await onImageUpload(files[i]);
+                // The upload handler updates the form state via setDetail
+                // The component will re-render with updated images from value prop
+              } catch (err) {
+                console.error("Upload failed:", err);
+              }
+            }
+          } else {
+            // Fallback: just store file objects (not recommended for production)
+            const fileArray = Array.from(files);
+            onChange(fileArray);
+          }
+          
+          // Reset input
+          if (fileInputRef.current) {
+            fileInputRef.current.value = "";
+          }
+        };
+        
+        const removeImage = (imageUrl: string) => {
+          const updatedImages = images.filter(img => img !== imageUrl);
+          onChange(updatedImages.length > 0 ? updatedImages : []);
+        };
+        
         return (
-          <Input
-            id={field.slug}
-            type="file"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) onChange(file);
-            }}
-            className={cn(error && "border-destructive")}
-            accept="image/*,.pdf,.doc,.docx"
-          />
+          <div className="space-y-3">
+            <div className="flex gap-3 items-center">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={handleFileChange}
+                id={`${field.slug}-file-input`}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={imagesUploading}
+                className={cn(error && "border-destructive")}
+              >
+                {imagesUploading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Uploading...
+                  </>
+                ) : (
+                  <>
+                    <ImageIcon className="w-4 h-4 mr-2" />
+                    Upload Image{images.length > 0 ? "s" : ""}
+                  </>
+                )}
+              </Button>
+            </div>
+            
+            {images.length > 0 && (
+              <div className="flex flex-wrap gap-3">
+                {images.map((imageUrl, idx) => (
+                  <div key={idx} className="relative w-28 h-28 rounded overflow-hidden border group">
+                    <Image
+                      src={imageUrl}
+                      alt={`Upload ${idx + 1}`}
+                      fill
+                      sizes="112px"
+                      className="object-cover"
+                      style={{ objectFit: 'cover' }}
+                    />
+                    <button
+                      type="button"
+                      aria-label="Remove image"
+                      onClick={() => removeImage(imageUrl)}
+                      className="absolute top-1 right-1 bg-white/80 p-1 rounded hover:bg-white transition-colors z-10"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            {images.length === 0 && field.required && (
+              <p className="text-xs text-destructive">At least one image is required</p>
+            )}
+          </div>
         );
+      }
 
       default:
         return (

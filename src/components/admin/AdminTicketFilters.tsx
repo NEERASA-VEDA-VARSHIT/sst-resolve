@@ -35,6 +35,7 @@ export function AdminTicketFilters() {
   const [statusOptions, setStatusOptions] = useState<StatusOption[]>([]);
   const [categoryOptions, setCategoryOptions] = useState<CategoryOption[]>([]);
   const [locationOptions, setLocationOptions] = useState<string[]>([]);
+  const [domainOptions, setDomainOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [loadingFilters, setLoadingFilters] = useState(true);
   const [isApplying, setIsApplying] = useState(false);
   
@@ -64,6 +65,13 @@ export function AdminTicketFilters() {
         if (categoryRes.ok) {
           const categoryData = await categoryRes.json();
           setCategoryOptions(categoryData.categories || []);
+        }
+        
+        // Fetch domains for quick action buttons
+        const domainRes = await fetch("/api/admin/master-data");
+        if (domainRes.ok) {
+          const domainData = await domainRes.json();
+          setDomainOptions(domainData.domains || []);
         }
       } catch (error) {
         console.error("Error fetching filters:", error);
@@ -230,13 +238,9 @@ export function AdminTicketFilters() {
     apply();
   }, [tat, apply]);
 
-  const handleCategoryHostel = useCallback(() => {
-    setCategory(category === "Hostel" ? "" : "Hostel");
-    apply();
-  }, [category, apply]);
-
-  const handleCategoryCollege = useCallback(() => {
-    setCategory(category === "College" ? "" : "College");
+  // Dynamic domain quick action handlers
+  const handleDomainToggle = useCallback((domainValue: string) => {
+    setCategory(category === domainValue ? "" : domainValue);
     apply();
   }, [category, apply]);
 
@@ -372,30 +376,32 @@ export function AdminTicketFilters() {
             <AlertTriangle className="w-3 h-3" />
             Overdue
           </button>
-          <button
-            onClick={handleCategoryHostel}
-            className={cn(
-              "px-2.5 py-1 text-xs font-medium rounded-md transition-all flex items-center gap-1.5",
-              category === "Hostel"
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "bg-background hover:bg-primary/10 border border-border"
-            )}
-          >
-            <Building2 className="w-3 h-3" />
-            Hostel
-          </button>
-          <button
-            onClick={handleCategoryCollege}
-            className={cn(
-              "px-2.5 py-1 text-xs font-medium rounded-md transition-all flex items-center gap-1.5",
-              category === "College"
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "bg-background hover:bg-primary/10 border border-border"
-            )}
-          >
-            <GraduationCap className="w-3 h-3" />
-            College
-          </button>
+          {/* Dynamic Domain Quick Action Buttons */}
+          {domainOptions.map((domain) => {
+            const isActive = category === domain.value;
+            // Use Building2 icon for "Hostel", GraduationCap for "College", or default icon
+            const Icon = domain.value.toLowerCase() === "hostel" 
+              ? Building2 
+              : domain.value.toLowerCase() === "college" 
+              ? GraduationCap 
+              : Building2;
+            
+            return (
+              <button
+                key={domain.value}
+                onClick={() => handleDomainToggle(domain.value)}
+                className={cn(
+                  "px-2.5 py-1 text-xs font-medium rounded-md transition-all flex items-center gap-1.5",
+                  isActive
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "bg-background hover:bg-primary/10 border border-border"
+                )}
+              >
+                <Icon className="w-3 h-3" />
+                {domain.label}
+              </button>
+            );
+          })}
         </div>
 
         {/* Expanded View */}

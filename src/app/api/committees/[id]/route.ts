@@ -157,15 +157,15 @@ export async function PATCH(
           .where(eq(roles.name, "student"))
           .limit(1);
 
-        const [committeeHeadRole] = await db
+        const [committeeRole] = await db
           .select({ id: roles.id })
           .from(roles)
-          .where(eq(roles.name, "committee_head"))
+          .where(eq(roles.name, "committee"))
           .limit(1);
 
-        if (!studentRole || !committeeHeadRole) {
+        if (!studentRole || !committeeRole) {
           return NextResponse.json(
-            { error: "Required roles (student, committee_head) not found in database" },
+            { error: "Required roles (student, committee) not found in database" },
             { status: 500 },
           );
         }
@@ -181,11 +181,11 @@ export async function PATCH(
             .where(eq(users.id, committee.head_id));
         }
 
-        // Change new head's role to committee_head
+        // Change new head's role to committee
         await db
           .update(users)
           .set({
-            role_id: committeeHeadRole.id,
+            role_id: committeeRole.id,
             updated_at: new Date(),
           })
           .where(eq(users.id, newHeadUser.id));

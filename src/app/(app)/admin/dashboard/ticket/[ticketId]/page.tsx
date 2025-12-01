@@ -827,9 +827,16 @@ export default async function AdminTicketPage({ params }: { params: Promise<{ ti
                   <div>
                     <label className="text-sm font-medium text-muted-foreground flex items-center gap-2 mb-1">
                       <Clock className="w-4 h-4" />
-                      TAT Due Date
+                      Expected Resolution
                     </label>
-                    <p className="text-base font-medium">{format(new Date(tatDate), 'MMM d, yyyy')}</p>
+                    <p className={`text-base font-medium ${hasTATDue ? 'text-red-600 dark:text-red-400' : isTATToday ? 'text-amber-600 dark:text-amber-400' : ''}`}>
+                      {format(new Date(tatDate), 'MMM d, yyyy')}
+                    </p>
+                    {metadata?.tat && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        TAT: {String(metadata.tat)}
+                      </p>
+                    )}
                     {hasTATDue && (
                       <p className="text-xs text-red-600 dark:text-red-400 mt-1 font-medium">
                         Overdue

@@ -59,12 +59,26 @@ const getStatusValue = (status?: string | { value: string; label: string; badge_
   return status.value || "";
 };
 
-function computeTatInfo(date?: Date | null) {
+function computeTatInfo(date?: Date | string | null) {
   if (!date) return { overdue: false, label: null };
+
+  // Convert to Date object if it's a string
+  let dateObj: Date;
+  if (date instanceof Date) {
+    dateObj = date;
+  } else if (typeof date === 'string') {
+    dateObj = new Date(date);
+    // Check if the date is valid
+    if (isNaN(dateObj.getTime())) {
+      return { overdue: false, label: null };
+    }
+  } else {
+    return { overdue: false, label: null };
+  }
 
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const tatDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const tatDay = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate());
 
   const diff = (tatDay.getTime() - today.getTime()) / (1000 * 60 * 60 * 24);
   const diffDays = Math.round(diff);
@@ -76,7 +90,7 @@ function computeTatInfo(date?: Date | null) {
 
   return {
     overdue: false,
-    label: date.toLocaleDateString("en-US", {
+    label: dateObj.toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
       year: "numeric",
@@ -94,10 +108,41 @@ function TicketCardComponent({ ticket, basePath = "/student/dashboard", disableL
 
   // Memoize TAT calculation
   const { tatDate, overdue, tatLabel } = useMemo(() => {
-    const ticketWithExtras = ticket as typeof ticket & { due_at?: Date | null };
-    const date = ticketWithExtras.due_at || ticket.resolution_due_at || (metadata?.tatDate ? new Date(metadata.tatDate) : null);
+    const ticketWithExtras = ticket as typeof ticket & { due_at?: Date | string | null };
+    
+    // Get the date from various sources and ensure it's a Date object or string
+    let date: Date | string | null = null;
+    
+    if (ticketWithExtras.due_at) {
+      date = ticketWithExtras.due_at instanceof Date 
+        ? ticketWithExtras.due_at 
+        : typeof ticketWithExtras.due_at === 'string' 
+          ? ticketWithExtras.due_at 
+          : null;
+    } else if (ticket.resolution_due_at) {
+      date = ticket.resolution_due_at instanceof Date 
+        ? ticket.resolution_due_at 
+        : typeof ticket.resolution_due_at === 'string' 
+          ? ticket.resolution_due_at 
+          : null;
+    } else if (metadata?.tatDate) {
+      date = typeof metadata.tatDate === 'string' ? metadata.tatDate : null;
+    }
+    
     const info = computeTatInfo(date);
-    return { tatDate: date, overdue: info.overdue, tatLabel: info.label };
+    
+    // Convert date to Date object for storage if it's a string
+    const dateObj = date instanceof Date 
+      ? date 
+      : typeof date === 'string' 
+        ? new Date(date) 
+        : null;
+    
+    return { 
+      tatDate: dateObj && !isNaN(dateObj.getTime()) ? dateObj : null, 
+      overdue: info.overdue, 
+      tatLabel: info.label 
+    };
   }, [ticket, metadata?.tatDate]);
 
   // Memoize comment count
@@ -311,12 +356,38 @@ function TicketCardComponent({ ticket, basePath = "/student/dashboard", disableL
 // Memoize the component to prevent unnecessary re-renders
 export const TicketCard = memo(TicketCardComponent, (prevProps, nextProps) => {
   // Custom comparison function for better performance
+  const prevResolutionDue = prevProps.ticket.resolution_due_at;
+  const nextResolutionDue = nextProps.ticket.resolution_due_at;
+  const prevResolutionDueTime = prevResolutionDue instanceof Date 
+    ? prevResolutionDue.getTime() 
+    : typeof prevResolutionDue === 'string' 
+      ? new Date(prevResolutionDue).getTime() 
+      : null;
+  const nextResolutionDueTime = nextResolutionDue instanceof Date 
+    ? nextResolutionDue.getTime() 
+    : typeof nextResolutionDue === 'string' 
+      ? new Date(nextResolutionDue).getTime() 
+      : null;
+  
+  const prevUpdated = prevProps.ticket.updated_at;
+  const nextUpdated = nextProps.ticket.updated_at;
+  const prevUpdatedTime = prevUpdated instanceof Date 
+    ? prevUpdated.getTime() 
+    : typeof prevUpdated === 'string' 
+      ? new Date(prevUpdated).getTime() 
+      : null;
+  const nextUpdatedTime = nextUpdated instanceof Date 
+    ? nextUpdated.getTime() 
+    : typeof nextUpdated === 'string' 
+      ? new Date(nextUpdated).getTime() 
+      : null;
+  
   return (
     prevProps.ticket.id === nextProps.ticket.id &&
     prevProps.ticket.status === nextProps.ticket.status &&
     prevProps.ticket.escalation_level === nextProps.ticket.escalation_level &&
-    prevProps.ticket.resolution_due_at?.getTime() === nextProps.ticket.resolution_due_at?.getTime() &&
-    prevProps.ticket.updated_at?.getTime() === nextProps.ticket.updated_at?.getTime() &&
+    prevResolutionDueTime === nextResolutionDueTime &&
+    prevUpdatedTime === nextUpdatedTime &&
     prevProps.basePath === nextProps.basePath &&
     prevProps.disableLink === nextProps.disableLink
   );
