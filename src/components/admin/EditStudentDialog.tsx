@@ -41,7 +41,6 @@ interface StudentData {
     batch_id: number | null;
     class_section_id: number | null;
     batch_year: number | null;
-    department: string | null;
     hostel_name: string | null;
     batch_display: string | null;
     section_name: string | null;
@@ -77,7 +76,6 @@ export function EditStudentDialog({
         batch_id: null as number | null,
         class_section_id: null as number | null,
         batch_year: null as number | null,
-        department: "",
     });
 
     // Fetch student data when dialog opens
@@ -134,7 +132,6 @@ export function EditStudentDialog({
                 batch_id: student.batch_id,
                 class_section_id: student.class_section_id,
                 batch_year: student.batch_year,
-                department: student.department || "",
             });
         } catch (error) {
             console.error("Error fetching student:", error);
@@ -396,16 +393,6 @@ export function EditStudentDialog({
                                             setFormData({ ...formData, batch_year: e.target.value ? parseInt(e.target.value) : null })
                                         }
                                         placeholder="e.g., 2027"
-                                    />
-                                </div>
-
-                                <div>
-                                    <Label htmlFor="department">Department</Label>
-                                    <Input
-                                        id="department"
-                                        value={formData.department || ""}
-                                        onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                                        placeholder="e.g., Computer Science"
                                     />
                                 </div>
                             </div>

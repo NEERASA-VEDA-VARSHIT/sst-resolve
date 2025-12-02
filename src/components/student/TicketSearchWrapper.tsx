@@ -2,7 +2,7 @@
 
 import { Suspense } from "react";
 import dynamic from "next/dynamic";
-import type { TicketStatus } from "@/lib/status/types";
+import type { TicketStatus } from "@/schemas/status";
 
 // Dynamic import to avoid Radix hydration mismatch issues
 const TicketSearch = dynamic(

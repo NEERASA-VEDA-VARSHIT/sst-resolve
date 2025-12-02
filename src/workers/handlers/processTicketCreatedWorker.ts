@@ -342,6 +342,8 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
     };
 
     // Check if email should be sent (database-driven config)
+    // Note: shouldSendEmailNotification doesn't support scope yet, but getNotificationConfig does
+    // For now, pass category/subcategory; scope support can be added later if needed
     const shouldSendEmail = await shouldSendEmailNotification(ticket.categoryId, null);
     const studentEmail = contactEmail || creator?.email;
     
@@ -459,7 +461,13 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
       let ccUserIds: string[] = [];
       try {
         const { getNotificationConfig } = await import("@/lib/notification/notification-config");
-        const notifConfig = await getNotificationConfig(ticket.categoryId, null);
+        // Pass scope_id and location for scope-based notification config lookup
+        const notifConfig = await getNotificationConfig(
+          ticket.categoryId, 
+          null, // subcategoryId - would need to be extracted from metadata if needed
+          ticketRow.scopeId || null, // scopeId from ticket
+          ticket.location || null // ticketLocation for scope resolution fallback
+        );
         ccUserIds = notifConfig.slackCcUserIds || [];
         
         // Fallback to env config if no database config

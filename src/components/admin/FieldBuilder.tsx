@@ -43,6 +43,7 @@ const FIELD_TYPE_LABELS: Record<string, string> = {
   text: "Text",
   textarea: "Text Area",
   select: "Dropdown",
+  multi_select: "Multi-select",
   date: "Date",
   number: "Number",
   boolean: "Yes/No",
@@ -53,6 +54,7 @@ const FIELD_TYPE_COLORS: Record<string, string> = {
   text: "bg-blue-100 text-blue-800",
   textarea: "bg-purple-100 text-purple-800",
   select: "bg-green-100 text-green-800",
+  multi_select: "bg-teal-100 text-teal-800",
   date: "bg-orange-100 text-orange-800",
   number: "bg-pink-100 text-pink-800",
   boolean: "bg-yellow-100 text-yellow-800",
@@ -96,16 +98,32 @@ export function FieldBuilder({
       });
 
       if (response.ok) {
-        const result = await response.json();
-        if (result.archived) {
-          toast.success(`Field "${result.field_name}" deleted and archived. ${result.ticket_count} existing tickets preserved.`, { id: "delete-field" });
+        const contentType = response.headers.get("content-type");
+        const result = contentType && contentType.includes("application/json")
+          ? await response.json()
+          : {};
+        if ((result as { archived?: boolean }).archived) {
+          toast.success(
+            `Field "${(result as { field_name?: string }).field_name || field.name}" deleted and archived. ${(result as { ticket_count?: number }).ticket_count ?? 0} existing tickets preserved.`,
+            { id: "delete-field" }
+          );
         } else {
-          toast.success(`Field "${result.field_name}" deleted permanently (no tickets were using it).`, { id: "delete-field" });
+          toast.success(
+            `Field "${(result as { field_name?: string }).field_name || field.name}" deleted permanently (no tickets were using it).`,
+            { id: "delete-field" }
+          );
         }
         await onFieldsChange(); // Ensure the refetch completes
       } else {
-        const error = await response.json();
-        toast.error(error.error || "Failed to delete field", { id: "delete-field" });
+        const contentType = response.headers.get("content-type");
+        let errorMessage = "Failed to delete field";
+        if (contentType && contentType.includes("application/json")) {
+          const error = await response.json();
+          errorMessage = error.error || error.message || errorMessage;
+        } else {
+          errorMessage = `Failed to delete field (${response.status} ${response.statusText})`;
+        }
+        toast.error(errorMessage, { id: "delete-field" });
       }
     } catch (error) {
       console.error("Error deleting field:", error);
@@ -174,7 +192,7 @@ export function FieldBuilder({
                         {field.help_text}
                       </p>
                     )}
-                    {field.field_type === "select" && field.options && field.options.length > 0 && (
+                    {(field.field_type === "select" || field.field_type === "multi_select") && field.options && field.options.length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-1">
                         {field.options.map((opt) => (
                           <Badge key={opt.id} variant="outline" className="text-xs">
@@ -215,6 +233,7 @@ export function FieldBuilder({
         subcategoryId={subcategoryId}
         field={editingField}
         subcategoryDefaultAdmin={subcategoryDefaultAdmin ? String(subcategoryDefaultAdmin) : null}
+        availableFields={sortedFields}
       />
     </div>
   );

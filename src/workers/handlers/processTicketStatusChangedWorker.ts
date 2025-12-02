@@ -6,12 +6,12 @@
  */
 
 import { db } from "@/db";
-import { tickets } from "@/db/schema";
+import { tickets, ticket_statuses } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { postThreadReplyToChannel } from "@/lib/integration/slack";
 import { sendEmail, getStatusUpdateEmail } from "@/lib/integration/email";
 import { logNotification } from "@/workers/utils";
-import { STATUS_DISPLAY } from "@/conf/constants";
+import { getTicketStatusByValue } from "@/lib/status/getTicketStatuses";
 
 type StatusChangedPayload = {
   ticketId: number;
@@ -61,8 +61,15 @@ export async function processTicketStatusChangedWorker(payload: StatusChangedPay
         };
 
         const emoji = (typeof new_status === 'string' && new_status in statusEmoji) ? statusEmoji[new_status] : "📝";
-        const oldStatusDisplay = (typeof old_status === 'string' && old_status in STATUS_DISPLAY) ? STATUS_DISPLAY[old_status] : old_status;
-        const newStatusDisplay = (typeof new_status === 'string' && new_status in STATUS_DISPLAY) ? STATUS_DISPLAY[new_status] : new_status;
+        
+        // Fetch status labels from database
+        const [oldStatusRecord, newStatusRecord] = await Promise.all([
+          old_status ? getTicketStatusByValue(old_status) : Promise.resolve(null),
+          new_status ? getTicketStatusByValue(new_status) : Promise.resolve(null),
+        ]);
+        
+        const oldStatusDisplay = oldStatusRecord?.label || old_status || "Unknown";
+        const newStatusDisplay = newStatusRecord?.label || new_status || "Unknown";
 
         // 1. Post to Slack thread (if exists)
         const slackMessageTs = typeof metadata.slackMessageTs === 'string' ? metadata.slackMessageTs : undefined;

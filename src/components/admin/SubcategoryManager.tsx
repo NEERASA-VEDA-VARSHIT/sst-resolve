@@ -260,8 +260,11 @@ export function SubcategoryManager({ categoryId, categoryDefaultAdmin }: Subcate
         open={isDialogOpen}
         onClose={handleDialogClose}
         categoryId={categoryId}
-        subcategory={editingSubcategory}
-        categoryDefaultAdmin={categoryDefaultAdmin}
+        subcategory={editingSubcategory ? {
+          ...editingSubcategory,
+          assigned_admin_id: editingSubcategory.assigned_admin_id ? String(editingSubcategory.assigned_admin_id) : null,
+        } : null}
+        categoryDefaultAdmin={categoryDefaultAdmin ? String(categoryDefaultAdmin) : null}
       />
     </div>
   );

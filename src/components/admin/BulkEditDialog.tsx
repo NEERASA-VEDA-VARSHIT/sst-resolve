@@ -54,7 +54,6 @@ export function BulkEditDialog({
         batch_id: "no-change" as string,
         class_section_id: "no-change" as string,
         batch_year: "no-change" as string,
-        department: "" as string,
     });
 
     // Fetch master data when dialog opens
@@ -67,7 +66,6 @@ export function BulkEditDialog({
                 batch_id: "no-change",
                 class_section_id: "no-change",
                 batch_year: "no-change",
-                department: "",
             });
         }
     }, [open]);
@@ -116,9 +114,6 @@ export function BulkEditDialog({
         }
         if (formData.batch_year && formData.batch_year !== "no-change") {
             updates.batch_year = formData.batch_year === "null" ? null : parseInt(formData.batch_year);
-        }
-        if (formData.department) {
-            updates.department = formData.department === "null" ? null : formData.department;
         }
 
         // Check if at least one field is selected
@@ -263,18 +258,6 @@ export function BulkEditDialog({
                             </Select>
                         </div>
 
-                        <div>
-                            <Label htmlFor="department">Department</Label>
-                            <Input
-                                id="department"
-                                value={formData.department}
-                                onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                                placeholder="No change (leave empty)"
-                            />
-                            <p className="text-xs text-muted-foreground mt-1">
-                                Leave empty for no change, or type &quot;null&quot; to clear
-                            </p>
-                        </div>
                     </div>
 
                     <DialogFooter>

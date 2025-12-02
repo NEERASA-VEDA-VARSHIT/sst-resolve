@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -41,16 +42,16 @@ import { toast } from "sonner";
 
 interface Student {
 	student_id: number;
-	user_id: string;
+	user_id: string
 	full_name: string;
 	email: string;
 	phone: string | null;
-	roll_no: string;
 	room_no: string | null;
 	hostel: string | null;
 	class_section: string | null;
 	batch_year: number | null;
-	department: string | null;
+	// Optional fields coming from API (may be null / undefined)
+	blood_group?: string | null;
 	created_at: Date;
 	updated_at: Date;
 }
@@ -207,7 +208,7 @@ export default function SuperAdminStudentsPage() {
 		}
 	};
 
-	// Group students by batch year
+	// Group students by batch year (based on data we have on the current page)
 	const studentsByBatch = students.reduce((acc, student) => {
 		const batchYear = student.batch_year || 0; // Use 0 for students without batch
 		if (!acc[batchYear]) {
@@ -217,9 +218,10 @@ export default function SuperAdminStudentsPage() {
 		return acc;
 	}, {} as Record<number, Student[]>);
 
-	// Get sorted batch years (descending)
-	const sortedBatchYears = Object.keys(studentsByBatch)
-		.map(Number)
+	// Get sorted batch years (descending) based on master batches list,
+	// so we always show all active batches (e.g. 2028, 2029) even if no students yet.
+	const sortedBatchYears = batches
+		.map((b) => b.batch_year)
 		.sort((a, b) => b - a);
 
 	if (showUploadView) {
@@ -273,7 +275,7 @@ export default function SuperAdminStudentsPage() {
 						<div className="md:col-span-2">
 							<div className="flex gap-2">
 								<Input
-									placeholder="Search by name, email, or roll number..."
+									placeholder="Search by name or email..."
 									value={search}
 									onChange={(e) => {
 										setSearch(e.target.value);
@@ -366,18 +368,18 @@ export default function SuperAdminStudentsPage() {
 						// Show grouped by batch when "All Batches" is selected
 						<div className="space-y-4">
 							{sortedBatchYears.map((batchYear) => {
-								const batchStudents = studentsByBatch[batchYear];
+								const batchStudents = studentsByBatch[batchYear] || [];
 								const isExpanded = expandedBatches.has(batchYear);
 								const batchDisplayName = `Batch ${batchYear}`;
 
 								return (
 									<div key={batchYear} className="rounded-md border">
+										<div className="w-full flex items-center justify-between p-4 gap-3">
 										<button
 											type="button"
 											onClick={() => toggleBatch(batchYear)}
-											className="w-full flex items-center justify-between p-4 hover:bg-accent transition-colors"
+												className="flex items-center gap-3 hover:text-primary transition-colors"
 										>
-											<div className="flex items-center gap-3">
 												{isExpanded ? (
 													<ChevronUp className="w-5 h-5 text-muted-foreground" />
 												) : (
@@ -385,8 +387,13 @@ export default function SuperAdminStudentsPage() {
 												)}
 												<h3 className="text-lg font-semibold">{batchDisplayName}</h3>
 												<Badge variant="secondary">{batchStudents.length} students</Badge>
+											</button>
+											<Link href={`/superadmin/students/batch/${batchYear}`}>
+												<Button variant="outline" size="sm">
+													View batch
+												</Button>
+											</Link>
 											</div>
-										</button>
 										{isExpanded && (
 											<div className="border-t">
 												<Table>
@@ -420,13 +427,12 @@ export default function SuperAdminStudentsPage() {
 																	}}
 																/>
 															</TableHead>
-															<TableHead>Roll No</TableHead>
 															<TableHead>Name</TableHead>
 															<TableHead>Email</TableHead>
 															<TableHead>Hostel</TableHead>
 															<TableHead>Room</TableHead>
 															<TableHead>Section</TableHead>
-															<TableHead>Department</TableHead>
+															<TableHead>Blood Group</TableHead>
 															<TableHead>Phone</TableHead>
 															<TableHead>Actions</TableHead>
 														</TableRow>
@@ -439,9 +445,6 @@ export default function SuperAdminStudentsPage() {
 																		checked={selectedStudents.includes(student.student_id)}
 																		onCheckedChange={() => toggleStudent(student.student_id)}
 																	/>
-																</TableCell>
-																<TableCell className="font-mono text-sm">
-																	{student.roll_no}
 																</TableCell>
 																<TableCell className="font-medium">
 																	{student.full_name}
@@ -471,9 +474,9 @@ export default function SuperAdminStudentsPage() {
 																	)}
 																</TableCell>
 																<TableCell>
-																	{student.department ? (
-																		<Badge variant="outline">
-																			{student.department}
+																	{student.blood_group ? (
+																		<Badge variant="secondary">
+																			{student.blood_group}
 																		</Badge>
 																	) : (
 																		<span className="text-muted-foreground">—</span>
@@ -531,13 +534,12 @@ export default function SuperAdminStudentsPage() {
 												onCheckedChange={toggleAll}
 											/>
 										</TableHead>
-										<TableHead>Roll No</TableHead>
 										<TableHead>Name</TableHead>
 										<TableHead>Email</TableHead>
 										<TableHead>Hostel</TableHead>
 										<TableHead>Room</TableHead>
 										<TableHead>Section</TableHead>
-										<TableHead>Department</TableHead>
+										<TableHead>Blood Group</TableHead>
 										<TableHead>Phone</TableHead>
 										<TableHead>Actions</TableHead>
 									</TableRow>
@@ -550,9 +552,6 @@ export default function SuperAdminStudentsPage() {
 													checked={selectedStudents.includes(student.student_id)}
 													onCheckedChange={() => toggleStudent(student.student_id)}
 												/>
-											</TableCell>
-											<TableCell className="font-mono text-sm">
-												{student.roll_no}
 											</TableCell>
 											<TableCell className="font-medium">
 												{student.full_name}
@@ -582,9 +581,9 @@ export default function SuperAdminStudentsPage() {
 												)}
 											</TableCell>
 											<TableCell>
-												{student.department ? (
-													<Badge variant="outline">
-														{student.department}
+												{student.blood_group ? (
+													<Badge variant="secondary">
+														{student.blood_group}
 													</Badge>
 												) : (
 													<span className="text-muted-foreground">—</span>

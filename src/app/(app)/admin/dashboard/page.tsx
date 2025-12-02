@@ -1,8 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { db, tickets, categories, domains } from "@/db";
+import { db, categories, domains } from "@/db";
 import { eq, inArray } from "drizzle-orm";
-import type { TicketMetadata } from "@/db/inferred-types";
 import { TicketCard } from "@/components/layout/TicketCard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
@@ -11,10 +10,25 @@ import { AdminTicketFilters } from "@/components/admin/AdminTicketFilters";
 import { StatsCards } from "@/components/dashboard/StatsCards";
 import { Button } from "@/components/ui/button";
 import { FileText, AlertCircle, TrendingUp, Calendar } from "lucide-react";
-import { isAdminLevel } from "@/conf/constants";
-import { getCachedAdminUser, getCachedAdminAssignment, getCachedAdminTickets } from "@/lib/cache/cached-queries";
+import { getCachedAdminUser, getCachedAdminAssignment, getCachedAdminTickets, getCachedTicketStatuses } from "@/lib/cache/cached-queries";
 import { ticketMatchesAdminAssignment } from "@/lib/assignment/admin-assignment";
 import type { Ticket } from "@/db/types-only";
+import type { AdminTicketRow } from "@/lib/ticket/adminTicketFilters";
+import {
+  applySearchFilter,
+  applyCategoryFilter,
+  applySubcategoryFilter,
+  applyLocationFilter,
+  applyStatusFilter,
+  applyEscalatedFilter,
+  applyUserFilter,
+  applyDateRangeFilter,
+  applyTATFilter,
+  calculateTicketStats,
+} from "@/lib/ticket/adminTicketFilters";
+import { parseTicketMetadata } from "@/db/inferred-types";
+import { isOpenStatus, normalizeStatus } from "@/lib/ticket/normalizeStatus";
+import type { TicketStatusValue } from "@/conf/constants";
 
 // Revalidate every 30 seconds for fresh data
 export const revalidate = 30;
@@ -27,17 +41,8 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
   }
 
   // Use cached functions for better performance (request-scoped deduplication)
-  const { dbUser: adminDbUser, role } = await getCachedAdminUser(userId);
-
-  // Redirect super_admin to superadmin dashboard
-  if (role === 'super_admin') {
-    redirect('/superadmin/dashboard');
-  }
-
-  // Only allow admin-level roles (admin, committee, super_admin)
-  if (!isAdminLevel(role)) {
-    redirect('/student/dashboard');
-  }
+  // Note: Role-based redirects are handled in admin/layout.tsx and admin/dashboard/layout.tsx
+  const { dbUser: adminDbUser } = await getCachedAdminUser(userId);
 
   if (!adminDbUser) {
     console.error('[Admin Dashboard] Failed to create/fetch user');
@@ -69,29 +74,21 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
   // Fetch tickets using cached function (optimized query with request-scoped caching)
   const ticketRows = await getCachedAdminTickets(adminUserId, adminAssignment);
 
-  // Transform to match TicketCard expected format
-  // The cached query already includes all ticket fields, just add computed fields
-  type TicketWithExtras = typeof tickets.$inferSelect & {
-    status_id: number | null;
-    scope_id: number | null;
-    status_value?: string | null;
-    status_label?: string | null;
-    status_badge_color?: string | null;
-    category_name?: string | null;
-    creator_full_name?: string | null;
-    creator_email?: string | null;
-    status?: string | null;
-    creator_name?: string | null;
-    due_at?: Date | null;
-  };
+  // Get ticket statuses for final status check
+  // Store canonical values for final statuses (resolved/closed/etc.)
+  const ticketStatuses = await getCachedTicketStatuses();
+  const finalStatusValues = new Set<TicketStatusValue>(
+    ticketStatuses
+      .filter((s) => s.is_final)
+      .map((s) => normalizeStatus(s.value))
+      .filter((s): s is TicketStatusValue => s !== null)
+  );
 
-  let allTickets: TicketWithExtras[] = ticketRows.map(ticket => ({
+  // Transform to AdminTicketRow format (properly typed)
+  let allTickets: AdminTicketRow[] = ticketRows.map(ticket => ({
     ...ticket,
-    status_id: ticket.status_id ?? 0,
-    scope_id: null,
+    status_id: ticket.status_id ?? null,
     status: ticket.status_value || null,
-    creator_name: ticket.creator_full_name || null,
-    due_at: ticket.resolution_due_at,
   }));
 
   // Get category names and domains for all tickets (for filtering logic)
@@ -118,11 +115,20 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
     ? await getAdminAssignedCategoryDomains(adminUserId)
     : [];
 
-  // Filter by assignment (synchronous since we have categoryMap)
+  /**
+   * Filter tickets by admin assignment
+   * 
+   * Priority order:
+   * 1. Tickets explicitly assigned to this admin (via assigned_to)
+   *    - If admin has scope, also filter by scope match
+   * 2. Tickets in domains from categories this admin is assigned to
+   *    - If admin has scope, also filter by scope match
+   * 3. Unassigned tickets matching admin's domain/scope (from primary assignment)
+   *    - Allows admins to pick up unassigned tickets in their domain
+   */
   if (adminUserId) {
     allTickets = allTickets.filter(t => {
-      // Priority 1: Show tickets explicitly assigned to this admin (regardless of domain/scope)
-      // This includes tickets assigned via category_assignments, default_admin_id, etc.
+      // Priority 1: Explicitly assigned tickets
       if (t.assigned_to === adminUserId) {
         // If admin has a scope, filter by scope for assigned tickets too
         if (adminAssignment.scope && t.location) {
@@ -133,8 +139,7 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
         return true; // Always show tickets assigned to this admin (if no scope restriction)
       }
       
-      // Priority 2: Show tickets in domains from categories admin is assigned to
-      // If admin is assigned to a category, they should see all tickets in that category's domain
+      // Priority 2: Tickets in domains from categories admin is assigned to
       const ticketCategoryInfo = t.category_id ? categoryMap.get(t.category_id) : null;
       if (ticketCategoryInfo?.domain && assignedCategoryDomains.includes(ticketCategoryInfo.domain)) {
         // Admin is assigned to this category's domain
@@ -148,8 +153,7 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
         return true;
       }
       
-      // Priority 3: Show unassigned tickets that match admin's domain/scope (from primary assignment)
-      // This allows admins to pick up unassigned tickets in their domain
+      // Priority 3: Unassigned tickets matching admin's domain/scope
       if (!t.assigned_to && hasAssignment) {
         const ticketCategory = ticketCategoryInfo?.name || null;
         return ticketMatchesAdminAssignment(
@@ -165,148 +169,47 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
     allTickets = [];
   }
 
-  // Search filter (searches across ID, description, and subcategory)
-  if (searchQuery) {
-    const query = searchQuery.toLowerCase();
-    allTickets = allTickets.filter(t => {
-      const idMatch = t.id.toString().includes(query);
-      const descMatch = (t.description || "").toLowerCase().includes(query);
-      // Get subcategory from metadata
-      const metadata = (t.metadata as TicketMetadata & { subcategory?: string }) || {};
-      const subcatName = metadata.subcategory || "";
-      const subcatMatch = subcatName.toLowerCase().includes(query);
-      return idMatch || descMatch || subcatMatch;
-    });
-  }
-
-  // Category filter
-  if (category) {
-    allTickets = allTickets.filter(t => {
-      const ticketCategory = t.category_id ? categoryMap.get(t.category_id) : null;
-      const categoryName = ticketCategory?.name || t.category_name || "";
-      return categoryName.toLowerCase() === category.toLowerCase();
-    });
-  }
-
-  // Subcategory filter
-  if (subcategory) {
-    allTickets = allTickets.filter(t => {
-      const metadata = (t.metadata as TicketMetadata & { subcategory?: string }) || {};
-      const subcatName = metadata.subcategory || "";
-      return subcatName.toLowerCase().includes(subcategory.toLowerCase());
-    });
-  }
-
-  // Location filter
-  if (location) {
-    allTickets = allTickets.filter(t => (t.location || "").toLowerCase().includes(location.toLowerCase()));
-  }
-
-  // Status filter (using status_value from joined table)
-  if (status) {
-    const normalizedStatus = status.toUpperCase();
-    allTickets = allTickets.filter(t => {
-      const ticketStatus = t.status?.toUpperCase() || "";
-      if (normalizedStatus === "RESOLVED") {
-        return ticketStatus === "RESOLVED";
-      } else if (normalizedStatus === "OPEN") {
-        return ticketStatus === "OPEN";
-      } else if (normalizedStatus === "IN_PROGRESS" || normalizedStatus === "IN PROGRESS") {
-        return ticketStatus === "IN_PROGRESS";
-      } else if (normalizedStatus === "AWAITING_STUDENT" || normalizedStatus === "AWAITING STUDENT" || normalizedStatus === "AWAITING_STUDENT_RESPONSE") {
-        return ticketStatus === "AWAITING_STUDENT_RESPONSE" || ticketStatus === "AWAITING_STUDENT";
-      } else if (normalizedStatus === "REOPENED") {
-        return ticketStatus === "REOPENED";
-      } else if (normalizedStatus === "ESCALATED") {
-        return ticketStatus === "ESCALATED" || (t.escalation_level || 0) > 0;
-      }
-      return ticketStatus === normalizedStatus;
-    });
-  }
-
-  // Escalated filter
-  if (escalated === "true") {
-    allTickets = allTickets.filter(t => (t.escalation_level || 0) > 0);
-  }
-
-  // User filter
-  if (user) {
-    allTickets = allTickets.filter(t => {
-      const metadata = (t.metadata as TicketMetadata & { userEmail?: string; userName?: string }) || {};
-      const userInfo = metadata.userEmail || metadata.userName || "";
-      return userInfo.toLowerCase().includes(user.toLowerCase());
-    });
-  }
-
-  // Date range filters
-  if (createdFrom) {
-    const from = new Date(createdFrom);
-    from.setHours(0, 0, 0, 0);
-    allTickets = allTickets.filter(t => t.created_at ? new Date(t.created_at).getTime() >= from.getTime() : false);
-  }
-  if (createdTo) {
-    const to = new Date(createdTo);
-    to.setHours(23, 59, 59, 999);
-    allTickets = allTickets.filter(t => t.created_at ? new Date(t.created_at).getTime() <= to.getTime() : false);
-  }
-
-  // TAT filter
-  if (tat) {
-    const now = new Date();
-    const startOfToday = new Date(now);
-    startOfToday.setHours(0, 0, 0, 0);
-    const endOfToday = new Date(now);
-    endOfToday.setHours(23, 59, 59, 999);
-    allTickets = allTickets.filter(t => {
-      // Use metadata.tatDate for TAT filtering
-      const metadata = (t.metadata as TicketMetadata) || {};
-      const metadataTatDate = metadata.tatDate && typeof metadata.tatDate === 'string' ? new Date(metadata.tatDate) : null;
-      const tatDate = metadataTatDate;
-      const hasTat = !!tatDate && !isNaN(tatDate.getTime());
-
-      if (tat === "has") return hasTat;
-      if (tat === "none") return !hasTat;
-      if (tat === "due") return hasTat && tatDate && tatDate.getTime() < now.getTime();
-      if (tat === "upcoming") return hasTat && tatDate && tatDate.getTime() >= now.getTime();
-      if (tat === "today") {
-        return hasTat && tatDate && tatDate.getTime() >= startOfToday.getTime() && tatDate.getTime() <= endOfToday.getTime();
-      }
-      return true;
-    });
-  }
+  // Apply filters using centralized helper functions
+  allTickets = applySearchFilter(allTickets, searchQuery);
+  allTickets = applyCategoryFilter(allTickets, category, categoryMap);
+  allTickets = applySubcategoryFilter(allTickets, subcategory);
+  allTickets = applyLocationFilter(allTickets, location);
+  allTickets = applyStatusFilter(allTickets, status, finalStatusValues);
+  allTickets = applyEscalatedFilter(allTickets, escalated);
+  allTickets = applyUserFilter(allTickets, user);
+  allTickets = applyDateRangeFilter(allTickets, createdFrom, createdTo);
+  allTickets = applyTATFilter(allTickets, tat);
 
   // Sort
   if (sort === "oldest") {
     allTickets = [...allTickets].reverse();
   }
 
-  const stats = {
-    total: allTickets.length,
-    open: allTickets.filter(t => (t.status?.toUpperCase() || "") === "OPEN").length,
-    inProgress: allTickets.filter(t => (t.status?.toUpperCase() || "") === "IN_PROGRESS").length,
-    resolved: allTickets.filter(t => (t.status?.toUpperCase() || "") === "RESOLVED").length,
-    awaitingStudent: allTickets.filter(t => {
-      const s = (t.status?.toUpperCase() || "");
-      return s === "AWAITING_STUDENT_RESPONSE" || s === "AWAITING_STUDENT";
-    }).length,
-    escalated: allTickets.filter(t => (t.escalation_level || 0) > 0).length,
-  };
+  // Calculate statistics using centralized helper
+  const stats = calculateTicketStats(allTickets, finalStatusValues);
 
-  // Calculate today pending count
+  // Calculate today pending count (tickets with TAT due today that are not resolved)
   const now = new Date();
   const startOfToday = new Date(now);
   startOfToday.setHours(0, 0, 0, 0);
   const endOfToday = new Date(now);
   endOfToday.setHours(23, 59, 59, 999);
+  
   const todayPending = allTickets.filter(t => {
-    const isNotResolved = (t.status?.toUpperCase() || "") !== "RESOLVED";
-    if (!isNotResolved) return false;
-    // Use metadata.tatDate for TAT
-    const metadata = (t.metadata as TicketMetadata) || {};
-    const metadataTatDate = metadata.tatDate && typeof metadata.tatDate === 'string' ? new Date(metadata.tatDate) : null;
-    const tatDate = metadataTatDate;
-    if (!tatDate || isNaN(tatDate.getTime())) return false;
-    return tatDate.getTime() >= startOfToday.getTime() && tatDate.getTime() <= endOfToday.getTime();
+    // Must be open (not final status)
+    const status = t.status || t.status_value;
+    if (!isOpenStatus(status, finalStatusValues)) return false;
+    
+    // Must have TAT date due today
+    const metadata = parseTicketMetadata(t.metadata);
+    const tatDateStr = metadata.tatDate;
+    if (!tatDateStr || typeof tatDateStr !== 'string') return false;
+    
+    const tatDate = new Date(tatDateStr);
+    if (isNaN(tatDate.getTime())) return false;
+    
+    return tatDate.getTime() >= startOfToday.getTime() && 
+           tatDate.getTime() <= endOfToday.getTime();
   }).length;
 
   return (
@@ -390,9 +293,44 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
               </Card>
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {allTickets.map((ticket) => (
-                  <TicketCard key={ticket.id} ticket={ticket as unknown as Ticket & { status?: string | null; category_name?: string | null; creator_name?: string | null; creator_email?: string | null }} basePath="/admin/dashboard" />
-                ))}
+                {allTickets.map((ticket) => {
+                  // Transform to TicketCard expected format with proper types
+                  const ticketForCard: Ticket & { 
+                    status?: string | null; 
+                    category_name?: string | null; 
+                    creator_name?: string | null; 
+                    creator_email?: string | null;
+                  } = {
+                    id: ticket.id,
+                    title: ticket.title,
+                    description: ticket.description,
+                    location: ticket.location,
+                    status_id: ticket.status_id ?? 0,
+                    category_id: ticket.category_id ?? null,
+                    subcategory_id: ticket.subcategory_id ?? null,
+                    sub_subcategory_id: ticket.sub_subcategory_id ?? null,
+                    scope_id: null,
+                    created_by: ticket.created_by,
+                    assigned_to: ticket.assigned_to,
+                    escalation_level: ticket.escalation_level ?? 0,
+                    acknowledgement_due_at: ticket.acknowledgement_due_at,
+                    resolution_due_at: ticket.resolution_due_at,
+                    metadata: ticket.metadata,
+                    created_at: ticket.created_at,
+                    updated_at: ticket.updated_at,
+                    status: ticket.status || ticket.status_value || null,
+                    category_name: ticket.category_name || null,
+                    creator_name: ticket.creator_full_name || null,
+                    creator_email: ticket.creator_email || null,
+                  };
+                  return (
+                    <TicketCard 
+                      key={ticket.id} 
+                      ticket={ticketForCard} 
+                      basePath="/admin/dashboard" 
+                    />
+                  );
+                })}
               </div>
             )}
           </TabsContent>

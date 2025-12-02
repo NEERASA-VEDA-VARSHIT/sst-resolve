@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { db, users } from "@/db";
 import { eq, and } from "drizzle-orm";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
+import { logCriticalError, logWarning } from "@/lib/monitoring/alerts";
 
 /**
  * Clerk Webhook Handler
@@ -45,7 +46,10 @@ export async function POST(request: NextRequest) {
 		const webhookSecret = process.env.CLERK_WEBHOOK_SECRET;
 
 		if (!webhookSecret) {
-			console.error("CLERK_WEBHOOK_SECRET is not set");
+			logCriticalError(
+				"[Clerk Webhook] Missing CLERK_WEBHOOK_SECRET",
+				new Error("CLERK_WEBHOOK_SECRET env var not configured")
+			);
 			return NextResponse.json(
 				{ error: "Webhook secret not configured" },
 				{ status: 500 }
@@ -64,7 +68,9 @@ export async function POST(request: NextRequest) {
 				"svix-signature": svix_signature,
 			}) as { type: string; data: Record<string, unknown> };
 		} catch (err) {
-			console.error("Error verifying webhook:", err);
+			logWarning("[Clerk Webhook] Error verifying webhook signature", {
+				error: err instanceof Error ? err.message : String(err),
+			});
 			return NextResponse.json(
 				{ error: "Error occurred -- webhook verification failed" },
 				{ status: 400 }
@@ -82,26 +88,37 @@ export async function POST(request: NextRequest) {
 			email: Array.isArray(typedEventData.email_addresses) ? typedEventData.email_addresses[0]?.email_address : undefined,
 		});
 
-		switch (eventType) {
-			case "user.created":
-				await handleUserCreated(typedEventData);
-				break;
+		try {
+			switch (eventType) {
+				case "user.created":
+					await handleUserCreated(typedEventData);
+					break;
 
-			case "user.updated":
-				await handleUserUpdated(typedEventData);
-				break;
+				case "user.updated":
+					await handleUserUpdated(typedEventData);
+					break;
 
-			case "user.deleted":
-				await handleUserDeleted(typedEventData);
-				break;
+				case "user.deleted":
+					await handleUserDeleted(typedEventData);
+					break;
 
-			default:
-				console.log(`[Clerk Webhook] Unhandled event type: ${eventType}`);
+				default:
+					console.log(`[Clerk Webhook] Unhandled event type: ${eventType}`);
+			}
+		} catch (handlerError) {
+			logCriticalError(
+				"[Clerk Webhook] Handler failure",
+				handlerError,
+				{ eventType, clerkUserId: typedEventData.id }
+			);
+			// Still return 200 so Clerk doesn't keep retrying endlessly,
+			// but monitoring will alert the team.
+			return NextResponse.json({ received: true, warning: "handler_failed" });
 		}
 
 		return NextResponse.json({ received: true });
 	} catch (error) {
-		console.error("[Clerk Webhook] Error processing webhook:", error);
+		logCriticalError("[Clerk Webhook] Error processing webhook", error);
 		return NextResponse.json(
 			{ error: "Internal server error" },
 			{ status: 500 }
@@ -154,7 +171,10 @@ async function handleUserCreated(eventData: ClerkUserEventData) {
 			'code' in error &&
 			error.code === '23505'
 		) {
-			console.warn(`[Clerk Webhook] User with email already exists (duplicate key), this is expected in race conditions: ${clerkUserId}`);
+			logWarning(
+				"[Clerk Webhook] Duplicate key during user.created",
+				{ clerkUserId }
+			);
 			// Try to fetch the existing user
 			try {
 				const [existingUser] = await db
@@ -172,10 +192,15 @@ async function handleUserCreated(eventData: ClerkUserEventData) {
 					return;
 				}
 			} catch (fetchError) {
-				console.error("[Clerk Webhook] Error fetching user after duplicate key error:", fetchError);
+				logWarning(
+					"[Clerk Webhook] Error fetching user after duplicate key",
+					{ clerkUserId, error: fetchError instanceof Error ? fetchError.message : String(fetchError) }
+				);
 			}
 		}
-		console.error("[Clerk Webhook] Error creating user:", error);
+		logCriticalError("[Clerk Webhook] Error creating user", error, {
+			clerkUserId,
+		});
 		// Don't throw - webhook should return success to prevent retries
 		// The user might already exist, which is fine
 	}
@@ -200,11 +225,16 @@ async function handleUserUpdated(eventData: ClerkUserEventData) {
 			'code' in error &&
 			error.code === '23505'
 		) {
-			console.warn(`[Clerk Webhook] User with email already exists (duplicate key) during update: ${clerkUserId}`);
+			logWarning(
+				"[Clerk Webhook] Duplicate key during user.updated",
+				{ clerkUserId }
+			);
 			// User already exists, which is fine for updates
 			return;
 		}
-		console.error("[Clerk Webhook] Error updating user:", error);
+		logCriticalError("[Clerk Webhook] Error updating user", error, {
+			clerkUserId,
+		});
 		// Don't throw - webhook should return success to prevent retries
 	}
 }
@@ -254,7 +284,9 @@ async function handleUserDeleted(eventData: ClerkUserEventData) {
 		// await db.delete(users).where(eq(users.external_id, clerkUserId));
 		// console.log(`[Clerk Webhook] Hard deleted user: ${clerkUserId}`);
 	} catch (error) {
-		console.error("[Clerk Webhook] Error handling user deletion:", error);
+		logCriticalError("[Clerk Webhook] Error handling user deletion", error, {
+			clerkUserId: eventData.id,
+		});
 		// Don't throw - webhook should still return success even if deletion fails
 		// This prevents Clerk from retrying the webhook
 	}

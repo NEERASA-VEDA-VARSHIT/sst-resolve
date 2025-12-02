@@ -3,6 +3,8 @@ import { claimNextOutboxRow, markOutboxSuccess, markOutboxFailure } from "@/work
 import { processTicketCreated } from "@/workers/handlers/processTicketCreatedWorker";
 import { verifyCronAuth } from "@/lib/cron-auth";
 import { logger } from "@/lib/logger";
+import { db, outbox } from "@/db";
+import { sql } from "drizzle-orm";
 
 type TicketCreatedPayload = {
   ticket_id: number;
@@ -96,10 +98,22 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Log warning if there are many unprocessed events (potential backlog)
+    const unprocessedCount = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(outbox)
+      .where(sql`${outbox.processed_at} IS NULL`)
+      .then(([row]) => row?.count || 0);
+    
+    if (unprocessedCount > 50) {
+      console.warn(`[Outbox] High backlog detected: ${unprocessedCount} unprocessed events`);
+    }
+
     return NextResponse.json({
       success: true,
       processed,
       errors,
+      unprocessed: unprocessedCount,
       message: `Processed ${processed} events${errors > 0 ? `, ${errors} errors` : ""}`,
     });
   } catch (error) {

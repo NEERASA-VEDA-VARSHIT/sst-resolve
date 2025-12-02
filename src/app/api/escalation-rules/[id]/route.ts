@@ -162,15 +162,31 @@ export async function PATCH(
       if (user_id === null || user_id === "") {
         updateData.user_id = null;
       } else {
-        // user_id is UUID string
+        // user_id is UUID string - validate user exists and has admin role
+        const { roles } = await import("@/db");
         const [user] = await db
-          .select()
+          .select({
+            id: users.id,
+            external_id: users.external_id,
+            role_name: roles.name,
+          })
           .from(users)
+          .leftJoin(roles, eq(users.role_id, roles.id))
           .where(eq(users.id, user_id))
           .limit(1);
 
         if (!user) {
           return NextResponse.json({ error: "User not found" }, { status: 404 });
+        }
+
+        // Edge case: Validate user has admin role (escalation targets must be admins)
+        if (!user.role_name || (user.role_name !== "admin" && user.role_name !== "super_admin")) {
+          return NextResponse.json({ error: "Escalation target must be an admin or super admin" }, { status: 400 });
+        }
+
+        // Edge case: Validate user is not deleted (external_id should exist)
+        if (!user.external_id) {
+          return NextResponse.json({ error: "Cannot assign escalation to deleted user" }, { status: 400 });
         }
 
         updateData.user_id = user_id;

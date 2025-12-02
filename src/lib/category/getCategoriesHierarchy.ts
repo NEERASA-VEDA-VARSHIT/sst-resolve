@@ -49,6 +49,10 @@ export const getCategoriesHierarchy = unstable_cache(
                 name: category_fields.name,
                 slug: category_fields.slug,
                 field_type: category_fields.field_type,
+                required: category_fields.required,
+                placeholder: category_fields.placeholder,
+                help_text: category_fields.help_text,
+                validation_rules: category_fields.validation_rules,
                 display_order: category_fields.display_order,
             })
             .from(category_fields)
@@ -117,6 +121,11 @@ export const getCategoriesHierarchy = unstable_cache(
                         name: f.name || '',
                         slug: f.slug || '',
                         type: f.field_type || 'text',
+                        required: f.required ?? false,
+                        placeholder: f.placeholder || null,
+                        help_text: f.help_text || null,
+                        validation_rules: f.validation_rules || null,
+                        display_order: f.display_order || 0,
                         options: sortedOptions
                             .filter(o => o.field_id === f.id)
                             .map(o => ({ label: o.label || '', value: o.value || '' }))

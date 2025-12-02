@@ -18,107 +18,36 @@ export const TICKET_STATUS = {
 
 export type TicketStatusValue = (typeof TICKET_STATUS)[keyof typeof TICKET_STATUS];
 
-export type TicketStatusMeta = {
-    value: TicketStatusValue;
-    label: string;
-    description: string;
-    progressPercent: number;
-    badgeColor: "default" | "secondary" | "outline" | "destructive";
-    isFinal: boolean;
-    order: number;
-};
-
-export const STATUS_META: Record<TicketStatusValue, TicketStatusMeta> = {
-    [TICKET_STATUS.OPEN]: {
-        value: TICKET_STATUS.OPEN,
-        label: "Open",
-        description: "New ticket, awaiting assignment",
-        progressPercent: 0,
-        badgeColor: "default",
-        isFinal: false,
-        order: 1,
-    },
-    [TICKET_STATUS.IN_PROGRESS]: {
-        value: TICKET_STATUS.IN_PROGRESS,
-        label: "In Progress",
-        description: "Admin is actively working",
-        progressPercent: 40,
-        badgeColor: "outline",
-        isFinal: false,
-        order: 2,
-    },
-    [TICKET_STATUS.AWAITING_STUDENT]: {
-        value: TICKET_STATUS.AWAITING_STUDENT,
-        label: "Awaiting Student Response",
-        description: "Waiting for student response",
-        progressPercent: 50,
-        badgeColor: "outline",
-        isFinal: false,
-        order: 3,
-    },
-    [TICKET_STATUS.REOPENED]: {
-        value: TICKET_STATUS.REOPENED,
-        label: "Reopened",
-        description: "Student reopened the ticket",
-        progressPercent: 10,
-        badgeColor: "default",
-        isFinal: false,
-        order: 4,
-    },
-    [TICKET_STATUS.ESCALATED]: {
-        value: TICKET_STATUS.ESCALATED,
-        label: "Escalated",
-        description: "Escalated to higher authority",
-        progressPercent: 60,
-        badgeColor: "destructive",
-        isFinal: false,
-        order: 5,
-    },
-    [TICKET_STATUS.FORWARDED]: {
-        value: TICKET_STATUS.FORWARDED,
-        label: "Forwarded",
-        description: "Forwarded to another admin",
-        progressPercent: 30,
-        badgeColor: "secondary",
-        isFinal: false,
-        order: 6,
-    },
-    [TICKET_STATUS.RESOLVED]: {
-        value: TICKET_STATUS.RESOLVED,
-        label: "Resolved",
-        description: "Successfully resolved",
-        progressPercent: 100,
-        badgeColor: "secondary",
-        isFinal: true,
-        order: 7,
-    },
-};
+/**
+ * @deprecated Status metadata (labels, colors, progress) now comes from database (ticket_statuses table)
+ * Only canonical values and aliases remain here for normalization
+ */
 
 export const STATUS_ALIASES: Record<string, TicketStatusValue> = {
     awaiting_student_response: TICKET_STATUS.AWAITING_STUDENT,
     closed: TICKET_STATUS.RESOLVED,
 };
 
+/**
+ * Normalize status string to canonical value
+ * Only handles value normalization and aliases - metadata comes from DB
+ */
 export function getCanonicalStatus(status: string | null | undefined): TicketStatusValue | null {
     if (!status) return null;
     const normalized = status.toLowerCase().trim();
-    return (STATUS_META as Record<string, TicketStatusMeta>)[normalized]?.value ?? STATUS_ALIASES[normalized] ?? null;
-}
-
-export function getStatusMeta(status: string | null | undefined): TicketStatusMeta | null {
-    const canonical = getCanonicalStatus(status);
-    return canonical ? STATUS_META[canonical] : null;
-}
-
-export function buildStatusDisplay(status: string | null | undefined) {
-    const canonical = getCanonicalStatus(status);
-    if (!canonical) return null;
-    const meta = STATUS_META[canonical];
-    return {
-        value: canonical,
-        label: meta.label,
-        badge_color: meta.badgeColor,
-    };
+    
+    // Check if it's already a canonical value
+    const values = Object.values(TICKET_STATUS);
+    if (values.includes(normalized as TicketStatusValue)) {
+        return normalized as TicketStatusValue;
+    }
+    
+    // Check aliases
+    if (normalized in STATUS_ALIASES) {
+        return STATUS_ALIASES[normalized];
+    }
+    
+    return null;
 }
 
 /**
@@ -226,103 +155,9 @@ export const TIME = {
 } as const;
 
 /**
- * Status Display Names
+ * @deprecated STATUS_DISPLAY removed - use getTicketStatuses() from DB instead
+ * @deprecated STATUS_VARIANT removed - use getTicketStatuses() from DB instead
  */
-// Safety check: ensure STATUS_META is a valid object before calling Object.entries
-let STATUS_DISPLAY: Record<string, string> = {};
-try {
-    // Double-check STATUS_META is valid
-    if (!STATUS_META || typeof STATUS_META !== 'object' || Array.isArray(STATUS_META)) {
-        STATUS_DISPLAY = {};
-    } else {
-        const safeStatusMeta = STATUS_META;
-        // Additional safety: ensure it's not null/undefined before Object.entries
-        if (safeStatusMeta != null && typeof safeStatusMeta === 'object' && !Array.isArray(safeStatusMeta)) {
-            try {
-                STATUS_DISPLAY = Object.entries(safeStatusMeta).reduce(
-                    (acc, [key, meta]) => {
-                        if (key && meta && typeof meta === 'object' && meta != null && 'label' in meta) {
-                            acc[key] = (meta as { label?: string }).label || '';
-                        }
-                        return acc;
-                    },
-                    {} as Record<string, string>
-                );
-            } catch (reduceError) {
-                console.error('[Constants] Error in STATUS_DISPLAY reduce:', reduceError);
-                STATUS_DISPLAY = {};
-            }
-
-            // Safety check: ensure STATUS_ALIASES is a valid object before calling Object.entries
-            const safeStatusAliases = STATUS_ALIASES && typeof STATUS_ALIASES === 'object' && !Array.isArray(STATUS_ALIASES) ? STATUS_ALIASES : {};
-            if (safeStatusAliases != null && typeof safeStatusAliases === 'object' && !Array.isArray(safeStatusAliases) && Object.keys(safeStatusAliases).length > 0) {
-                try {
-                    for (const [alias, canonical] of Object.entries(safeStatusAliases)) {
-                        if (alias && canonical && safeStatusMeta[canonical]) {
-                            STATUS_DISPLAY[alias] = safeStatusMeta[canonical]?.label || '';
-                        }
-                    }
-                } catch (aliasError) {
-                    console.error('[Constants] Error processing STATUS_ALIASES:', aliasError);
-                }
-            }
-        }
-    }
-} catch (error) {
-    console.error('[Constants] Error initializing STATUS_DISPLAY:', error);
-    STATUS_DISPLAY = {};
-}
-export { STATUS_DISPLAY };
-
-/**
- * Status Badge Variants
- */
-let STATUS_VARIANT: Record<string, "default" | "secondary" | "outline" | "destructive"> = {};
-try {
-    // Double-check STATUS_META is valid
-    if (!STATUS_META || typeof STATUS_META !== 'object' || Array.isArray(STATUS_META)) {
-        STATUS_VARIANT = {};
-    } else {
-        const safeStatusMeta = STATUS_META;
-        // Additional safety: ensure it's not null/undefined before Object.entries
-        if (safeStatusMeta != null && typeof safeStatusMeta === 'object' && !Array.isArray(safeStatusMeta)) {
-            try {
-                STATUS_VARIANT = Object.entries(safeStatusMeta).reduce(
-                    (acc, [key, meta]) => {
-                        if (key && meta && typeof meta === 'object' && meta != null && 'badgeColor' in meta) {
-                            const badgeColor = (meta as { badgeColor?: string }).badgeColor || 'default';
-                            acc[key] = (badgeColor === 'default' || badgeColor === 'secondary' || badgeColor === 'outline' || badgeColor === 'destructive') 
-                              ? badgeColor 
-                              : 'default';
-                        }
-                        return acc;
-                    },
-                    {} as Record<string, "default" | "secondary" | "outline" | "destructive">
-                );
-            } catch (reduceError) {
-                console.error('[Constants] Error in STATUS_VARIANT reduce:', reduceError);
-                STATUS_VARIANT = {};
-            }
-
-            const safeStatusAliases = STATUS_ALIASES && typeof STATUS_ALIASES === 'object' && !Array.isArray(STATUS_ALIASES) ? STATUS_ALIASES : {};
-            if (safeStatusAliases != null && typeof safeStatusAliases === 'object' && !Array.isArray(safeStatusAliases) && Object.keys(safeStatusAliases).length > 0) {
-                try {
-                    for (const [alias, canonical] of Object.entries(safeStatusAliases)) {
-                        if (alias && canonical && safeStatusMeta[canonical]) {
-                            STATUS_VARIANT[alias] = safeStatusMeta[canonical]?.badgeColor || 'default';
-                        }
-                    }
-                } catch (aliasError) {
-                    console.error('[Constants] Error processing STATUS_ALIASES in STATUS_VARIANT:', aliasError);
-                }
-            }
-        }
-    }
-} catch (error) {
-    console.error('[Constants] Error initializing STATUS_VARIANT:', error);
-    STATUS_VARIANT = {};
-}
-export { STATUS_VARIANT };
 
 /**
  * NOTE: Assignment and escalation rules are now managed dynamically through the database:

@@ -121,6 +121,8 @@ import {
     (table) => ({
       roleIdx: index("idx_users_role_id").on(table.role_id),
       emailIdx: index("idx_users_email").on(table.email),
+      // Unique constraint on auth_provider + external_id to prevent race condition duplicates
+      externalIdUnique: unique("unique_users_auth_external").on(table.auth_provider, table.external_id),
     })
   );
   
@@ -162,8 +164,9 @@ import {
         .references(() => users.id, { onDelete: "cascade" })
         .unique()
         .notNull(),
-  
-      roll_no: varchar("roll_no", { length: 32 }).notNull().unique(),
+
+    roll_no: varchar("roll_no", { length: 32 }).notNull(),
+
       room_no: varchar("room_no", { length: 16 }),
   
       hostel_id: integer("hostel_id").references(() => hostels.id),
@@ -171,16 +174,17 @@ import {
         () => class_sections.id
       ),
       batch_id: integer("batch_id").references(() => batches.id),
-  
-      department: varchar("department", { length: 120 }),
+
+    department: varchar("department", { length: 120 }),
+
       blood_group: varchar("blood_group", { length: 8 }),
   
       created_at: timestamp("created_at").defaultNow(),
       updated_at: timestamp("updated_at").defaultNow(),
     },
     (table) => ({
-      rollIdx: index("idx_students_roll_no").on(table.roll_no),
       userIdx: index("idx_students_user").on(table.user_id),
+    rollIdx: index("idx_students_roll_no").on(table.roll_no),
     })
   );
   
@@ -867,6 +871,11 @@ import {
     {
       id: serial("id").primaryKey(),
       
+      // Scope-based configuration (optional, more specific than domain)
+      scope_id: integer("scope_id").references(() => scopes.id, {
+        onDelete: "cascade",
+      }),
+      
       // Category-based configuration (can be null for global defaults)
       category_id: integer("category_id").references(() => categories.id, {
         onDelete: "cascade",
@@ -891,7 +900,7 @@ import {
       email_recipients: jsonb("email_recipients"),
       
       // Priority: higher priority configs override lower ones
-      // Global default = 0, Category = 10, Category+Subcategory = 20
+      // Global default = 0, Scope = 5, Category = 10, Category+Subcategory = 20
       priority: integer("priority").default(0),
       
       is_active: boolean("is_active").default(true),
@@ -899,6 +908,7 @@ import {
       updated_at: timestamp("updated_at").defaultNow(),
     },
     (table) => ({
+      scopeIdx: index("idx_notification_config_scope").on(table.scope_id),
       categoryIdx: index("idx_notification_config_category").on(table.category_id),
       subcategoryIdx: index("idx_notification_config_subcategory").on(table.subcategory_id),
       activeIdx: index("idx_notification_config_active").on(table.is_active),

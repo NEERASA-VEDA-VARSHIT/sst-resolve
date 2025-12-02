@@ -1,5 +1,7 @@
 import { WebClient } from "@slack/web-api";
 import { slackConfig } from "@/conf/config";
+import { retryWithBackoff } from "@/lib/utils/retry";
+import { logCriticalError, logWarning } from "@/lib/monitoring/alerts";
 
 const slack = slackConfig.botToken ? new WebClient(slackConfig.botToken) : null;
 
@@ -82,8 +84,12 @@ export async function postToSlackChannel(
 		const normalizedChannel = channel.startsWith('#') ? channel.slice(1) : channel;
 		
 		// Append CC mentions to the text if provided
-        const ccSuffix = Array.isArray(ccUserIds) && ccUserIds.length > 0
-            ? `\nCC: ${ccUserIds.map((id) => `<@${id}>`).join(" ")}`
+		// Filter out invalid/empty user IDs to prevent Slack API errors
+        const validCcUserIds = Array.isArray(ccUserIds) 
+			? ccUserIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+			: [];
+        const ccSuffix = validCcUserIds.length > 0
+            ? `\nCC: ${validCcUserIds.map((id) => `<@${id}>`).join(" ")}`
             : "";
 
         type SlackBlock = {
@@ -222,8 +228,12 @@ export async function postToSlackChannel(
 			response: slackError.response,
 		});
 		
-		// If channel_not_found, try to get channel list for debugging
+		// Handle specific Slack API errors
 		if (slackError.code === 'channel_not_found' || slackError.data?.error === 'channel_not_found') {
+			logWarning(
+				`Slack channel not found: ${channel}`,
+				{ channel, category, ticketId, error: slackError.message }
+			);
 			try {
 				const channels = await slack?.conversations.list({ types: 'public_channel,private_channel' });
 				type Channel = { id?: string; name?: string };
@@ -231,6 +241,18 @@ export async function postToSlackChannel(
 			} catch (listError) {
 				console.error(`Could not list channels:`, listError);
 			}
+			// Don't throw - return null to allow graceful degradation
+		} else if (slackError.code === 'invalid_auth' || slackError.data?.error === 'invalid_auth') {
+			logCriticalError(
+				"Slack authentication failed",
+				error,
+				{ channel, category, ticketId }
+			);
+		} else if (slackError.code === 'not_in_channel' || slackError.data?.error === 'not_in_channel') {
+			logWarning(
+				`Slack bot not in channel: ${channel}`,
+				{ channel, category, ticketId }
+			);
 		}
 		
 		return null;

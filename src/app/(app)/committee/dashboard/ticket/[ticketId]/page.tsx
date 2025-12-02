@@ -1,22 +1,34 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect, notFound } from "next/navigation";
-import Link from "next/link";
-import Image from "next/image";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import { Progress } from "@/components/ui/progress";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { ArrowLeft, Clock, AlertCircle, MessageSquare, User, MapPin, FileText, Image as ImageIcon, CheckCircle2 } from "lucide-react";
-import { db, tickets, ticket_committee_tags, committees, categories, ticket_statuses, ticket_groups } from "@/db";
-import { eq, inArray, and } from "drizzle-orm";
-import type { TicketMetadata } from "@/db/inferred-types";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
-import { CommentForm } from "@/components/tickets/CommentForm";
-import { RatingForm } from "@/components/tickets/RatingForm";
-import { CommitteeActions } from "@/components/tickets/CommitteeActions";
-import { normalizeStatusForComparison, formatStatus } from "@/lib/utils";
+import { canCommitteeAccessTicket } from "@/lib/ticket/committeeAccess";
+import { getCommitteeTicketData } from "@/lib/ticket/getCommitteeTicketData";
+import { resolveProfileFields } from "@/lib/ticket/profileFieldResolver";
+import { buildTimeline } from "@/lib/ticket/buildTimeline";
+import { enrichTimelineWithTAT } from "@/lib/ticket/enrichTimeline";
+import { parseTicketMetadata, extractImagesFromMetadata } from "@/lib/ticket/parseTicketMetadata";
+import { calculateTATInfo } from "@/lib/ticket/calculateTAT";
+import { normalizeStatusForComparison } from "@/lib/utils";
+import { getTicketStatuses, buildProgressMap } from "@/lib/status/getTicketStatuses";
+import { CommitteeTicketHeader } from "@/components/committee/ticket/CommitteeTicketHeader";
+import { TicketQuickInfo } from "@/components/student/ticket/TicketQuickInfo";
+import { TicketSubmittedInfo } from "@/components/student/ticket/TicketSubmittedInfo";
+import { TicketTimeline } from "@/components/student/ticket/TicketTimeline";
+import { AdminCommentComposer } from "@/components/tickets/AdminCommentComposer";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
+import { MessageSquare, User } from "lucide-react";
+import { format } from "date-fns";
+import { TicketRating } from "@/components/student/ticket/TicketRating";
+import { TicketTATInfo } from "@/components/student/ticket/TicketTATInfo";
+import { TicketStudentInfo } from "@/components/student/ticket/TicketStudentInfo";
+import { CommitteeActions } from "@/components/committee/ticket/CommitteeActions";
+import type { TicketStatusDisplay, TicketComment, TicketTimelineEntry, ResolvedProfileField, TATInfo } from "@/types/ticket";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 30;
 
 export default async function CommitteeTicketPage({ params }: { params: Promise<{ ticketId: string }> }) {
   const { userId } = await auth();
@@ -26,430 +38,304 @@ export default async function CommitteeTicketPage({ params }: { params: Promise<
   const id = Number(ticketId);
   if (!Number.isFinite(id)) notFound();
 
-  // Fetch ticket with category join
-  const ticketRows = await db
-    .select({
-      id: tickets.id,
-      status_id: tickets.status_id,
-      status_value: ticket_statuses.value,
-      description: tickets.description,
-      location: tickets.location,
-      created_by: tickets.created_by,
-      category_id: tickets.category_id,
-      group_id: tickets.group_id,
-      metadata: tickets.metadata,
-      due_at: tickets.resolution_due_at,
-      created_at: tickets.created_at,
-      category_name: categories.name,
-    })
-    .from(tickets)
-    .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
-    .leftJoin(categories, eq(tickets.category_id, categories.id))
-    .where(eq(tickets.id, id))
-    .limit(1);
-
-  if (ticketRows.length === 0) notFound();
-  const ticket = ticketRows[0];
-
-  // Ensure user exists and get user_id
-  const user = await getOrCreateUser(userId);
-
-  // Get committee IDs this user is the head of (using head_id)
-  const committeeRecords = await db
-    .select({ id: committees.id })
-    .from(committees)
-    .where(eq(committees.head_id, user.id));
-
-  const committeeIds = committeeRecords.map(c => c.id);
-
-  // Check if ticket is created by this committee member OR tagged to their committee
-  let canAccess = false;
-
-  // Check if ticket is created by this committee member
-  if (ticket.created_by === user.id && ticket.category_name === "Committee") {
-    canAccess = true;
+  const dbUser = await getOrCreateUser(userId);
+  if (!dbUser) {
+    console.error('[Committee Ticket Page] Failed to create/fetch user');
+    notFound();
   }
 
-  // Check if ticket is tagged to any of the user's committees OR in a group assigned to their committee
-  if (!canAccess && committeeIds.length > 0) {
-    // Check direct tags
-    const tagRecords = await db
-      .select()
-      .from(ticket_committee_tags)
-      .where(
-        and(
-          eq(ticket_committee_tags.ticket_id, id),
-          inArray(ticket_committee_tags.committee_id, committeeIds)
-        )
-      )
-      .limit(1);
-
-    if (tagRecords.length > 0) {
-      canAccess = true;
-    } else {
-      // Check if ticket is in a group assigned to their committee
-      if (ticket.group_id) {
-        const [group] = await db
-          .select({ committee_id: ticket_groups.committee_id })
-          .from(ticket_groups)
-          .where(eq(ticket_groups.id, ticket.group_id))
-          .limit(1);
-
-        if (group?.committee_id && committeeIds.includes(group.committee_id)) {
-          canAccess = true;
-        }
-      }
-    }
-  }
-
+  // Check access first
+  const canAccess = await canCommitteeAccessTicket(id, dbUser.id);
   if (!canAccess) {
     redirect("/committee/dashboard");
   }
 
-  // Check if this ticket is tagged to user's committee
-  const isTaggedTicket = committeeIds.length > 0 && (await db
-    .select()
-    .from(ticket_committee_tags)
-    .where(
-      and(
-        eq(ticket_committee_tags.ticket_id, id),
-        inArray(ticket_committee_tags.committee_id, committeeIds)
-      )
-    )
-    .limit(1)).length > 0;
+  // Show admin actions for all committee tickets (both created and tagged)
+  // Since canAccess is true, the user has permission to view and act on this ticket
 
-  // Parse metadata (JSONB) for comments and rating
-  type TicketMetadataWithComments = TicketMetadata;
-  const metadata = (ticket.metadata as TicketMetadataWithComments) || {};
-  const comments = Array.isArray(metadata?.comments) ? metadata.comments : [];
-  const visibleComments = comments.filter(
-    (c: { type?: string }) => c.type !== "internal_note" && c.type !== "super_admin_note"
-  );
-  const rating = (metadata.rating as number | null) || null;
+  // Fetch ticket data
+  const [data, ticketStatuses] = await Promise.all([
+    getCommitteeTicketData(id),
+    getTicketStatuses(),
+  ]);
 
-  // Normalize status for comparisons
-  const normalizedStatus = normalizeStatusForComparison(ticket.status_value);
-
-  const statusVariant = (status: string | null | undefined) => {
-    const normalized = normalizeStatusForComparison(status);
-    switch (normalized) {
-      case "open":
-      case "reopened":
-        return "default" as const;
-      case "in_progress":
-        return "secondary" as const;
-      case "awaiting_student_response":
-        return "outline" as const;
-      case "resolved":
-        return "default" as const;
-      case "closed":
-        return "secondary" as const;
-      default:
-        return "outline" as const;
-    }
-  };
-
-  const getStatusColor = (status: string | null | undefined) => {
-    const normalized = normalizeStatusForComparison(status);
-    switch (normalized) {
-      case "open":
-      case "reopened":
-        return "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border-blue-200 dark:border-blue-800";
-      case "in_progress":
-        return "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 dark:border-amber-800";
-      case "awaiting_student_response":
-        return "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 border-purple-200 dark:border-purple-800";
-      case "resolved":
-        return "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800";
-      case "closed":
-        return "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 border-gray-200 dark:border-gray-700";
-      default:
-        return "bg-muted text-foreground";
-    }
-  };
-
-  // Calculate ticket progress
-  const getTicketProgress = () => {
-    switch (normalizedStatus) {
-      case "closed":
-      case "resolved":
-        return 100;
-      case "in_progress":
-        return 50;
-      case "awaiting_student_response":
-        return 30;
-      default:
-        return 10;
-    }
-  };
-
-  // TAT info
-  let tatInfo: { date: Date; daysRemaining: number; isOverdue: boolean } | null = null;
-  const tatDate = ticket.due_at || (metadata?.tatDate ? new Date(metadata.tatDate) : null);
-  if (tatDate) {
-    try {
-      const now = new Date();
-      const diffTime = tatDate.getTime() - now.getTime();
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      tatInfo = {
-        date: tatDate,
-        daysRemaining: diffDays,
-        isOverdue: diffDays < 0,
-      };
-    } catch { }
+  if (!data) {
+    notFound();
   }
 
+  const { ticket, category, subcategory, subSubcategory, creator, student, assignedStaff, profileFields, dynamicFields, comments } = data;
+
+  // Normalize subSubcategory
+  const normalizedSubSubcategory = subSubcategory &&
+    typeof subSubcategory.id === 'number' &&
+    typeof subSubcategory.name === 'string' &&
+    typeof subSubcategory.slug === 'string'
+      ? { id: subSubcategory.id, name: subSubcategory.name, slug: subSubcategory.slug }
+      : null;
+
+  // Parse metadata
+  const metadata = parseTicketMetadata(ticket.metadata);
+  const images = extractImagesFromMetadata(metadata);
+
+  // Build status display
+  const statusValue = ticket.status?.value || null;
+  const normalizedStatus = normalizeStatusForComparison(statusValue);
+  const statusDisplay: TicketStatusDisplay | null = ticket.status
+    ? { value: ticket.status.value, label: ticket.status.label, badge_color: ticket.status.badge_color }
+    : null;
+
+  // Calculate progress
+  const progressMap = buildProgressMap(ticketStatuses);
+  const ticketProgress = progressMap[normalizedStatus] || 0;
+
+  // Calculate TAT info
+  const tatInfo: TATInfo = calculateTATInfo(ticket, { normalizedStatus, ticketProgress });
+
+  // Extract date fields from metadata for timeline
+  const acknowledged_at = metadata.acknowledged_at 
+    ? (typeof metadata.acknowledged_at === 'string' ? new Date(metadata.acknowledged_at) : metadata.acknowledged_at instanceof Date ? metadata.acknowledged_at : null)
+    : null;
+  const resolved_at = metadata.resolved_at 
+    ? (typeof metadata.resolved_at === 'string' ? new Date(metadata.resolved_at) : metadata.resolved_at instanceof Date ? metadata.resolved_at : null)
+    : null;
+  const reopened_at = metadata.reopened_at 
+    ? (typeof metadata.reopened_at === 'string' ? new Date(metadata.reopened_at) : metadata.reopened_at instanceof Date ? metadata.reopened_at : null)
+    : null;
+
+  // Build timeline with complete ticket data
+  const ticketForTimeline = {
+    ...ticket,
+    acknowledged_at,
+    resolved_at,
+    reopened_at,
+  };
+  const baseTimeline = buildTimeline(ticketForTimeline, normalizedStatus);
+  const timelineEntries: TicketTimelineEntry[] = enrichTimelineWithTAT(baseTimeline, ticket, { normalizedStatus, ticketProgress });
+
+  // Resolve profile fields
+  const resolvedProfileFields: ResolvedProfileField[] = resolveProfileFields(
+    profileFields,
+    metadata,
+    student ? { hostel_id: student.hostel_id, hostel_name: student.hostel_name, room_no: student.room_no } : undefined,
+    creator ? { name: creator.name, email: creator.email } : undefined
+  );
+
+  // Normalize comments
+  const normalizedComments: TicketComment[] = (comments || []).map((c: unknown) => {
+    const comment = c as Record<string, unknown>;
+    const createdAtValue = comment.createdAt || comment.created_at;
+    let normalizedCreatedAt: string | Date | null = null;
+    if (createdAtValue) {
+      if (typeof createdAtValue === 'string') {
+        normalizedCreatedAt = createdAtValue;
+      } else if (createdAtValue instanceof Date) {
+        normalizedCreatedAt = createdAtValue;
+      } else if (createdAtValue && typeof createdAtValue === 'object' && 'toISOString' in createdAtValue) {
+        normalizedCreatedAt = new Date((createdAtValue as { toISOString: () => string }).toISOString());
+      }
+    }
+    return {
+      text: typeof comment.text === 'string' ? comment.text : '',
+      author: typeof comment.author === 'string' ? comment.author : undefined,
+      createdAt: normalizedCreatedAt,
+      created_at: normalizedCreatedAt,
+      source: typeof comment.source === 'string' ? comment.source : undefined,
+      type: typeof comment.type === 'string' ? comment.type : undefined,
+      isInternal: typeof comment.isInternal === 'boolean' ? comment.isInternal : undefined,
+    };
+  });
+
   return (
-    <div className="space-y-6 p-6">
-      <div className="flex items-center justify-between">
-        <Link href="/committee/dashboard">
-          <Button variant="ghost" className="gap-2">
-            <ArrowLeft className="w-4 h-4" />
-            Back to Tickets
-          </Button>
-        </Link>
-      </div>
+    <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
+      <div className="max-w-6xl mx-auto p-3 sm:p-4 md:p-6 lg:p-8 space-y-4 sm:space-y-6">
+        <CommitteeTicketHeader
+          ticketId={ticket.id}
+          status={statusDisplay}
+          categoryName={category?.name || null}
+          subcategory={metadata.subcategory ? String(metadata.subcategory) : null}
+        />
 
-      <Card className="border-2">
-        <CardHeader>
-          <div className="flex items-start justify-between">
-            <div className="space-y-2">
-              <div className="flex items-center gap-3 flex-wrap">
-                <CardTitle className="text-3xl font-bold">Ticket #{ticket.id}</CardTitle>
-                {ticket.status_value && (
-                  <Badge variant={statusVariant(ticket.status_value)} className={getStatusColor(ticket.status_value)}>
-                    {formatStatus(ticket.status_value)}
-                  </Badge>
-                )}
-                {ticket.category_name && (
-                  <Badge variant="outline">{ticket.category_name}</Badge>
-                )}
-              </div>
-              {metadata?.subcategory && (
-                <CardDescription className="text-base">
-                  {metadata.subcategory}
-                </CardDescription>
-              )}
-            </div>
-          </div>
+        <Card className="border-2 shadow-xl bg-card/50 backdrop-blur-sm">
+          <CardContent className="space-y-6 p-6">
+            <TicketQuickInfo
+              ticketProgress={ticketProgress}
+              normalizedStatus={normalizedStatus}
+              assignedStaff={assignedStaff || null}
+              tatInfo={tatInfo}
+              ticket={ticket}
+            />
 
-          <div className="mt-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground font-medium">Ticket Progress</span>
-              <span className="font-semibold">{getTicketProgress()}%</span>
-            </div>
-            <Progress value={getTicketProgress()} className="h-2" />
-          </div>
+            <TicketSubmittedInfo
+              description={ticket.description}
+              location={ticket.location}
+              images={images}
+              dynamicFields={dynamicFields.map(f => {
+                // Normalize value to string | string[]
+                let normalizedValue: string | string[] = '';
+                if (Array.isArray(f.value)) {
+                  normalizedValue = f.value.map(v => String(v));
+                } else if (f.value !== null && f.value !== undefined) {
+                  normalizedValue = String(f.value);
+                }
+                return {
+                  ...f,
+                  type: f.fieldType || 'text',
+                  value: normalizedValue,
+                };
+              })}
+            />
 
-          {/* TAT Alert */}
-          {tatInfo && (
-            <Alert className={tatInfo.isOverdue ? "border-red-200 bg-red-50/50 dark:bg-red-950/20" : "border-blue-200 bg-blue-50/50 dark:bg-blue-950/20"}>
-              <Clock className={`h-4 w-4 ${tatInfo.isOverdue ? "text-red-600" : "text-blue-600"}`} />
-              <AlertDescription>
-                <div className="flex items-center justify-between">
-                  <span className={tatInfo.isOverdue ? "text-red-900 dark:text-red-100 font-medium" : "text-blue-900 dark:text-blue-100 font-medium"}>
-                    {tatInfo.isOverdue
-                      ? `⚠️ TAT Overdue by ${Math.abs(tatInfo.daysRemaining)} day${Math.abs(tatInfo.daysRemaining) !== 1 ? 's' : ''}`
-                      : `⏰ TAT: ${tatInfo.daysRemaining > 0 ? `${tatInfo.daysRemaining} day${tatInfo.daysRemaining !== 1 ? 's' : ''} remaining` : 'Due today'}`}
-                  </span>
-                  <span className="text-sm text-muted-foreground">
-                    {tatInfo.date.toLocaleDateString()}
-                  </span>
-                </div>
-              </AlertDescription>
-            </Alert>
-          )}
-        </CardHeader>
+            <TicketTimeline entries={timelineEntries} />
 
-        <CardContent className="space-y-6">
-          {/* Ticket Information Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Card className="border bg-muted/30">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-primary/10">
-                    <User className="w-5 h-5 text-primary" />
+            {/* Comments Section - Admin Style */}
+            <Card className="border-2">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <MessageSquare className="w-5 h-5" />
+                  Comments
+                  {normalizedComments.length > 0 && (
+                    <Badge variant="secondary" className="ml-2">
+                      {normalizedComments.length}
+                    </Badge>
+                  )}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-6 space-y-6">
+                {normalizedComments.length > 0 ? (
+                  <ScrollArea className="max-h-[500px] pr-4">
+                    <div className="space-y-4">
+                      {normalizedComments.map((comment, idx) => {
+                        const isInternal = comment.isInternal || comment.type === "internal_note" || comment.type === "super_admin_note";
+                        const commentText = comment.text || '';
+                        const commentAuthor = comment.author || 'Unknown';
+                        const commentSource = comment.source;
+                        const commentCreatedAt = comment.createdAt || comment.created_at;
+                        
+                        // For internal notes, use card style
+                        if (isInternal) {
+                          return (
+                            <Card key={idx} className="border bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800">
+                              <CardContent className="p-4">
+                                <Badge variant="outline" className="mb-2 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-700">
+                                  Internal Note
+                                </Badge>
+                                <p className="text-base whitespace-pre-wrap leading-relaxed mb-3">
+                                  {commentText}
+                                </p>
+                                <Separator className="my-2" />
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                  {commentCreatedAt ? (
+                                    <>
+                                      <span className="font-medium">{format(new Date(commentCreatedAt), 'MMM d, yyyy')}</span>
+                                      <span>•</span>
+                                      <span className="font-medium">{format(new Date(commentCreatedAt), 'h:mm a')}</span>
+                                      {commentAuthor && (
+                                        <>
+                                          <span>•</span>
+                                          <span className="font-medium">{commentAuthor}</span>
+                                        </>
+                                      )}
+                                    </>
+                                  ) : (
+                                    commentAuthor && (
+                                      <span className="font-medium">{commentAuthor}</span>
+                                    )
+                                  )}
+                                </div>
+                              </CardContent>
+                            </Card>
+                          );
+                        }
+
+                        // Chat-style for regular comments
+                        const isStudent = commentSource === "website";
+                        const isAdmin = !isStudent;
+                        
+                        return (
+                          <div key={idx} className={`flex gap-3 ${isAdmin ? 'justify-end' : 'justify-start'}`}>
+                            <div className={`flex gap-3 max-w-[80%] ${isAdmin ? 'flex-row-reverse' : 'flex-row'}`}>
+                              <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${isAdmin ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+                                <User className="w-4 h-4" />
+                              </div>
+                              <div className={`flex flex-col ${isAdmin ? 'items-end' : 'items-start'}`}>
+                                <div className={`rounded-2xl px-4 py-3 ${isAdmin ? 'bg-primary text-primary-foreground rounded-tr-sm' : 'bg-muted border rounded-tl-sm'}`}>
+                                  <p className={`text-sm whitespace-pre-wrap leading-relaxed break-words ${isAdmin ? 'text-primary-foreground' : ''}`}>{commentText}</p>
+                                </div>
+                                <div className={`flex items-center gap-2 text-xs text-muted-foreground mt-1 px-1 ${isAdmin ? 'flex-row-reverse' : ''}`}>
+                                  {commentCreatedAt ? (
+                                    <>
+                                      <span className="font-medium">{format(new Date(commentCreatedAt), 'MMM d, yyyy')}</span>
+                                      <span>•</span>
+                                      <span className="font-medium">{format(new Date(commentCreatedAt), 'h:mm a')}</span>
+                                      {commentAuthor && (
+                                        <>
+                                          <span>•</span>
+                                          <span className="font-medium">{commentAuthor}</span>
+                                        </>
+                                      )}
+                                    </>
+                                  ) : (
+                                    commentAuthor && (
+                                      <span className="font-medium">{commentAuthor}</span>
+                                    )
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </ScrollArea>
+                ) : (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-muted flex items-center justify-center">
+                      <MessageSquare className="w-8 h-8 opacity-50" />
+                    </div>
+                    <p className="text-sm font-medium mb-1">No comments yet</p>
+                    <p className="text-xs">Updates and responses will appear here</p>
                   </div>
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Committee Member</p>
-                    <p className="text-lg font-semibold">You</p>
-                  </div>
-                </div>
+                )}
+
+                <Separator />
+
+                <AdminCommentComposer ticketId={ticket.id} />
               </CardContent>
             </Card>
 
-            {ticket.location && (
-              <Card className="border bg-muted/30">
+            {(normalizedStatus === "closed" || normalizedStatus === "resolved") && (
+              <TicketRating
+                ticketId={ticket.id}
+                currentRating={ticket.rating ? String(ticket.rating) : undefined}
+              />
+            )}
+
+            {/* Show admin actions for all committee tickets (both created and tagged) */}
+            <CommitteeActions
+              ticketId={ticket.id}
+              currentStatus={statusValue || "open"}
+              hasTAT={!!tatInfo.expectedResolution}
+              categoryName={category?.name || null}
+              location={ticket.location}
+            />
+
+            <TicketTATInfo tatInfo={tatInfo} />
+
+            {(ticket.escalation_level ?? 0) > 0 && (
+              <Card className="border-2 bg-muted/30">
                 <CardContent className="p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-primary/10">
-                      <MapPin className="w-5 h-5 text-primary" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground">Location</p>
-                      <p className="text-lg font-semibold">{ticket.location}</p>
-                    </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Escalation Level</span>
+                    <span className="text-sm font-semibold">{ticket.escalation_level}</span>
                   </div>
                 </CardContent>
               </Card>
             )}
 
-            <Card className="border bg-muted/30 md:col-span-2">
-              <CardContent className="p-4">
-                <div className="flex items-start gap-3">
-                  <div className="p-2 rounded-lg bg-primary/10">
-                    <FileText className="w-5 h-5 text-primary" />
-                  </div>
-                  <div className="flex-1 space-y-4">
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground mb-2">Description</p>
-                      <p className="text-base whitespace-pre-wrap leading-relaxed">
-                        {ticket.description || "No description provided"}
-                      </p>
-                    </div>
-
-                    {/* Display Images if available */}
-                    {metadata.images && Array.isArray(metadata.images) && metadata.images.length > 0 && (
-                      <div className="space-y-2 pt-4 border-t">
-                        <div className="flex items-center gap-2">
-                          <ImageIcon className="w-4 h-4 text-muted-foreground" />
-                          <span className="text-sm font-semibold text-muted-foreground">Attached Images</span>
-                        </div>
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                          {metadata.images.map((imageUrl: string, index: number) => (
-                            <a
-                              key={index}
-                              href={imageUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="relative group aspect-square rounded-lg overflow-hidden border-2 border-border hover:border-primary transition-colors"
-                            >
-                              <Image
-                                src={imageUrl}
-                                alt={`Ticket image ${index + 1}`}
-                                fill
-                                className="object-cover"
-                                sizes="(max-width: 768px) 50vw, 33vw"
-                                loading="lazy"
-                              />
-                              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
-                            </a>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          <Separator />
-
-          {/* Comments Section */}
-          <Card className="border-2">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <MessageSquare className="w-5 h-5" />
-                Comments
-                {visibleComments.length > 0 && (
-                  <Badge variant="secondary" className="ml-2">
-                    {visibleComments.length}
-                  </Badge>
-                )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {visibleComments.length > 0 ? (
-                <div className="space-y-3">
-                  {visibleComments.map((comment: Record<string, unknown>, idx: number) => (
-                    <Card key={idx} className="border bg-muted/30">
-                      <CardContent className="p-4">
-                        <p className="text-base whitespace-pre-wrap leading-relaxed mb-3">
-                          {typeof comment.text === 'string' ? comment.text : ''}
-                        </p>
-                        <div className="flex items-center justify-between text-xs text-muted-foreground">
-                          <span>{typeof comment.author === 'string' ? comment.author : "Unknown"}</span>
-                          {(() => {
-                            const createdAt = comment.createdAt;
-                            if (!createdAt) return null as React.ReactNode;
-                            if (typeof createdAt === 'string') {
-                              return <span>{new Date(createdAt).toLocaleString()}</span>;
-                            }
-                            if (createdAt instanceof Date) {
-                              return <span>{createdAt.toLocaleString()}</span>;
-                            }
-                            return null as React.ReactNode;
-                          })()}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground text-center py-4">
-                  No comments yet. Super Admin will respond here.
-                </p>
-              )}
-
-              {/* Comment form - only show if status allows */}
-              {normalizedStatus === "awaiting_student_response" && (
-                <div className="pt-4 border-t">
-                  <Alert className="mb-4 border-amber-200 bg-amber-50/50 dark:bg-amber-950/20">
-                    <AlertCircle className="h-4 w-4 text-amber-600" />
-                    <AlertDescription>
-                      <span className="font-medium text-amber-900 dark:text-amber-100">
-                        Super Admin has asked a question. Please respond below.
-                      </span>
-                    </AlertDescription>
-                  </Alert>
-                  <CommentForm ticketId={ticket.id} currentStatus={ticket.status_value || undefined} />
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Committee Actions - for tagged tickets */}
-          {isTaggedTicket && (
-            <Card className="border-2 border-blue-200 dark:border-blue-800">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <CheckCircle2 className="w-5 h-5 text-blue-600" />
-                  Committee Actions
-                </CardTitle>
-                <CardDescription>
-                  This ticket was tagged to your committee. You can add comments and close it.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <CommitteeActions
-                  ticketId={ticket.id}
-                  currentStatus={ticket.status_value || "open"}
-                  isTaggedTicket={isTaggedTicket}
-                />
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Rating Form - only show for resolved tickets without rating */}
-          {normalizedStatus === "resolved" && !rating && (
-            <Card className="border-2">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <CheckCircle2 className="w-5 h-5" />
-                  Rate Your Experience
-                </CardTitle>
-                <CardDescription>
-                  Help us improve by rating your ticket resolution experience
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <RatingForm ticketId={ticket.id} currentRating={rating ? String(rating) : undefined} />
-              </CardContent>
-            </Card>
-          )}
-        </CardContent>
-      </Card>
+            <TicketStudentInfo profileFields={resolvedProfileFields} />
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

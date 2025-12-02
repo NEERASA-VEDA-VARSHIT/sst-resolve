@@ -99,13 +99,23 @@ export async function getEscalationTargets(
       if ((rule.level || 0) > currentLevel) {
         if (!rule.user_id) continue;
 
+        // Edge case: Validate user exists and is active (not deleted)
+        const { roles } = await import("@/db");
         const [user] = await db
-          .select()
+          .select({
+            id: users.id,
+            external_id: users.external_id,
+            full_name: users.full_name,
+            email: users.email,
+            role_name: roles.name,
+          })
           .from(users)
+          .leftJoin(roles, eq(users.role_id, roles.id))
           .where(eq(users.id, rule.user_id))
           .limit(1);
 
-        if (user) {
+        // Edge case: Skip if user doesn't exist, is deleted, or doesn't have admin role
+        if (user && user.external_id && (user.role_name === "admin" || user.role_name === "super_admin")) {
           targets.push({
             clerkUserId: user.external_id,
             userId: user.id,
@@ -114,6 +124,9 @@ export async function getEscalationTargets(
             level: rule.level || 0,
             tat_hours: rule.tat_hours || null,
           });
+        } else {
+          // Log warning if escalation rule references invalid/deleted user
+          console.warn(`[Escalation] Rule ${rule.id} references invalid user ${rule.user_id} - skipping`);
         }
       }
     }

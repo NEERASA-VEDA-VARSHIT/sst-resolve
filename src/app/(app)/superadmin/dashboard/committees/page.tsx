@@ -26,7 +26,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Users, Plus, Edit, Trash2, Loader2, Building2, ArrowLeft } from "lucide-react";
+import { Users, Plus, Edit, Trash2, Loader2, Building2, ArrowLeft, FileText } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
 
@@ -371,6 +371,16 @@ export default function CommitteesManagementPage() {
                     </div>
                   </div>
                   <div className="flex gap-2">
+                    <Button
+                      variant="default"
+                      size="sm"
+                      asChild
+                    >
+                      <Link href={`/superadmin/dashboard/committees/${committee.id}/tickets`}>
+                        <FileText className="w-4 h-4 mr-2" />
+                        View Tickets
+                      </Link>
+                    </Button>
                     <Button
                       variant="outline"
                       size="sm"

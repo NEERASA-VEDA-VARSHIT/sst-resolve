@@ -120,22 +120,35 @@ export async function POST(
 				if (!dbUser) {
 					return NextResponse.json({ error: "Selected user not found in database" }, { status: 400 });
 				}
+				// Verify user is still active (not deleted) and has admin role
+				const role = await getUserRoleFromDB(normalizedAssignedTo);
+				if (!role || (role !== "admin" && role !== "super_admin")) {
+					return NextResponse.json({ error: "Selected user is not an admin or has been deactivated" }, { status: 400 });
+				}
 				databaseUserId = dbUser.id;
-     adminName = dbUser.full_name?.trim() || dbUser.email || "Admin";
+				adminName = dbUser.full_name?.trim() || dbUser.email || "Admin";
 			} else {
-				// It's already a database UUID, verify the user exists
+				// It's already a database UUID, verify the user exists and is active
+				const { roles } = await import("@/db");
 				const [targetUser] = await db
 					.select({
 						id: users.id,
 						full_name: users.full_name,
 						email: users.email,
+						role_name: roles.name,
 					})
 					.from(users)
+					.leftJoin(roles, eq(users.role_id, roles.id))
 					.where(eq(users.id, normalizedAssignedTo))
 					.limit(1);
 
 				if (!targetUser) {
-					return NextResponse.json({ error: "Selected user not found" }, { status: 400 });
+					return NextResponse.json({ error: "Selected user not found. They may have been deleted." }, { status: 400 });
+				}
+
+				// Verify user has admin role
+				if (!targetUser.role_name || (targetUser.role_name !== "admin" && targetUser.role_name !== "super_admin")) {
+					return NextResponse.json({ error: "Selected user is not an admin or has been deactivated" }, { status: 400 });
 				}
 
 				databaseUserId = targetUser.id;

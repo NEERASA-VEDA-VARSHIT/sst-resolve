@@ -474,9 +474,9 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
         </div>
 
         <div className="space-y-6">
-          <AdminTicketFilters />
-
           <StatsCards stats={stats} />
+
+          <AdminTicketFilters />
 
           <div className="flex justify-between items-center pt-4">
             <h2 className="text-2xl font-semibold flex items-center gap-2">

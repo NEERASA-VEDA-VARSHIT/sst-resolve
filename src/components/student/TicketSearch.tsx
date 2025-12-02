@@ -12,7 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Search, X, ArrowUpDown } from "lucide-react";
-import type { TicketStatus } from "@/lib/status/types";
+import type { TicketStatus } from "@/schemas/status";
 
 interface CategoryOption {
   value: string;

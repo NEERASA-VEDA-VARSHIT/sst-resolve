@@ -225,12 +225,8 @@ export default function StudentProfilePage() {
             </CardHeader>
 
             <CardContent className="space-y-3 sm:space-y-4 p-4 sm:p-6 pt-0">
-              {/* Roll + Name */}
+              {/* Name */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                <ReadonlyField
-                  label="Roll Number"
-                  value={profile.user_number}
-                />
                 <ReadonlyField label="Full Name" value={profile.full_name} />
               </div>
 
@@ -248,11 +244,6 @@ export default function StudentProfilePage() {
                   value={profile.batch_year?.toString() ?? "Not Assigned"}
                 />
               </div>
-
-              {/* Department */}
-              {profile.department && (
-                <ReadonlyField label="Department" value={profile.department} />
-              )}
 
               {/* Timestamps */}
               <div className="text-[10px] sm:text-xs text-muted-foreground pt-3 sm:pt-4 border-t space-y-1">

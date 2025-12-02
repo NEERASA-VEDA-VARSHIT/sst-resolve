@@ -382,24 +382,44 @@ export async function PATCH(
         }
       }
 
-      // Add comment
-      metadata.comments.push({
-        text: comment.trim(),
-        author: authorName,
-        createdAt: new Date().toISOString(),
-        source: isAdmin ? "admin_dashboard" : "committee_dashboard",
-        type: commentType || "student_visible",
-        isInternal: commentType === "internal_note" || commentType === "super_admin_note",
-      });
+      // Edge case: Use transaction to prevent concurrent comment conflicts
+      await db.transaction(async (tx) => {
+        // Re-fetch ticket inside transaction to get latest metadata
+        const [currentTicket] = await tx
+          .select({ metadata: tickets.metadata })
+          .from(tickets)
+          .where(eq(tickets.id, ticketId))
+          .limit(1);
+        
+        if (!currentTicket) {
+          throw new Error("Ticket not found. It may have been deleted.");
+        }
+        
+        // Parse current metadata
+        const currentMetadata = (currentTicket.metadata as TicketMetadata) || {};
+        if (!currentMetadata.comments) {
+          currentMetadata.comments = [];
+        }
+        
+        // Add comment
+        currentMetadata.comments.push({
+          text: comment.trim(),
+          author: authorName,
+          createdAt: new Date().toISOString(),
+          source: isAdmin ? "admin_dashboard" : "committee_dashboard",
+          type: commentType || "student_visible",
+          isInternal: commentType === "internal_note" || commentType === "super_admin_note",
+        });
 
-      // Update ticket with comment
-      await db
-        .update(tickets)
-        .set({
-          metadata: metadata,
-          updated_at: new Date(),
-        })
-        .where(eq(tickets.id, ticketId));
+        // Update ticket with comment
+        await tx
+          .update(tickets)
+          .set({
+            metadata: currentMetadata,
+            updated_at: new Date(),
+          })
+          .where(eq(tickets.id, ticketId));
+      });
 
       // If only comment (no status update), return success
       if (!status) {
@@ -479,10 +499,33 @@ export async function PATCH(
       // Always update metadata
       updateData.metadata = metadata as unknown;
 
-      await db
-        .update(tickets)
-        .set(updateData)
-        .where(eq(tickets.id, ticketId));
+      // Edge case: Use transaction to prevent concurrent update conflicts
+      // Reload ticket inside transaction to ensure we have latest data
+      const updateResult = await db.transaction(async (tx) => {
+        // Re-fetch ticket to ensure it still exists and get latest version
+        const [currentTicket] = await tx
+          .select({ id: tickets.id, updated_at: tickets.updated_at })
+          .from(tickets)
+          .where(eq(tickets.id, ticketId))
+          .limit(1);
+        
+        if (!currentTicket) {
+          throw new Error("Ticket not found. It may have been deleted.");
+        }
+        
+        // Update ticket
+        const [updated] = await tx
+          .update(tickets)
+          .set(updateData)
+          .where(eq(tickets.id, ticketId))
+          .returning();
+        
+        if (!updated) {
+          throw new Error("Failed to update ticket. It may have been deleted.");
+        }
+        
+        return updated;
+      });
 
       // Fetch updated ticket with joins for notifications
       const [updatedTicket] = await db
@@ -505,6 +548,9 @@ export async function PATCH(
       if (!updatedTicket) {
         return NextResponse.json({ error: "Ticket not found after update" }, { status: 404 });
       }
+      
+      // Use updateResult for the response instead of re-fetching
+      const finalTicket = updateResult;
 
       // Get metadata for notifications
       const updatedMetadata = (updatedTicket.metadata as TicketMetadata) || {};
@@ -604,12 +650,17 @@ export async function PATCH(
         await checkAndArchiveGroupIfAllTicketsClosed(ticket.group_id);
       }
 
-      // Fetch full ticket for response
-      const [fullTicket] = await db
+      // Fetch full ticket for response (use updateResult if available, otherwise fetch)
+      const fullTicket = updateResult || await db
         .select()
         .from(tickets)
         .where(eq(tickets.id, ticketId))
-        .limit(1);
+        .limit(1)
+        .then(([ticket]) => ticket);
+
+      if (!fullTicket) {
+        return NextResponse.json({ error: "Ticket not found after update" }, { status: 404 });
+      }
 
       return NextResponse.json(fullTicket);
     }
@@ -650,6 +701,49 @@ export async function DELETE(
     const ticketId = parseInt(id);
     if (isNaN(ticketId)) {
       return NextResponse.json({ error: "Invalid ticket ID" }, { status: 400 });
+    }
+
+    // Fetch ticket with status to validate deletion
+    const { ticket_statuses } = await import("@/db/schema");
+    const [ticket] = await db
+      .select({
+        id: tickets.id,
+        status: ticket_statuses.value,
+        group_id: tickets.group_id,
+      })
+      .from(tickets)
+      .leftJoin(ticket_statuses, eq(ticket_statuses.id, tickets.status_id))
+      .where(eq(tickets.id, ticketId))
+      .limit(1);
+
+    if (!ticket) {
+      return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
+    }
+
+    // Edge case: Prevent deleting tickets that are in active groups
+    // (Groups should be archived first, or tickets removed from group)
+    if (ticket.group_id) {
+      const { ticket_groups } = await import("@/db/schema");
+      const [group] = await db
+        .select({ is_archived: ticket_groups.is_archived })
+        .from(ticket_groups)
+        .where(eq(ticket_groups.id, ticket.group_id))
+        .limit(1);
+      
+      if (group && !group.is_archived) {
+        return NextResponse.json(
+          { error: "Cannot delete ticket that is part of an active group. Archive the group first or remove the ticket from the group." },
+          { status: 409 }
+        );
+      }
+    }
+
+    // Edge case: Warn if deleting non-resolved tickets (but allow it for super admins)
+    const statusValue = ticket.status?.toLowerCase() || "";
+    const isResolved = statusValue === "resolved" || statusValue === "closed";
+    if (!isResolved && role !== "super_admin") {
+      // Allow deletion but log a warning
+      console.warn(`[Ticket Delete] Admin ${userId} deleting ticket #${ticketId} with status "${ticket.status}"`);
     }
 
     const result = await db

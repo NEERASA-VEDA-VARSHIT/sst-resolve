@@ -25,29 +25,27 @@ export async function GET() {
 		}
 
 		// Generate CSV template
-		const headers = [
-			"email",
-			"full_name",
-			"user_number",
-			"hostel",
-			"room_number",
-			"class_section",
-			"batch_year",
-			"mobile",
-			"department",
-		];
+    const headers = [
+      "email",
+      "full_name",
+      "hostel",
+      "room_number",
+      "class_section",
+      "batch_year",
+      "mobile",
+      "blood_group",
+    ];
 
-		const exampleRow = [
-			"24bcs10005@christuniversity.com",
-			"Neerasa Varshit",
-			"24bcs10005",
-			"Neeladri",
-			"212",
-			"A",
-			"2027",
-			"9876543210",
-			"Computer Science",
-		];
+    const exampleRow = [
+      "student@example.com",
+      "Neerasa Varshit",
+      "Neeladri",
+      "212",
+      "A",
+      "2027",
+      "9876543210",
+      "O+",
+    ];
 
 		const csv = [headers.join(","), exampleRow.join(",")].join("\n");
 

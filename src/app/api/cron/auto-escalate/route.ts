@@ -234,7 +234,13 @@ export async function GET(request: NextRequest) {
 					if (superAdmin) {
 						assignedTo = superAdmin.id;
 					} else {
-						console.warn(`[Auto-escalate] No super admin found to assign ticket #${ticket.id} to`);
+						const { logCriticalError } = await import("@/lib/monitoring/alerts");
+						logCriticalError(
+							"No super admin found during auto-escalation",
+							new Error("System has no super admin - escalated tickets cannot be assigned"),
+							{ ticketId: ticket.id, escalationLevel: newEscalationCount }
+						);
+						// Ticket will remain unassigned - this should be monitored and alerted
 					}
 				}
 

@@ -31,30 +31,10 @@ export function ReassignDialog({
 	const [loading, setLoading] = useState(false);
 	const [selectedAdmin, setSelectedAdmin] = useState<string>("");
 
-	const normalizedCategory = ticketCategory?.toLowerCase() || "";
-	const normalizedLocation = ticketLocation?.toLowerCase() || "";
-
-	const filteredAdmins = useMemo(() => {
-		return admins.filter((admin) => {
-			const domain = admin.domain?.toLowerCase() || "";
-			const scope = admin.scope?.toLowerCase() || "";
-
-			if (!domain) return true; // fallback if assignment missing
-
-			if (normalizedCategory === "hostel") {
-				if (domain !== "hostel") return false;
-				if (!scope) return true; // hostel-wide admin
-				if (!normalizedLocation) return false;
-				return scope === normalizedLocation;
-			}
-
-			if (normalizedCategory === "college") {
-				return domain === "college";
-			}
-
-			return true;
-		});
-	}, [admins, normalizedCategory, normalizedLocation]);
+	// Show all admins for reassignment; domain/scope-based auto-assignment
+	// is handled at ticket creation time. For manual reassignment, we want
+	// super admins to be able to see the full roster.
+	const filteredAdmins = useMemo(() => admins, [admins]);
 
 	useEffect(() => {
 		if (open) {

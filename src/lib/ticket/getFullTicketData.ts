@@ -20,7 +20,6 @@ import {
   getCategoryProfileFields
 } from "@/lib/category/categories";
 import { extractDynamicFields } from "@/lib/ticket/formatDynamicFields";
-import { buildStatusDisplay } from "@/conf/constants";
 
 export async function getFullTicketData(ticketId: number, userId: string) {
   let debugStep = "start";
@@ -110,10 +109,10 @@ export async function getFullTicketData(ticketId: number, userId: string) {
     }
 
     if (!statusDisplay) {
-      const fallback = buildStatusDisplay("open");
-      statusDisplay = fallback || {
-        value: "unknown",
-        label: "Unknown",
+      // Fallback if status not found in DB
+      statusDisplay = {
+        value: "open",
+        label: "Open",
         badge_color: "default",
       };
     }

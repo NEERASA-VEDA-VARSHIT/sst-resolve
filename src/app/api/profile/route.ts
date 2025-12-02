@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth, clerkClient } from "@clerk/nextjs/server";
+import { auth } from "@clerk/nextjs/server";
 import { db, students, users, hostels, batches, class_sections } from "@/db";
 import type { StudentInsert, UserInsert } from "@/db/inferred-types";
 import { eq } from "drizzle-orm";
@@ -17,7 +17,6 @@ async function getStudentProfile(dbUserId: string) {
     .select({
       id: students.id,
       user_id: students.user_id,
-      roll_no: students.roll_no,
       room_no: students.room_no,
 
       hostel_id: students.hostel_id,
@@ -29,7 +28,6 @@ async function getStudentProfile(dbUserId: string) {
       batch_id: students.batch_id,
       batch_year: batches.batch_year,
 
-      department: students.department,
       blood_group: students.blood_group,
       created_at: students.created_at,
       updated_at: students.updated_at,
@@ -55,23 +53,18 @@ export async function GET() {
     const dbUser = await getOrCreateUser(userId);
     if (!dbUser) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
-    const client = await clerkClient();
-    const clerkUser = await client.users.getUser(userId);
-    const userNumber = (clerkUser.publicMetadata as { userNumber?: string })?.userNumber;
-
     const profile = await getStudentProfile(dbUser.id);
 
     if (!profile) {
       console.warn(`[GET /api/profile] Student profile not found for user ${dbUser.id} (email: ${dbUser.email}, external_id: ${dbUser.external_id})`);
       return NextResponse.json(
-        { error: "Student profile not found", needsLink: true, userNumber },
+        { error: "Student profile not found", needsLink: true },
         { status: 404 }
       );
     }
 
     return NextResponse.json({
       id: profile.id,
-      user_number: profile.roll_no,
       full_name: dbUser.full_name || "",
       email: dbUser.email || "",
       mobile: dbUser.phone || "",
@@ -82,7 +75,6 @@ export async function GET() {
 
       class_section: profile.class_section_name || null,
       batch_year: profile.batch_year || null,
-      department: profile.department || null,
       blood_group: profile.blood_group || null,
       created_at: profile.created_at ? new Date(profile.created_at).toISOString() : new Date().toISOString(),
       updated_at: profile.updated_at ? new Date(profile.updated_at).toISOString() : new Date().toISOString(),
@@ -220,7 +212,6 @@ export async function PATCH(request: NextRequest) {
 
     return NextResponse.json({
       id: profile.id,
-      user_number: profile.roll_no,
       full_name: dbUser.full_name || "",
       email: dbUser.email || "",
       mobile: mobile !== undefined ? mobile.trim() : (dbUser.phone || ""),
@@ -229,7 +220,6 @@ export async function PATCH(request: NextRequest) {
       hostel_id: profile.hostel_id || null,
       class_section: profile.class_section_name || null,
       batch_year: profile.batch_year || null,
-      department: profile.department || null,
       blood_group: profile.blood_group || null,
       created_at: profile.created_at ? new Date(profile.created_at).toISOString() : new Date().toISOString(),
       updated_at: profile.updated_at ? new Date(profile.updated_at).toISOString() : new Date().toISOString(),

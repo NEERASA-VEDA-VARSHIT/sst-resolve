@@ -7,6 +7,8 @@ import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
 import type { InferSelectModel } from "drizzle-orm";
 
+const CHOICE_FIELD_TYPES = new Set(["select", "multi_select"]);
+
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -42,7 +44,11 @@ export async function PATCH(
     if (body.required !== undefined) updateData.required = body.required;
     if (body.placeholder !== undefined) updateData.placeholder = body.placeholder;
     if (body.help_text !== undefined) updateData.help_text = body.help_text;
-    if (body.validation_rules !== undefined) updateData.validation_rules = body.validation_rules;
+    if (body.validation_rules !== undefined) {
+      updateData.validation_rules = body.field_type === "multi_select"
+        ? { ...(body.validation_rules || {}), multiSelect: true }
+        : body.validation_rules;
+    }
     if (body.display_order !== undefined) updateData.display_order = body.display_order;
     if (body.active !== undefined) updateData.is_active = body.active;
     if (body.assigned_admin_id !== undefined) {

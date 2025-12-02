@@ -10,7 +10,6 @@ import { eq, sql } from "drizzle-orm";
 import type { TicketMetadata } from "@/db/inferred-types";
 import { AdminActions } from "@/components/tickets/AdminActions";
 import { CommitteeTagging } from "@/components/admin/CommitteeTagging";
-import { SlackThreadView } from "@/components/tickets/SlackThreadView";
 import { AdminCommentComposer } from "@/components/tickets/AdminCommentComposer";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
@@ -23,7 +22,7 @@ import { getCachedAdminUser, getCachedAdminAssignment } from "@/lib/cache/cached
 import { buildTimeline } from "@/lib/ticket/buildTimeline";
 import { normalizeStatusForComparison } from "@/lib/utils";
 import { getTicketStatuses, buildProgressMap } from "@/lib/status/getTicketStatuses";
-import { buildStatusDisplay } from "@/conf/constants";
+import { getTicketStatusByValue } from "@/lib/status/getTicketStatuses";
 import { getCategoryProfileFields, getCategorySchema } from "@/lib/category/categories";
 import { resolveProfileFields } from "@/lib/ticket/profileFieldResolver";
 import { extractDynamicFields } from "@/lib/ticket/formatDynamicFields";
@@ -51,6 +50,8 @@ export default async function AdminTicketPage({ params }: { params: Promise<{ ti
       .select({
         id: tickets.id,
         status_value: ticket_statuses.value,
+        status_label: ticket_statuses.label,
+        status_badge_color: ticket_statuses.badge_color,
         description: tickets.description,
         location: tickets.location,
         created_by: tickets.created_by,
@@ -91,6 +92,8 @@ export default async function AdminTicketPage({ params }: { params: Promise<{ ti
   type TicketRow = {
     id: number;
     status_value: string | null;
+    status_label: string | null;
+    status_badge_color: string | null;
     description: string | null;
     location: string | null;
     created_by: string;
@@ -120,7 +123,6 @@ export default async function AdminTicketPage({ params }: { params: Promise<{ ti
     // Fetch student data for profile fields
     db
       .select({
-        student_roll_no: students.roll_no,
         student_hostel_id: students.hostel_id,
         student_hostel_name: hostels.name,
         student_room_no: students.room_no,
@@ -202,10 +204,20 @@ export default async function AdminTicketPage({ params }: { params: Promise<{ ti
     }
   }
   
+  // Build status display from DB data
+  const statusValue = ticketRows[0].status_value;
+  const statusDisplay = statusValue
+    ? {
+        value: statusValue,
+        label: ticketRows[0].status_label || statusValue,
+        badge_color: ticketRows[0].status_badge_color || "default",
+      }
+    : null;
+
   const ticket = {
     ...ticketRows[0],
     creator_name: ticketRows[0].creator_full_name || null,
-    status: buildStatusDisplay(ticketRows[0].status_value || undefined),
+    status: statusDisplay,
     slack_thread_id: null,
   };
 
@@ -299,11 +311,11 @@ export default async function AdminTicketPage({ params }: { params: Promise<{ ti
 
   // Add Overdue entry if TAT date has passed and ticket is not resolved
   const tatDate = ticket.due_at || (metadata?.tatDate ? new Date(metadata.tatDate) : null);
+  const now = new Date();
+  const isResolved = normalizedStatus === "resolved" || normalizedStatus === "closed" || ticketProgress === 100;
+
   if (tatDate) {
     const tatDateObj = new Date(tatDate);
-    const now = new Date();
-    const isResolved = normalizedStatus === "resolved" || normalizedStatus === "closed" || ticketProgress === 100;
-    
     if (!isNaN(tatDateObj.getTime()) && tatDateObj.getTime() < now.getTime() && !isResolved) {
       timelineEntries.push({
         title: "Overdue",
@@ -321,8 +333,9 @@ export default async function AdminTicketPage({ params }: { params: Promise<{ ti
     return a.date.getTime() - b.date.getTime();
   });
 
-  const hasTATDue = tatDate && tatDate.getTime() < new Date().getTime();
-  const isTATToday = tatDate && tatDate.toDateString() === new Date().toDateString();
+  // TAT helpers for UI badges/alerts
+  const hasTATDue = tatDate && tatDate.getTime() < now.getTime() && !isResolved;
+  const isTATToday = tatDate && tatDate.toDateString() === now.toDateString() && !isResolved;
 
   // Icon map for timeline
   const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -339,7 +352,6 @@ export default async function AdminTicketPage({ params }: { params: Promise<{ ti
   // Resolve profile fields for student information
   const [studentData] = studentDataResult;
   const studentRecord = studentData ? {
-    roll_no: studentData.student_roll_no,
     hostel_id: studentData.student_hostel_id,
     hostel_name: studentData.student_hostel_name,
     room_no: studentData.student_room_no,
@@ -764,17 +776,6 @@ export default async function AdminTicketPage({ params }: { params: Promise<{ ti
             </CardContent>
           </Card>
 
-          {/* Slack Thread */}
-          {ticket.slack_thread_id && (
-            <SlackThreadView
-              threadId={ticket.slack_thread_id}
-              channel={
-                (slackConfig.channels.hostel as string) ||
-                (Object.values(slackConfig.channels.hostels as Record<string, string> || {})[0]) ||
-                "#tickets-velankani"
-              }
-            />
-          )}
         </div>
 
         {/* Sidebar */}

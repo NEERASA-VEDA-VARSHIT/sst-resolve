@@ -1,7 +1,8 @@
 import nodemailer from "nodemailer";
-import { db } from "@/db";
-import { students } from "@/db";
+import { db, students } from "@/db";
 import { eq } from "drizzle-orm";
+import { retryWithBackoff } from "@/lib/utils/retry";
+import { logCriticalError, logWarning } from "@/lib/monitoring/alerts";
 
 import { escapeHtml } from "@/utils";
 
@@ -11,31 +12,20 @@ function areEmailNotificationsEnabled(): boolean {
 	return flag !== "false";
 }
 
-// Helper function to get student email by roll number or user_id
-export async function getStudentEmail(rollNoOrUserId: string): Promise<string | null> {
+// Helper function to get student email by user_id
+export async function getStudentEmail(userId: string): Promise<string | null> {
 	try {
-		// Try to find by roll_no first
-		const [student] = await db
-			.select({ user_id: students.user_id })
-			.from(students)
-			.where(eq(students.roll_no, rollNoOrUserId))
-			.limit(1);
-
-		if (!student) {
-			return null;
-		}
-
 		// Get email from users table
 		const { users } = await import("@/db");
 		const [user] = await db
 			.select({ email: users.email })
 			.from(users)
-			.where(eq(users.id, student.user_id))
+			.where(eq(users.id, userId))
 			.limit(1);
 
 		return user?.email || null;
 	} catch (error) {
-		console.error(`Error fetching student email for ${rollNoOrUserId}:`, error);
+		console.error(`Error fetching student email for user ${userId}:`, error);
 		return null;
 	}
 }
@@ -92,11 +82,10 @@ export interface EmailOptions {
 	originalSubject?: string; // Optional original subject for threading replies
 }
 
-// Generate a consistent Message-ID for a ticket
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function getTicketMessageId(_ticketId: number): string {
+// Generate a consistent Message-ID for a ticket (for first email in thread)
+function getTicketMessageId(ticketId: number): string {
 	const domain = process.env.EMAIL_DOMAIN || "sst-resolve.local";
-	return `<ticket-${_ticketId}@${domain}>`;
+	return `<ticket-${ticketId}@${domain}>`;
 }
 
 export async function sendEmail({ to, subject, html, ticketId, threadMessageId, originalSubject }: EmailOptions) {
@@ -115,9 +104,10 @@ export async function sendEmail({ to, subject, html, ticketId, threadMessageId, 
 		return null;
 	}
 
-	// Validate email address
-	if (!to || !to.includes("@")) {
-		console.error(`❌ [sendEmail] Invalid email address: ${to}`);
+	// Validate email address format
+	const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+	if (!to || !emailRegex.test(to)) {
+		console.error(`❌ [sendEmail] Invalid email address format: ${to}`);
 		return null;
 	}
 
@@ -180,6 +170,9 @@ export async function sendEmail({ to, subject, html, ticketId, threadMessageId, 
 			console.log(`   📝 Subject: ${mailOptions.subject}`);
 		} else if (ticketId && !threadMessageId) {
 			console.log(`   📧 First email for ticket #${ticketId} - will store Message-ID for threading`);
+			// Use a deterministic Message-ID so all future replies can reliably thread
+			mailOptions.messageId = getTicketMessageId(ticketId);
+			console.log(`   📎 Using initial Message-ID: ${mailOptions.messageId}`);
 		}
 		// For the first email, let Nodemailer generate the Message-ID automatically
 		// We'll store the actual Message-ID returned from sendMail() in ticket details
@@ -223,11 +216,24 @@ export async function sendEmail({ to, subject, html, ticketId, threadMessageId, 
 		
 		// Log specific error details
 		if (emailError.code === "EAUTH") {
+			logCriticalError(
+				"SMTP authentication failed",
+				error,
+				{ to, ticketId, smtpHost: process.env.SMTP_HOST }
+			);
 			console.error("   ❌ Authentication failed. Check SMTP credentials.");
 			console.error("   For Gmail: Use App Password, not regular password.");
 		} else if (emailError.code === "ECONNECTION") {
+			logWarning(
+				"SMTP connection failed",
+				{ to, ticketId, smtpHost: process.env.SMTP_HOST, error: emailError.message }
+			);
 			console.error("   ❌ Connection failed. Check SMTP host and port.");
 		} else if (emailError.response) {
+			logWarning(
+				"SMTP server error response",
+				{ to, ticketId, response: emailError.response }
+			);
 			console.error(`   ❌ SMTP Server Response: ${emailError.response}`);
 		}
 		

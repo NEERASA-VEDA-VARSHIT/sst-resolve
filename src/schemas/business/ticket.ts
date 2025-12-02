@@ -32,7 +32,7 @@ export const CommentType = z.enum([
  * Comments
  */
 export const AddCommentSchema = z.object({
-  comment: z.string().trim().min(1, "Comment cannot be empty"),
+  comment: z.string().trim().min(1, "Comment cannot be empty").max(10000, "Comment cannot exceed 10,000 characters"),
   commentType: CommentType,
 });
 

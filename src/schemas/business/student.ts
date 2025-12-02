@@ -48,7 +48,6 @@ export const UpdateStudentProfileFullSchema = z.object({
   hostel_id: z.number().int().positive().nullable().optional(),
   batch_id: z.number().int().positive().nullable().optional(),
   class_section_id: z.number().int().positive().nullable().optional(),
-  department: z.string().trim().max(120).nullable().optional(),
   room_no: z.string().trim().max(16).nullable().optional(),
 });
 
@@ -68,8 +67,22 @@ export const AdminUpdateStudentSchema = z
     hostel_id: z.number().int().positive().nullable().optional(),
     batch_id: z.number().int().positive().nullable().optional(),
     class_section_id: z.number().int().positive().nullable().optional(),
-    department: z.string().trim().max(120).nullable().optional(),
     room_no: z.string().trim().max(16).nullable().optional(),
+    blood_group: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .refine(
+        (val) =>
+          !val ||
+          ["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"].includes(val),
+        {
+          message:
+            "Blood group must be one of A+, A-, B+, B-, O+, O-, AB+, AB-",
+        }
+      )
+      .nullable()
+      .optional(),
   })
   .strict();
 

@@ -20,8 +20,15 @@ export default async function CommitteeDashboardLayout({
   // Get role from database (single source of truth)
   const role = await getUserRoleFromDB(userId);
 
+  // Redirect non-committee users to their appropriate dashboard
   if (role !== "committee") {
-    redirect("/student/dashboard");
+    if (role === "admin") {
+      redirect("/admin/dashboard");
+    } else if (role === "super_admin") {
+      redirect("/superadmin/dashboard");
+    } else {
+      redirect("/student/dashboard");
+    }
   }
 
   return (

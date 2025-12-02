@@ -47,7 +47,6 @@ import { ProfileFieldsRenderer } from "@/components/tickets/ProfileFieldsRendere
 
 // Server -> client normalized shapes
 type StudentProfile = {
-  userNumber: string; // normalized to empty string when missing
   fullName: string;
   email: string;
   mobile: string;
@@ -166,7 +165,6 @@ export default function TicketForm(props: TicketFormProps) {
   const student: StudentProfile | null = useMemo(() => {
     if (!studentProp) return null;
     return {
-      userNumber: studentProp.userNumber ?? "",
       fullName: studentProp.fullName ?? "",
       email: studentProp.email ?? "",
       mobile: studentProp.mobile ?? "",
@@ -313,7 +311,6 @@ export default function TicketForm(props: TicketFormProps) {
     // initial profile prefill from student
     const initialProfile: Record<string, string> = {};
     if (student) {
-      if (student.userNumber) initialProfile["rollNo"] = student.userNumber;
       if (student.fullName) initialProfile["name"] = student.fullName;
       if (student.email) initialProfile["email"] = student.email;
       if (student.mobile) initialProfile["phone"] = student.mobile;
@@ -372,6 +369,123 @@ export default function TicketForm(props: TicketFormProps) {
     return currentSchema.subcategories.find((s) => s.id === form.subcategoryId) || null;
   }, [currentSchema, form.subcategoryId]);
 
+  type FieldRules = {
+    dependsOn?: string;
+    showWhenValue?: string | string[];
+    hideWhenValue?: string | string[];
+    requiredWhenValue?: string | string[];
+    multiSelect?: boolean;
+  };
+
+  const getDependencyValue = useCallback(
+    (key?: string) => {
+      if (!key) return undefined;
+      if (key.startsWith("profile.")) {
+        const profileKey = key.slice("profile.".length);
+        return form.profile?.[profileKey];
+      }
+      return form.details?.[key];
+    },
+    [form.details, form.profile]
+  );
+
+  const matchesRuleValue = (value: unknown, ruleValue?: string | string[]) => {
+    if (ruleValue == null) return false;
+    const values = Array.isArray(value) ? value : [value];
+    const targets = Array.isArray(ruleValue) ? ruleValue : [ruleValue];
+    return values.some((val) =>
+      targets.some(
+        (target) => String(val ?? "").toLowerCase() === String(target ?? "").toLowerCase()
+      )
+    );
+  };
+
+  const isMultiSelectField = useCallback((field: DynamicField) => {
+    const rules = (field.validation_rules || {}) as FieldRules;
+    if (rules?.multiSelect) return true;
+    const type = (field.field_type || "").toLowerCase();
+    return type === "multi_select" || type === "multiselect" || type === "select_multiple";
+  }, []);
+
+  const shouldDisplayField = useCallback(
+    (field: DynamicField) => {
+      const rules = (field.validation_rules || {}) as FieldRules;
+      if (!rules.dependsOn) return true;
+      const controllingValue = getDependencyValue(rules.dependsOn);
+
+      if (rules.showWhenValue !== undefined) {
+        return matchesRuleValue(controllingValue, rules.showWhenValue);
+      }
+      if (rules.hideWhenValue !== undefined) {
+        return !matchesRuleValue(controllingValue, rules.hideWhenValue);
+      }
+      return true;
+    },
+    [getDependencyValue]
+  );
+
+  const isFieldRequired = useCallback(
+    (field: DynamicField) => {
+      const rules = (field.validation_rules || {}) as FieldRules;
+      if (rules.dependsOn && rules.requiredWhenValue !== undefined) {
+        const controllingValue = getDependencyValue(rules.dependsOn);
+        return matchesRuleValue(controllingValue, rules.requiredWhenValue);
+      }
+      return field.required;
+    },
+    [getDependencyValue]
+  );
+
+  useEffect(() => {
+    if (!currentSubcategory?.fields?.length) return;
+    setForm((prev) => {
+      const nextDetails = { ...(prev.details || {}) };
+      let changed = false;
+      for (const field of currentSubcategory.fields || []) {
+        if (!shouldDisplayField(field) && nextDetails[field.slug] !== undefined) {
+          delete nextDetails[field.slug];
+          changed = true;
+        }
+      }
+      if (!changed) return prev;
+      return { ...prev, details: nextDetails };
+    });
+  }, [currentSubcategory, shouldDisplayField]);
+
+  const isFieldValueFilled = useCallback(
+    (field: DynamicField, value: unknown) => {
+      if (isMultiSelectField(field)) {
+        const arr = Array.isArray(value) ? value : value != null ? [value] : [];
+        return arr.filter((v) => typeof v === "string" && v.trim() !== "").length > 0;
+      }
+
+      switch ((field.field_type || "").toLowerCase()) {
+        case "boolean": {
+          return (
+            value === true ||
+            value === false ||
+            value === "true" ||
+            value === "false"
+          );
+        }
+        case "upload": {
+          const images = Array.isArray(value)
+            ? value
+            : value
+            ? [value]
+            : [];
+          return images.length > 0;
+        }
+        default: {
+          if (value === undefined || value === null) return false;
+          if (typeof value === "string") return value.trim() !== "";
+          return true;
+        }
+      }
+    },
+    [isMultiSelectField]
+  );
+
   /* -------------------------
      Autofill dynamic profile fields (do not overwrite touched)
      ------------------------- */
@@ -391,9 +505,8 @@ export default function TicketForm(props: TicketFormProps) {
 
         let value = "";
         switch (field.field_name) {
-          case "rollNo": value = student.userNumber || ""; break;
           case "name": value = student.fullName || ""; break;
-          case "email": value = student.email || (student.userNumber && student.fullName ? generateEmailFromRollNo(String(student.userNumber), String(student.fullName)) : ""); break;
+          case "email": value = student.email || ""; break;
           case "phone": value = student.mobile || ""; break;
           case "hostel": value = student.hostel || ""; break;
           case "roomNumber": value = student.roomNumber || ""; break;
@@ -465,63 +578,79 @@ export default function TicketForm(props: TicketFormProps) {
     // Dynamic subcategory fields
     const subFields = currentSubcategory?.fields || [];
     for (const field of subFields) {
-      if (!field.required) continue;
+      if (!shouldDisplayField(field)) continue;
       const fv = form.details[field.slug];
-      if (field.field_type === "boolean") {
-        const isBool = fv === true || fv === false || fv === "true" || fv === "false";
-        if (!isBool) newErrors[field.slug] = `${field.name} is required`;
-      } else if (field.field_type === "upload") {
-        // For upload fields, check if it's an array with at least one image
-        const images = Array.isArray(fv) ? fv : (fv ? [fv] : []);
-        if (images.length === 0) {
-          newErrors[field.slug] = `${field.name} is required`;
+      const fieldIsRequired = isFieldRequired(field);
+
+      if (fieldIsRequired && !isFieldValueFilled(field, fv)) {
+        newErrors[field.slug] = `${field.name} is required`;
+        continue;
+      }
+
+      if (!isFieldValueFilled(field, fv)) {
+        continue;
+      }
+
+      const multiSelect = isMultiSelectField(field);
+      if (multiSelect) {
+        continue;
+      }
+
+      if (field.field_type === "boolean" || field.field_type === "upload") {
+        continue;
+      }
+
+      type ValidationRules = {
+        minLength?: number | null;
+        maxLength?: number | null;
+        pattern?: string | null;
+        errorMessage?: string | null;
+        min?: number | null;
+        max?: number | null;
+        [key: string]: unknown;
+      };
+      type FieldWithValidation = DynamicField & { validation_rules?: ValidationRules | null };
+      const rules = (field as FieldWithValidation).validation_rules;
+
+      if (rules && typeof fv === "string") {
+        const minLength = typeof rules.minLength === "number" ? rules.minLength : null;
+        const maxLength = typeof rules.maxLength === "number" ? rules.maxLength : null;
+        const pattern = typeof rules.pattern === "string" ? rules.pattern : null;
+        const errorMessage = typeof rules.errorMessage === "string" ? rules.errorMessage : null;
+
+        if (minLength !== null && fv.length < minLength) {
+          newErrors[field.slug] = `${field.name} must be at least ${minLength} characters`;
         }
-      } else {
-        if (fv === undefined || fv === null || (typeof fv === "string" && fv.trim() === "")) {
-          newErrors[field.slug] = `${field.name} is required`;
-        } else {
-          type ValidationRules = {
-            minLength?: number | null;
-            maxLength?: number | null;
-            pattern?: string | null;
-            errorMessage?: string | null;
-            min?: number | null;
-            max?: number | null;
-            [key: string]: unknown;
-          };
-          type FieldWithValidation = DynamicField & { validation_rules?: ValidationRules | null };
-          const rules = (field as FieldWithValidation).validation_rules;
-          if (rules && typeof fv === "string") {
-            const minLength = typeof rules.minLength === 'number' ? rules.minLength : null;
-            const maxLength = typeof rules.maxLength === 'number' ? rules.maxLength : null;
-            const pattern = typeof rules.pattern === 'string' ? rules.pattern : null;
-            const errorMessage = typeof rules.errorMessage === 'string' ? rules.errorMessage : null;
-            
-            if (minLength !== null && fv.length < minLength) {
-              newErrors[field.slug] = `${field.name} must be at least ${minLength} characters`;
-            }
-            if (maxLength !== null && fv.length > maxLength) {
-              newErrors[field.slug] = `${field.name} must be at most ${maxLength} characters`;
-            }
-            if (pattern !== null) {
-              const re = new RegExp(pattern);
-              if (!re.test(fv)) newErrors[field.slug] = errorMessage || `${field.name} format is invalid`;
-            }
-          }
-          if (rules && (rules.min !== undefined || rules.max !== undefined)) {
-            const num = Number(fv);
-            const min = typeof rules.min === 'number' ? rules.min : null;
-            const max = typeof rules.max === 'number' ? rules.max : null;
-            if (min !== null && num < min) newErrors[field.slug] = `${field.name} must be at least ${min}`;
-            if (max !== null && num > max) newErrors[field.slug] = `${field.name} must be at most ${max}`;
-          }
+        if (maxLength !== null && fv.length > maxLength) {
+          newErrors[field.slug] = `${field.name} must be at most ${maxLength} characters`;
         }
+        if (pattern !== null) {
+          const re = new RegExp(pattern);
+          if (!re.test(fv))
+            newErrors[field.slug] = errorMessage || `${field.name} format is invalid`;
+        }
+      }
+
+      if (rules && (rules.min !== undefined || rules.max !== undefined)) {
+        const num = Number(fv);
+        const min = typeof rules.min === "number" ? rules.min : null;
+        const max = typeof rules.max === "number" ? rules.max : null;
+        if (min !== null && num < min) newErrors[field.slug] = `${field.name} must be at least ${min}`;
+        if (max !== null && num > max) newErrors[field.slug] = `${field.name} must be at most ${max}`;
       }
     }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
-  }, [form, currentSchema, currentSubcategory]);
+  }, [
+    form,
+    currentSchema,
+    currentSubcategory,
+    shouldDisplayField,
+    isFieldRequired,
+    isFieldValueFilled,
+    isMultiSelectField,
+  ]);
 
   /* -------------------------
      Progress calculation
@@ -559,14 +688,22 @@ export default function TicketForm(props: TicketFormProps) {
 
     const sf = currentSubcategory?.fields || [];
     for (const f of sf) {
-      if (!f.required) continue;
+      if (!shouldDisplayField(f)) continue;
+      if (!isFieldRequired(f)) continue;
       total++;
       const v = form.details[f.slug];
-      if (v !== undefined && v !== null && (typeof v !== "string" || v.trim() !== "")) complete++;
+      if (isFieldValueFilled(f, v)) complete++;
     }
 
     return total === 0 ? 0 : Math.round((complete / total) * 100);
-  }, [form, currentSchema, currentSubcategory]);
+  }, [
+    form,
+    currentSchema,
+    currentSubcategory,
+    shouldDisplayField,
+    isFieldRequired,
+    isFieldValueFilled,
+  ]);
 
   /* -------------------------
      Image upload
@@ -636,6 +773,13 @@ export default function TicketForm(props: TicketFormProps) {
      ------------------------- */
   const handleSubmit = useCallback(async (e?: React.FormEvent) => {
     e?.preventDefault();
+    
+    // Prevent double submission
+    if (loading) {
+      console.warn("[TicketForm] Submit already in progress, ignoring duplicate submission");
+      return;
+    }
+    
     if (!validateForm()) {
       toast.error("Please fix the highlighted errors");
       return;
@@ -656,6 +800,14 @@ export default function TicketForm(props: TicketFormProps) {
       const detailsWithoutImages = { ...(form.details || {}) };
       delete detailsWithoutImages.images;
 
+      // Derive location for domain/scope-based SPOC assignment
+      // For Hostel tickets, we want location to be the student's hostel name where possible.
+      // This reads from the profile field keyed as "hostel" (configured in profileFields).
+      const derivedLocation =
+        typeof form.profile?.hostel === "string" && form.profile.hostel.trim()
+          ? form.profile.hostel.trim()
+          : undefined;
+
       const payload = {
         categoryId: form.categoryId,
         subcategoryId: form.subcategoryId,
@@ -663,6 +815,8 @@ export default function TicketForm(props: TicketFormProps) {
         description: form.description,
         details: detailsWithoutImages,
         images: images.length > 0 ? images : undefined,
+        // Location is optional in schema; when set it will be used for domain/scope matching
+        location: derivedLocation,
         profile: cleanProfile,
       };
 
@@ -852,18 +1006,22 @@ export default function TicketForm(props: TicketFormProps) {
   const DynamicFieldsSectionMemo = useMemo(() => {
     const fields = currentSubcategory?.fields || [];
     if (!fields || fields.length === 0) return null;
-    
-    const sorted = fields.slice().sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
-    
 
-    
+    const sorted = fields.slice().sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
+    const visibleFields = sorted.filter(shouldDisplayField);
+    if (visibleFields.length === 0) return null;
+
     return (
       <div className="space-y-4 border-t pt-4">
         <h3 className="text-base sm:text-lg font-semibold">Additional Details</h3>
-        {sorted.map((f) => (
+        {visibleFields.map((f) => (
           <DynamicFieldRenderer
             key={f.id}
-            field={{ ...f, validation_rules: f.validation_rules ?? {} } as DynamicField & { validation_rules: Record<string, unknown> }}
+            field={{
+              ...f,
+              validation_rules: f.validation_rules ?? {},
+              required: isFieldRequired(f),
+            } as DynamicField & { validation_rules: Record<string, unknown> }}
             value={form.details[f.slug]}
             onChange={(val) => setDetail(f.slug, val)}
             error={errors[f.slug]}
@@ -873,7 +1031,16 @@ export default function TicketForm(props: TicketFormProps) {
         ))}
       </div>
     );
-  }, [currentSubcategory?.fields, form.details, errors, setDetail, createImageUploadHandler, imagesUploading]);
+  }, [
+    currentSubcategory?.fields,
+    form.details,
+    errors,
+    setDetail,
+    createImageUploadHandler,
+    imagesUploading,
+    shouldDisplayField,
+    isFieldRequired,
+  ]);
 
   const ProfileFieldsSectionMemo = useMemo(() => {
     const pf = currentSchema?.profileFields || [];
@@ -943,13 +1110,12 @@ export default function TicketForm(props: TicketFormProps) {
 
   // General image upload section (always available, optional)
   const GeneralImageUploadMemo = useMemo(() => {
-    // Check if there are any upload type fields in dynamic fields
+    // If any dynamic field is an upload, let that field handle attachments instead
     const hasUploadField = currentSubcategory?.fields?.some(
       (field) => field.field_type === 'upload'
     );
-    
-    // If there are upload fields, they're handled in dynamic fields section
-    // Still show general upload for additional images
+    if (hasUploadField) return null;
+
     const images: string[] = (form.details?.images as string[]) || [];
     
     return (
@@ -957,9 +1123,6 @@ export default function TicketForm(props: TicketFormProps) {
         <div className="flex items-center gap-1.5 sm:gap-2">
           <Label htmlFor="general-images" className="text-sm sm:text-base font-semibold">
             Attachments
-            {hasUploadField && (
-              <span className="text-xs text-muted-foreground ml-2 font-normal">(Additional images)</span>
-            )}
           </Label>
           <TooltipProvider>
             <Tooltip>

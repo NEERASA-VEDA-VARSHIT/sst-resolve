@@ -80,13 +80,13 @@ async function loadMasterDataCache(): Promise<MasterDataCache> {
 interface CSVRow {
 	email: string;
 	full_name: string;
-	user_number: string;
 	hostel?: string;
 	room_number?: string;
 	class_section?: string;
 	batch_year?: string;
 	mobile?: string;
-	department?: string;
+	blood_group?: string;
+	[userDefinedKey: string]: unknown;
 }
 
 interface ValidationError {
@@ -114,7 +114,6 @@ function validateRow(row: CSVRow, rowIndex: number, cache: MasterDataCache): Val
 	// Clean data first
 	const cleanedEmail = row.email ? cleanEmail(row.email) : "";
 	const cleanedName = row.full_name ? cleanFullName(row.full_name) : "";
-	const cleanedUserNumber = row.user_number ? row.user_number.trim() : "";
 	const cleanedMobileNum = row.mobile ? cleanMobile(row.mobile) : "";
 
 	// Required fields
@@ -143,16 +142,7 @@ function validateRow(row: CSVRow, rowIndex: number, cache: MasterDataCache): Val
 		});
 	}
 
-	if (!cleanedUserNumber) {
-		errors.push({
-			row: rowIndex,
-			field: "user_number",
-			message: "User number (roll number) is required",
-			value: row.user_number,
-		});
-	}
-
-	// Mobile is required
+	// Mobile is required and must be 10 digits
 	if (!cleanedMobileNum) {
 		errors.push({
 			row: rowIndex,
@@ -169,15 +159,7 @@ function validateRow(row: CSVRow, rowIndex: number, cache: MasterDataCache): Val
 		});
 	}
 
-	// Room number is required
-	if (!row.room_number || !row.room_number.trim()) {
-		errors.push({
-			row: rowIndex,
-			field: "room_number",
-			message: "Room number is required",
-			value: row.room_number,
-		});
-	}
+	// Room number is optional in bulk upload; skip required check here.
 
 	// Hostel is required
 	if (!row.hostel || !row.hostel.trim()) {
@@ -250,14 +232,34 @@ function validateRow(row: CSVRow, rowIndex: number, cache: MasterDataCache): Val
 		}
 	}
 
-	// Department is required
-	if (!row.department || !row.department.trim()) {
+	// Blood group is required and must be a valid value
+	if (!row.blood_group || !row.blood_group.trim()) {
 		errors.push({
 			row: rowIndex,
-			field: "department",
-			message: "Department is required",
-			value: row.department,
+			field: "blood_group",
+			message: "Blood group is required",
+			value: row.blood_group,
 		});
+	} else {
+		const normalized = row.blood_group.trim().toUpperCase();
+		const allowed = new Set([
+			"A+",
+			"A-",
+			"B+",
+			"B-",
+			"O+",
+			"O-",
+			"AB+",
+			"AB-",
+		]);
+		if (!allowed.has(normalized)) {
+			errors.push({
+				row: rowIndex,
+				field: "blood_group",
+				message: "Blood group must be one of A+, A-, B+, B-, O+, O-, AB+, AB-",
+				value: row.blood_group,
+			});
+		}
 	}
 
 	return errors;
@@ -352,16 +354,17 @@ export async function POST(request: NextRequest) {
 
 			try {
 				// Clean and resolve data to IDs
+				const cleanedEmail = cleanEmail(row.email);
 				const cleanedData = {
-					email: cleanEmail(row.email),
+					email: cleanedEmail,
 					full_name: cleanFullName(row.full_name),
-					user_number: row.user_number.trim(),
 					hostel_id: masterDataCache.hostels.get(row.hostel!.trim().toLowerCase())!,
-					room_number: row.room_number!.trim(),
+					room_number: row.room_number ? row.room_number.trim() : "",
 					class_section_id: masterDataCache.class_sections.get(row.class_section!.trim().toUpperCase())!,
 					batch_id: masterDataCache.batches.get(parseInt(row.batch_year!))!,
-					mobile: cleanMobile(row.mobile!),
-					department: row.department!.trim(),
+					mobile: row.mobile ? cleanMobile(row.mobile) : "",
+					blood_group: row.blood_group!.trim().toUpperCase(),
+					roll_no: cleanedEmail.slice(0, 32),
 				};
 
 				// Find user by email
@@ -372,14 +375,17 @@ export async function POST(request: NextRequest) {
 					.limit(1);
 
 				if (existingUser) {
-					// Update user info
+					// Update user info (only override phone if a mobile number was provided)
+					const userUpdate: Partial<typeof users.$inferInsert> = {
+						full_name: cleanedData.full_name,
+						updated_at: new Date(),
+					};
+					if (cleanedData.mobile) {
+						userUpdate.phone = cleanedData.mobile;
+					}
 					await db
 						.update(users)
-						.set({
-							full_name: cleanedData.full_name,
-							phone: cleanedData.mobile,
-							updated_at: new Date(),
-						})
+						.set(userUpdate)
 						.where(eq(users.id, existingUser.id));
 
 					// Check if student record exists
@@ -394,12 +400,12 @@ export async function POST(request: NextRequest) {
 						await db
 							.update(students)
 							.set({
-								roll_no: cleanedData.user_number,
+								roll_no: (existingStudent as { roll_no?: string | null })?.roll_no ?? cleanedData.roll_no,
 								room_no: cleanedData.room_number,
 								hostel_id: cleanedData.hostel_id,
 								class_section_id: cleanedData.class_section_id,
 								batch_id: cleanedData.batch_id,
-								department: cleanedData.department,
+								blood_group: cleanedData.blood_group,
 								updated_at: new Date(),
 							})
 							.where(eq(students.id, existingStudent.id));
@@ -409,12 +415,12 @@ export async function POST(request: NextRequest) {
 						// Create student record
 						await db.insert(students).values({
 							user_id: existingUser.id,
-							roll_no: cleanedData.user_number,
+							roll_no: cleanedData.roll_no,
 							room_no: cleanedData.room_number,
 							hostel_id: cleanedData.hostel_id,
 							class_section_id: cleanedData.class_section_id,
 							batch_id: cleanedData.batch_id,
-							department: cleanedData.department,
+							blood_group: cleanedData.blood_group,
 						});
 
 						created++;
@@ -445,19 +451,20 @@ export async function POST(request: NextRequest) {
 							external_id: `pending_${cleanedData.email}`, // Temporary, will be updated on first login
 							email: cleanedData.email,
 							full_name: cleanedData.full_name,
-							phone: cleanedData.mobile,
+							// Phone is NOT NULL in schema; fall back to empty string if missing
+							phone: cleanedData.mobile || "",
 							role_id: studentRole.id,
 						})
 						.returning();
 
 					await db.insert(students).values({
 						user_id: newUser.id,
-						roll_no: cleanedData.user_number,
+						roll_no: cleanedData.roll_no,
 						room_no: cleanedData.room_number,
 						hostel_id: cleanedData.hostel_id,
 						class_section_id: cleanedData.class_section_id,
 						batch_id: cleanedData.batch_id,
-						department: cleanedData.department,
+						blood_group: cleanedData.blood_group,
 					});
 
 					created++;

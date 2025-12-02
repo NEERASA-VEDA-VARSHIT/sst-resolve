@@ -6,7 +6,6 @@
  */
 
 type StudentRecord = {
-  roll_no: string | null;
   hostel_id: number | null;
   hostel_name: string | null;
   room_no: string | null;
@@ -28,7 +27,6 @@ type ProfileFieldConfig = {
  * Profile field display labels
  */
 export const PROFILE_FIELD_LABELS: Record<string, string> = {
-  rollNo: "Roll Number",
   name: "Full Name",
   email: "Email",
   phone: "Phone Number",
@@ -60,9 +58,6 @@ export function resolveProfileFieldValue(
   // 2. Try student table
   if (studentRecord) {
     switch (fieldName) {
-      case "rollNo":
-        if (studentRecord.roll_no) return studentRecord.roll_no;
-        break;
       case "hostel":
         // Use hostel_name if available, fallback to hostel_id
         if (studentRecord.hostel_name) return studentRecord.hostel_name;

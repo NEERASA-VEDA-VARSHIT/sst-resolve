@@ -17,15 +17,36 @@ export interface NotificationConfig {
 }
 
 /**
- * Get notification configuration for a category/subcategory combination
- * Priority: Category+Subcategory > Category > Global Default
+ * Get notification configuration for a category/subcategory/scope combination
+ * Priority: Category+Subcategory (20) > Scope (5) > Category (10) > Global Default (0)
+ * 
+ * @param categoryId - Category ID (optional)
+ * @param subcategoryId - Subcategory ID (optional)
+ * @param scopeId - Scope ID (optional, for scope-level configs)
+ * @param ticketLocation - Ticket location string (optional, used to resolve scope from location)
  */
 export async function getNotificationConfig(
   categoryId: number | null,
-  subcategoryId: number | null
+  subcategoryId: number | null,
+  scopeId?: number | null,
+  ticketLocation?: string | null
 ): Promise<NotificationConfig> {
   try {
-    // Try to find the most specific config first (category + subcategory)
+    // Resolve scope_id from ticketLocation if scopeId not provided
+    let resolvedScopeId = scopeId;
+    if (!resolvedScopeId && ticketLocation) {
+      const { scopes } = await import("@/db");
+      const [scope] = await db
+        .select({ id: scopes.id })
+        .from(scopes)
+        .where(eq(scopes.name, ticketLocation))
+        .limit(1);
+      if (scope) {
+        resolvedScopeId = scope.id;
+      }
+    }
+
+    // Try to find the most specific config first (category + subcategory = priority 20)
     let config = null;
     
     if (categoryId && subcategoryId) {
@@ -36,6 +57,7 @@ export async function getNotificationConfig(
           and(
             eq(notification_config.category_id, categoryId),
             eq(notification_config.subcategory_id, subcategoryId),
+            isNull(notification_config.scope_id), // Category+subcategory configs don't use scope
             eq(notification_config.is_active, true)
           )
         )
@@ -47,7 +69,28 @@ export async function getNotificationConfig(
       }
     }
     
-    // If no subcategory config, try category-level config
+    // If no subcategory config, try scope-level config (priority 5)
+    if (!config && resolvedScopeId) {
+      const [scopeConfig] = await db
+        .select()
+        .from(notification_config)
+        .where(
+          and(
+            eq(notification_config.scope_id, resolvedScopeId),
+            isNull(notification_config.category_id), // Scope configs don't use category
+            isNull(notification_config.subcategory_id),
+            eq(notification_config.is_active, true)
+          )
+        )
+        .orderBy(desc(notification_config.priority))
+        .limit(1);
+      
+      if (scopeConfig) {
+        config = scopeConfig;
+      }
+    }
+    
+    // If no scope config, try category-level config (priority 10)
     if (!config && categoryId) {
       const [categoryConfig] = await db
         .select()
@@ -56,6 +99,7 @@ export async function getNotificationConfig(
           and(
             eq(notification_config.category_id, categoryId),
             isNull(notification_config.subcategory_id),
+            isNull(notification_config.scope_id), // Category configs don't use scope
             eq(notification_config.is_active, true)
           )
         )
@@ -67,7 +111,7 @@ export async function getNotificationConfig(
       }
     }
     
-    // If no category config, try global default (no category_id)
+    // If no category config, try global default (no category_id, no scope_id, priority 0)
     if (!config) {
       const [globalConfig] = await db
         .select()
@@ -76,6 +120,7 @@ export async function getNotificationConfig(
           and(
             isNull(notification_config.category_id),
             isNull(notification_config.subcategory_id),
+            isNull(notification_config.scope_id),
             eq(notification_config.is_active, true)
           )
         )

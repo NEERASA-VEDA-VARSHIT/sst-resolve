@@ -1,11 +1,12 @@
 /**
  * SPOC Assignment Utility
  * Handles automatic assignment of tickets to SPOCs based on category and location
- * Follows hierarchy: field > subcategory > category > escalation rules
+ * Follows hierarchy: field > domain/scope > subcategory > category > escalation rules
  */
 
 import { db, users, roles, categories, domains, scopes, admin_profiles } from "@/db";
 import { eq, and, sql } from "drizzle-orm";
+import { getAdminsForDomainScope } from "@/lib/assignment/admin-assignment";
 
 /**
  * Find the appropriate SPOC (Single Point of Contact) for a ticket
@@ -20,7 +21,16 @@ export async function findSPOCForTicket(
   fieldSlugs?: string[] // Field slugs from ticket metadata to check for field-level assignment
 ): Promise<string | null> {
   try {
-    // Hierarchy: field > subcategory > category > escalation rules
+    // Debug: trace inputs for SPOC assignment
+    console.log("[spoc-assignment] findSPOCForTicket inputs:", {
+      category,
+      location,
+      categoryId,
+      subcategoryId,
+      fieldSlugs,
+    });
+
+    // Hierarchy: field > domain/scope > subcategory > category > escalation rules
 
     // 1. Check field-level assignment (if field slugs provided)
     if (fieldSlugs && fieldSlugs.length > 0 && subcategoryId) {
@@ -77,7 +87,40 @@ export async function findSPOCForTicket(
       }
     }
 
-    // 2. Check subcategory-level assignment
+    // 2. Domain + scope based matching (Hostel / College)
+    //    This runs BEFORE subcategory/category assignment to honor domain/scope priority.
+    // ------------------------------------------------------------------------
+    const normalizedCategory = (category || "").toLowerCase();
+    let domainName: string | null = null;
+    if (normalizedCategory === "hostel" || normalizedCategory === "college") {
+      domainName = normalizedCategory.charAt(0).toUpperCase() + normalizedCategory.slice(1);
+    }
+
+    if (domainName) {
+      // Scope for Hostel: use location (hostel name) if present; for College, scope is null
+      const scopeName = domainName.toLowerCase() === "hostel" && location ? location : null;
+      console.log("[spoc-assignment] domain/scope stage:", {
+        domainName,
+        scopeName,
+      });
+
+      const candidateAdmins = await getAdminsForDomainScope(domainName, scopeName);
+      console.log("[spoc-assignment] candidateAdmins from domain/scope:", {
+        domainName,
+        scopeName,
+        count: candidateAdmins.length,
+        candidateAdmins,
+      });
+
+      if (candidateAdmins.length === 1) {
+        console.log("[spoc-assignment] selected admin from domain/scope:", {
+          selected: candidateAdmins[0],
+        });
+        return candidateAdmins[0];
+      }
+    }
+
+    // 3. Check subcategory-level assignment
     if (subcategoryId) {
       try {
         // Check if column exists in database first
@@ -129,7 +172,7 @@ export async function findSPOCForTicket(
       }
     }
 
-    // 3. Check category-level assignment (Multiple Admins support) - Priority #4
+    // 4. Check category-level assignment (Multiple Admins support)
     if (categoryId) {
       try {
         // Check if table exists first (safety check)
@@ -181,7 +224,7 @@ export async function findSPOCForTicket(
       }
     }
 
-    // 4. Check category default_admin_id (Priority #5)
+    // 5. Check category default_admin_id
     if (categoryId) {
       try {
         const [category] = await db
@@ -216,9 +259,8 @@ export async function findSPOCForTicket(
       }
     }
 
-    // 5. Fallback to domain/scope matching (Priority #6)
-    // We need to find an admin whose primary_domain matches the category
-    // Note: This assumes 'category' string matches a 'domain' name.
+    // 6. Legacy fallback to domain/scope matching via admin_profiles only
+    //    (kept for backward compatibility; main domain/scope logic above)
 
     // First, try to find the domain ID for the category name
     const [domain] = await db

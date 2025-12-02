@@ -29,11 +29,11 @@ interface Subcategory {
   slug: string;
   description: string | null;
   display_order: number;
-  assigned_admin_id?: number | null;
+  assigned_admin_id?: string | null;
 }
 
 interface StaffMember {
-  id: number;
+  id: string;
   full_name: string;
   email: string | null;
   domain: string | null;
@@ -45,7 +45,7 @@ interface SubcategoryDialogProps {
   onClose: (saved: boolean) => void;
   categoryId: number;
   subcategory?: Subcategory | null;
-  categoryDefaultAdmin?: number | null; // Admin assigned at category level
+  categoryDefaultAdmin?: string | null; // Admin assigned at category level (UUID)
 }
 
 export function SubcategoryDialog({
@@ -58,13 +58,15 @@ export function SubcategoryDialog({
   const [loading, setLoading] = useState(false);
   const [staffMembers, setStaffMembers] = useState<StaffMember[]>([]);
   const [loadingStaff, setLoadingStaff] = useState(false);
-  const [inheritFromCategory, setInheritFromCategory] = useState(true);
+  // By default, do NOT inherit admin from category; let domain/scope logic run first,
+  // and only use category default if explicitly chosen.
+  const [inheritFromCategory, setInheritFromCategory] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     slug: "",
     description: "",
     display_order: 0,
-    assigned_admin_id: null as number | null,
+    assigned_admin_id: null as string | null,
   });
 
   useEffect(() => {
@@ -77,12 +79,39 @@ export function SubcategoryDialog({
     try {
       setLoadingStaff(true);
       const response = await fetch("/api/admin/staff");
-      if (response.ok) {
-        const data = await response.json();
-        setStaffMembers(data.staff || []);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
+        console.error("[SubcategoryDialog] Failed to fetch staff:", response.status, errorData);
+        return;
       }
+
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        console.error("[SubcategoryDialog] API returned non-JSON response");
+        return;
+      }
+
+      const data = await response.json();
+      // Normalize API response to our local StaffMember shape
+      type ApiStaff = {
+        id: string;
+        fullName?: string | null;
+        email?: string | null;
+        domain?: string | null;
+        scope?: string | null;
+        [key: string]: unknown;
+      };
+      const mapped: StaffMember[] = (data.staff || []).map((s: ApiStaff) => ({
+        id: s.id,
+        full_name: (s.fullName || s.email || "Unknown") as string,
+        email: s.email ?? null,
+        domain: s.domain ?? null,
+        scope: s.scope ?? null,
+      }));
+      setStaffMembers(mapped);
     } catch (error) {
-      console.error("Error fetching staff:", error);
+      console.error("[SubcategoryDialog] Error fetching staff:", error);
+      toast.error("Failed to load admins. Please try again.");
     } finally {
       setLoadingStaff(false);
     }
@@ -90,8 +119,12 @@ export function SubcategoryDialog({
 
   useEffect(() => {
     if (subcategory) {
-      const hasInlineAdmin = subcategory.assigned_admin_id !== null && subcategory.assigned_admin_id !== undefined;
-      setInheritFromCategory(!hasInlineAdmin);
+      const hasInlineAdmin =
+        subcategory.assigned_admin_id !== null &&
+        subcategory.assigned_admin_id !== undefined;
+      // If there is an explicit admin on the subcategory, do NOT inherit.
+      // If there isn't, still default to NOT inheriting; user must opt in.
+      setInheritFromCategory(false);
       setFormData({
         name: subcategory.name || "",
         slug: subcategory.slug || "",
@@ -100,7 +133,8 @@ export function SubcategoryDialog({
         assigned_admin_id: subcategory.assigned_admin_id || null,
       });
     } else {
-      setInheritFromCategory(true);
+      // New subcategory: do not inherit by default
+      setInheritFromCategory(false);
       setFormData({
         name: "",
         slug: "",
@@ -260,11 +294,11 @@ export function SubcategoryDialog({
               <div className="space-y-2 pl-6">
                 <Label htmlFor="assigned_admin_id">Assign Specific Admin</Label>
                 <Select
-                  value={formData.assigned_admin_id?.toString() || "none"}
+                  value={formData.assigned_admin_id || "none"}
                   onValueChange={(value) =>
                     setFormData((prev) => ({
                       ...prev,
-                      assigned_admin_id: value === "none" ? null : parseInt(value),
+                      assigned_admin_id: value === "none" ? null : value,
                     }))
                   }
                   disabled={loadingStaff}
@@ -275,7 +309,7 @@ export function SubcategoryDialog({
                   <SelectContent>
                     <SelectItem value="none">No admin</SelectItem>
                     {staffMembers.map((staff) => (
-                      <SelectItem key={staff.id} value={staff.id.toString()}>
+                      <SelectItem key={staff.id} value={staff.id}>
                         {staff.full_name}
                         {staff.domain && ` (${staff.domain}${staff.scope ? ` - ${staff.scope}` : ""})`}
                       </SelectItem>

@@ -189,11 +189,17 @@ export async function POST(
         }
       }
     } else if (isCommittee) {
+      // Edge case: Validate committee member has access to this ticket
+      const { canCommitteeAccessTicket } = await import("@/lib/ticket/committeeAccess");
+      const hasAccess = await canCommitteeAccessTicket(ticketId, localUser.id);
+      if (!hasAccess) {
+        return NextResponse.json({ error: "You can only comment on tickets tagged to your committee or tickets you created" }, { status: 403 });
+      }
+
       // keep behavior: committee members should only add student-visible comments (internal notes are admin-only)
       if (commentType !== "student_visible") {
         return NextResponse.json({ error: "Committee members cannot add internal notes" }, { status: 403 });
       }
-      // committee membership tagging check should be enforced separately if needed (worker/admin will handle)
     } else if (!isAdminUser) {
       // unknown/unsupported roles blocked
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -215,7 +221,9 @@ export async function POST(
     };
 
     // Transaction: append comment to metadata.comments, handle TAT resume, and auto status change
-    const updated = await db.transaction(async (tx) => {
+    let updated;
+    try {
+      updated = await db.transaction(async (tx) => {
       // Reload ticket with status inside transaction to avoid race
       const [freshTicket] = await tx
         .select({ 
@@ -229,9 +237,31 @@ export async function POST(
 
       if (!freshTicket) throw new Error("Ticket not found in transaction");
 
-      const metadata = (freshTicket.metadata as TicketMetadata & { comments?: Array<Record<string, unknown>> }) || {};
-      if (!Array.isArray(metadata.comments)) metadata.comments = [];
-      metadata.comments.push(commentObj);
+      // Safely parse and validate metadata structure
+      let metadata: TicketMetadata & { comments?: Array<Record<string, unknown>> };
+      try {
+        if (freshTicket.metadata && typeof freshTicket.metadata === 'object' && !Array.isArray(freshTicket.metadata)) {
+          metadata = freshTicket.metadata as TicketMetadata & { comments?: Array<Record<string, unknown>> };
+        } else {
+          metadata = {};
+        }
+      } catch (parseError) {
+        console.error(`[Comments API] Error parsing metadata for ticket #${ticketId}:`, parseError);
+        // Start with fresh metadata if parsing fails
+        metadata = {};
+      }
+      
+      // Ensure comments array exists and is valid
+      if (!Array.isArray(metadata.comments)) {
+        metadata.comments = [];
+      }
+      
+      // Validate comment object before pushing
+      if (commentObj && typeof commentObj === 'object' && commentObj.text && typeof commentObj.text === 'string') {
+        metadata.comments.push(commentObj);
+      } else {
+        throw new Error("Invalid comment object structure");
+      }
 
       const updateData: Partial<TicketInsert> = {
         metadata: metadata as unknown,
@@ -317,12 +347,41 @@ export async function POST(
         },
       });
 
-      return commentObj;
-    });
+        return commentObj;
+      });
+    } catch (transactionError) {
+      console.error(`[Comments API] Transaction failed for ticket #${ticketId}:`, transactionError);
+      
+      // Handle specific transaction errors
+      if (transactionError instanceof Error) {
+        if (transactionError.message.includes('deadlock') || transactionError.message.includes('timeout')) {
+          return NextResponse.json(
+            { error: "Database operation timed out. Please try again." },
+            { status: 503 }
+          );
+        }
+        if (transactionError.message.includes('not found') || transactionError.message.includes('does not exist')) {
+          return NextResponse.json(
+            { error: "Ticket not found. It may have been deleted." },
+            { status: 404 }
+          );
+        }
+        if (transactionError.message.includes('Invalid comment')) {
+          return NextResponse.json(
+            { error: "Invalid comment data. Please try again." },
+            { status: 400 }
+          );
+        }
+      }
+      
+      // Re-throw for generic error handling
+      throw transactionError;
+    }
 
     return NextResponse.json({ success: true, comment: updated }, { status: 201 });
   } catch (error) {
     console.error("Error adding comment:", error);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    const errorMessage = error instanceof Error ? error.message : "Internal Server Error";
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }

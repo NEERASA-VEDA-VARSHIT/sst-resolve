@@ -60,17 +60,30 @@ interface FieldDialogProps {
   subcategoryId: number;
   field?: Field | null;
   subcategoryDefaultAdmin?: string | null; // Admin assigned at subcategory level (UUID)
+  availableFields: Field[];
 }
+
+type LogicValidationRules = {
+  dependsOn?: string;
+  showWhenValue?: string | string[];
+  hideWhenValue?: string | string[];
+  requiredWhenValue?: string | string[];
+  multiSelect?: boolean;
+  [key: string]: unknown;
+};
 
 const FIELD_TYPES = [
   { value: "text", label: "Text Input" },
   { value: "textarea", label: "Text Area" },
   { value: "select", label: "Dropdown" },
+  { value: "multi_select", label: "Multi-select (checkboxes)" },
   { value: "date", label: "Date" },
   { value: "number", label: "Number" },
   { value: "boolean", label: "Yes/No" },
   { value: "upload", label: "File Upload" },
 ];
+
+const CHOICE_FIELD_TYPES = new Set(["select", "multi_select"]);
 
 export function FieldDialog({
   open,
@@ -78,11 +91,14 @@ export function FieldDialog({
   subcategoryId,
   field,
   subcategoryDefaultAdmin,
+  availableFields,
 }: FieldDialogProps) {
   const [loading, setLoading] = useState(false);
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
   const [loadingStaff, setLoadingStaff] = useState(false);
-  const [inheritFromSubcategory, setInheritFromSubcategory] = useState(true);
+  // By default, do NOT inherit admin from subcategory; let domain/scope + subcategory
+  // logic run first, and only use subcategory default if explicitly chosen.
+  const [inheritFromSubcategory, setInheritFromSubcategory] = useState(false);
   const [slugManuallyEdited, setSlugManuallyEdited] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
@@ -96,6 +112,8 @@ export function FieldDialog({
     assigned_admin_id: null as string | null,
   });
   const [options, setOptions] = useState<FieldOption[]>([]);
+  const [logicSectionOpen, setLogicSectionOpen] = useState(false);
+  const [manualLogicInput, setManualLogicInput] = useState("");
 
   useEffect(() => {
     if (open) {
@@ -126,8 +144,15 @@ export function FieldDialog({
 
   useEffect(() => {
     if (field) {
-      const hasInlineAdmin = field.assigned_admin_id !== null && field.assigned_admin_id !== undefined;
-      setInheritFromSubcategory(!hasInlineAdmin);
+      const hasInlineAdmin =
+        field.assigned_admin_id !== null && field.assigned_admin_id !== undefined;
+      const initialRules: LogicValidationRules = {
+        ...((field.validation_rules || {}) as LogicValidationRules),
+        ...(field.field_type === "multi_select" ? { multiSelect: true } : {}),
+      };
+      // If there is an explicit admin on the field, do NOT inherit.
+      // If there isn't, still default to NOT inheriting; user must opt in.
+      setInheritFromSubcategory(false);
       setFormData({
         name: field.name || "",
         slug: field.slug || "",
@@ -136,13 +161,20 @@ export function FieldDialog({
         placeholder: field.placeholder || "",
         help_text: field.help_text || "",
         display_order: field.display_order || 0,
-        validation_rules: field.validation_rules || {},
+        validation_rules: initialRules,
         assigned_admin_id: field.assigned_admin_id || null,
       });
       setOptions(field.options || []);
       setSlugManuallyEdited(true); // Editing existing field means slug is pre-set
+      setLogicSectionOpen(Boolean(initialRules.dependsOn));
+      const initialValues = toArray(
+        (initialRules.showWhenValue as string | string[] | undefined) ??
+          (initialRules.hideWhenValue as string | string[] | undefined)
+      ).join(", ");
+      setManualLogicInput(initialValues);
     } else {
-      setInheritFromSubcategory(true);
+      // New field: do not inherit from subcategory by default
+      setInheritFromSubcategory(false);
       setFormData({
         name: "",
         slug: "",
@@ -156,6 +188,8 @@ export function FieldDialog({
       });
       setOptions([]);
       setSlugManuallyEdited(false); // New field, allow auto-generation
+      setLogicSectionOpen(false);
+      setManualLogicInput("");
     }
   }, [field, open]);
 
@@ -202,20 +236,228 @@ export function FieldDialog({
     setOptions(newOptions);
   };
 
+  const toArray = (value: unknown): string[] => {
+    if (Array.isArray(value)) return value.map((v) => String(v));
+    if (value === undefined || value === null || value === "") return [];
+    return [String(value)];
+  };
+
+  const arraysEqual = (a: string[], b: string[]) => {
+    if (a.length !== b.length) return false;
+    const sortedA = [...a].sort();
+    const sortedB = [...b].map(String).sort();
+    return sortedA.every((val, idx) => val === sortedB[idx]);
+  };
+
+  const patchValidationRules = (patch: Record<string, unknown>) => {
+    setFormData((prev) => {
+      const current: LogicValidationRules = {
+        ...((prev.validation_rules || {}) as LogicValidationRules),
+      };
+      for (const [key, value] of Object.entries(patch)) {
+        const shouldDelete =
+          value === undefined ||
+          value === null ||
+          (typeof value === "string" && value.trim() === "") ||
+          (Array.isArray(value) && value.length === 0);
+        if (shouldDelete) {
+          delete current[key];
+        } else {
+          current[key] = value;
+        }
+      }
+      return { ...prev, validation_rules: current };
+    });
+  };
+
+  const serializeRuleValues = (values: string[]) => {
+    if (!values || values.length === 0) return undefined;
+    if (values.length === 1) return values[0];
+    return values;
+  };
+
+  const handleFieldTypeChange = (value: string) => {
+    setFormData((prev) => {
+      const nextRules = { ...(prev.validation_rules || {}) } as Record<string, unknown>;
+      if (value === "multi_select") {
+        nextRules.multiSelect = true;
+      } else {
+        delete nextRules.multiSelect;
+      }
+      return {
+        ...prev,
+        field_type: value,
+        validation_rules: nextRules,
+      };
+    });
+
+    if (!CHOICE_FIELD_TYPES.has(value)) {
+      setOptions([]);
+    }
+  };
+
+  const validationRules = (formData.validation_rules || {}) as LogicValidationRules;
+  const dependsOnSlug =
+    typeof validationRules.dependsOn === "string" ? validationRules.dependsOn : "";
+  const showValues = toArray(validationRules.showWhenValue);
+  const hideValues = toArray(validationRules.hideWhenValue);
+  const logicBehavior: "show" | "hide" =
+    hideValues.length > 0 && showValues.length === 0 ? "hide" : "show";
+  const logicValues = logicBehavior === "show" ? showValues : hideValues;
+  const controllingFields = availableFields.filter((candidate) => candidate.id !== field?.id);
+  const controllingField =
+    controllingFields.find((candidate) => candidate.slug === dependsOnSlug) || null;
+  const hasControllingFields = controllingFields.length > 0;
+  const requiredRuleValues = toArray(validationRules.requiredWhenValue);
+  const logicRequiredEnabled =
+    logicBehavior === "show" &&
+    logicValues.length > 0 &&
+    requiredRuleValues.length > 0 &&
+    arraysEqual(requiredRuleValues, logicValues);
+
+  const availableValueOptions =
+    controllingField && CHOICE_FIELD_TYPES.has(controllingField.field_type)
+      ? (controllingField.options || []).map((opt) => ({
+          label: opt.label || opt.value,
+          value: opt.value,
+        }))
+      : controllingField && controllingField.field_type === "boolean"
+      ? [
+          { label: "Yes", value: "true" },
+          { label: "No", value: "false" },
+        ]
+      : [];
+
+  useEffect(() => {
+    if (dependsOnSlug) {
+      setLogicSectionOpen(true);
+    }
+  }, [dependsOnSlug]);
+
+  useEffect(() => {
+    setManualLogicInput(logicValues.join(", "));
+  }, [dependsOnSlug, logicBehavior, logicValues.join("|")]);
+
+  const handleLogicToggle = (enabled: boolean) => {
+    if (!enabled) {
+      setLogicSectionOpen(false);
+      setManualLogicInput("");
+      patchValidationRules({
+        dependsOn: undefined,
+        showWhenValue: undefined,
+        hideWhenValue: undefined,
+        requiredWhenValue: undefined,
+      });
+      return;
+    }
+
+    if (!hasControllingFields) {
+      toast.error("Add another field first before configuring conditional logic.");
+      return;
+    }
+
+    const defaultFieldSlug = dependsOnSlug || controllingFields[0]?.slug || "";
+
+    if (!defaultFieldSlug) {
+      toast.error("No available fields to depend on yet.");
+      return;
+    }
+
+    setLogicSectionOpen(true);
+    patchValidationRules({
+      dependsOn: defaultFieldSlug,
+      showWhenValue: undefined,
+      hideWhenValue: undefined,
+      requiredWhenValue: undefined,
+    });
+  };
+
+  const handleDependsOnChange = (slug: string) => {
+    patchValidationRules({
+      dependsOn: slug,
+      showWhenValue: undefined,
+      hideWhenValue: undefined,
+      requiredWhenValue: undefined,
+    });
+  };
+
+  const handleLogicBehaviorChange = (behavior: "show" | "hide") => {
+    if (behavior === logicBehavior) return;
+    const serialized = serializeRuleValues(logicValues);
+    if (behavior === "show") {
+      patchValidationRules({
+        showWhenValue: serialized,
+        hideWhenValue: undefined,
+        requiredWhenValue: logicRequiredEnabled ? serialized : undefined,
+      });
+    } else {
+      patchValidationRules({
+        hideWhenValue: serialized,
+        showWhenValue: undefined,
+        requiredWhenValue: undefined,
+      });
+    }
+  };
+
+  const handleLogicValuesChange = (incoming: string[]) => {
+    const unique = Array.from(new Set(incoming.map((val) => val.trim()).filter(Boolean)));
+    const serialized = serializeRuleValues(unique);
+    if (logicBehavior === "show") {
+      patchValidationRules({
+        showWhenValue: serialized,
+        hideWhenValue: undefined,
+        requiredWhenValue: logicRequiredEnabled ? serialized : undefined,
+      });
+    } else {
+      patchValidationRules({
+        hideWhenValue: serialized,
+        showWhenValue: undefined,
+        requiredWhenValue: undefined,
+      });
+    }
+  };
+
+  const handleLogicRequiredToggle = (enabled: boolean) => {
+    if (logicBehavior !== "show") {
+      patchValidationRules({ requiredWhenValue: undefined });
+      return;
+    }
+    if (!enabled) {
+      patchValidationRules({ requiredWhenValue: undefined });
+      return;
+    }
+    if (logicValues.length === 0) {
+      toast.error("Select at least one value before making the field required.");
+      return;
+    }
+    patchValidationRules({
+      requiredWhenValue: serializeRuleValues(logicValues),
+    });
+  };
+
+  const handleManualLogicInputChange = (text: string) => {
+    setManualLogicInput(text);
+    const values = text
+      .split(",")
+      .map((val) => val.trim())
+      .filter((val) => val.length > 0);
+    handleLogicValuesChange(values);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     try {
       // Validate select field options
-      if (formData.field_type === "select" && options.length === 0) {
+      if (CHOICE_FIELD_TYPES.has(formData.field_type) && options.length === 0) {
         toast.error("Select fields must have at least one option");
         setLoading(false);
         return;
       }
 
       // Validate for duplicate values (case-insensitive)
-      if (formData.field_type === "select") {
+      if (CHOICE_FIELD_TYPES.has(formData.field_type)) {
         const valueMap = new Map<string, number>();
         for (let i = 0; i < options.length; i++) {
           const opt = options[i];
@@ -251,7 +493,7 @@ export function FieldDialog({
           ...formData,
           subcategory_id: subcategoryId,
           assigned_admin_id: inheritFromSubcategory ? null : formData.assigned_admin_id,
-          options: formData.field_type === "select" ? optionsToSend : undefined,
+          options: CHOICE_FIELD_TYPES.has(formData.field_type) ? optionsToSend : undefined,
         }),
       });
 
@@ -322,9 +564,7 @@ export function FieldDialog({
               </Label>
               <Select
                 value={formData.field_type}
-                onValueChange={(value) =>
-                  setFormData((prev) => ({ ...prev, field_type: value }))
-                }
+                onValueChange={handleFieldTypeChange}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -393,7 +633,7 @@ export function FieldDialog({
             />
           </div>
 
-          {formData.field_type === "select" && (
+          {CHOICE_FIELD_TYPES.has(formData.field_type) && (
             <div className="space-y-3 border rounded-lg p-4">
               <div className="flex items-center justify-between">
                 <Label>Dropdown Options</Label>
@@ -470,6 +710,124 @@ export function FieldDialog({
               )}
             </div>
           )}
+
+          <div className="space-y-3 border rounded-lg p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label className="font-medium">Conditional Logic (optional)</Label>
+                <p className="text-xs text-muted-foreground">
+                  Show or require this field based on another answer.
+                </p>
+              </div>
+              <Checkbox
+                checked={logicSectionOpen}
+                disabled={!hasControllingFields}
+                onCheckedChange={(checked) => handleLogicToggle(checked === true)}
+              />
+            </div>
+            {!hasControllingFields && (
+              <p className="text-xs text-muted-foreground">
+                Add another field first to enable conditional logic.
+              </p>
+            )}
+            {logicSectionOpen && hasControllingFields && (
+              <div className="space-y-4 pt-4 border-t">
+                <div className="space-y-2">
+                  <Label>Depends on field</Label>
+                  <Select value={dependsOnSlug} onValueChange={handleDependsOnChange}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a field to depend on" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {controllingFields.map((ctrl) => (
+                        <SelectItem key={ctrl.id} value={ctrl.slug}>
+                          {ctrl.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {dependsOnSlug && (
+                  <>
+                    <div className="space-y-2">
+                      <Label>Behavior</Label>
+                      <Select value={logicBehavior} onValueChange={(value) => handleLogicBehaviorChange(value as "show" | "hide")}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="show">Show this field when values match</SelectItem>
+                          <SelectItem value="hide">Hide this field when values match</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>
+                        Values that {logicBehavior === "show" ? "trigger" : "hide"} this field
+                      </Label>
+                      {availableValueOptions.length > 0 ? (
+                        <div className="space-y-2">
+                          {availableValueOptions.map((option) => {
+                            const checked = logicValues.includes(option.value);
+                            return (
+                              <label
+                                key={option.value}
+                                className="flex items-center gap-2 text-sm"
+                              >
+                                <Checkbox
+                                  checked={checked}
+                                  onCheckedChange={(isChecked) => {
+                                    const next = isChecked === true
+                                      ? [...new Set([...logicValues, option.value])]
+                                      : logicValues.filter((val) => val !== option.value);
+                                    handleLogicValuesChange(next);
+                                  }}
+                                />
+                                <span>{option.label}</span>
+                              </label>
+                            );
+                          })}
+                          {logicValues.length === 0 && (
+                            <p className="text-xs text-muted-foreground">
+                              Select at least one value.
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <Input
+                          value={manualLogicInput}
+                          onChange={(e) => handleManualLogicInputChange(e.target.value)}
+                          placeholder="Enter values, separated by commas"
+                        />
+                      )}
+                    </div>
+
+                    {logicBehavior === "show" && (
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="logic-required"
+                          checked={logicRequiredEnabled}
+                          onCheckedChange={(checked) => handleLogicRequiredToggle(checked === true)}
+                          disabled={logicValues.length === 0}
+                        />
+                        <Label
+                          htmlFor="logic-required"
+                          className={cn(
+                            "cursor-pointer",
+                            logicValues.length === 0 && "text-muted-foreground"
+                          )}
+                        >
+                          Mark this field as required when the condition is met
+                        </Label>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
 
           <div className="space-y-3 border rounded-lg p-4">
             <div className="flex items-center space-x-2">

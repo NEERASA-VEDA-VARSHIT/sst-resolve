@@ -11,6 +11,8 @@ import {
   UserCheck,
   User,
   GraduationCap,
+  Tag,
+  Bell,
   LucideIcon,
 } from "lucide-react";
 import { UserRole } from "./useRole";
@@ -84,33 +86,33 @@ export function getNavItemsForRole(role: UserRole, mounted: boolean): NavItem[] 
     ...(isCommittee
       ? [
           {
+            title: "Created",
+            href: "/committee/dashboard/created",
+            icon: FileText,
+            show: true,
+          },
+          {
+            title: "Tagged",
+            href: "/committee/dashboard/tagged",
+            icon: Tag,
+            show: true,
+          },
+          {
             title: "Today",
-            href: "/admin/dashboard/today",
+            href: "/committee/dashboard/today",
             icon: Calendar,
             show: true,
           },
           {
             title: "Escalated",
-            href: "/admin/dashboard/escalated",
+            href: "/committee/dashboard/escalated",
             icon: AlertCircle,
             show: true,
           },
           {
-            title: "Analytics",
-            href: "/admin/dashboard/analytics",
-            icon: TrendingUp,
-            show: true,
-          },
-          {
             title: "Groups",
-            href: "/admin/dashboard/groups",
+            href: "/committee/dashboard/groups",
             icon: Users,
-            show: true,
-          },
-          {
-            title: "Profile",
-            href: "/committee/profile",
-            icon: User,
             show: true,
           },
         ]
@@ -188,6 +190,12 @@ export function getNavItemsForRole(role: UserRole, mounted: boolean): NavItem[] 
             icon: UserCheck,
             show: true,
           },
+          {
+            title: "Notifications",
+            href: "/superadmin/dashboard/notification-settings",
+            icon: Bell,
+            show: true,
+          },
         ]
       : []),
   ];
@@ -211,7 +219,7 @@ export function getDashboardLinkForRole(role: UserRole): string {
 export function getProfileLinkForRole(role: UserRole): string {
   if (role === "super_admin") return "/superadmin/profile";
   if (role === "admin") return "/admin/profile";
-  if (role === "committee") return "/committee/profile";
+  if (role === "committee") return "/committee/dashboard";
   return "/student/profile";
 }
 

@@ -4,8 +4,7 @@ import { eq, or, isNull, desc } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
 import { getAdminAssignment } from "@/lib/assignment/admin-assignment";
-import { getTicketStatuses } from "@/lib/status/getTicketStatuses";
-import { buildStatusDisplay } from "@/conf/constants";
+import { getTicketStatuses, getTicketStatusByValue } from "@/lib/status/getTicketStatuses";
 
 /**
  * Cached helper functions for admin dashboard
@@ -96,32 +95,27 @@ export const getCachedAdminTickets = cache(async (
     .orderBy(desc(tickets.created_at))
     .limit(1000); // Reasonable limit for admin view
 
+  // Fetch all statuses once for lookup
+  const allStatuses = await getTicketStatuses();
+  const statusMap = new Map(allStatuses.map(s => [s.value.toLowerCase(), s]));
+
   // Transform to include all fields in a flat structure
   return ticketRows.map((row) => {
     const fallbackStatus = row.status ?? "open";
-    let statusDisplay: { value: string; label: string; badge_color: string };
+    const normalizedStatus = fallbackStatus.toLowerCase();
+    const statusRecord = statusMap.get(normalizedStatus);
     
-    try {
-      const builtDisplay = fallbackStatus ? buildStatusDisplay(fallbackStatus) : null;
-      statusDisplay = builtDisplay && typeof builtDisplay === 'object' && 'value' in builtDisplay
-        ? {
-            value: builtDisplay.value || fallbackStatus,
-            label: builtDisplay.label || fallbackStatus,
-            badge_color: builtDisplay.badge_color || "default",
-          }
-        : {
-            value: fallbackStatus,
-            label: fallbackStatus,
-            badge_color: "default",
-          };
-    } catch (error) {
-      console.error('[getCachedAdminTickets] Error building status display:', error);
-      statusDisplay = {
-        value: fallbackStatus,
-        label: fallbackStatus,
-        badge_color: "default",
-      };
-    }
+    const statusDisplay = statusRecord
+      ? {
+          value: statusRecord.value,
+          label: statusRecord.label,
+          badge_color: statusRecord.badge_color || "default",
+        }
+      : {
+          value: fallbackStatus,
+          label: fallbackStatus,
+          badge_color: "default",
+        };
 
     return {
       ...row,

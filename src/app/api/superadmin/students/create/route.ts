@@ -46,20 +46,19 @@ export async function POST(request: NextRequest) {
 		const {
 			email,
 			full_name,
-			user_number,
 			hostel_id,
 			room_number,
 			class_section_id,
 			batch_id,
 			mobile,
-			department,
+			blood_group,
 		} = body;
 
 		// Validate required fields
-		if (!email || !full_name || !user_number || !mobile || !room_number || 
-			!hostel_id || !class_section_id || !batch_id || !department) {
+		if (!email || !full_name || !mobile || !room_number || 
+			!hostel_id || !class_section_id || !batch_id || !blood_group) {
 			return NextResponse.json(
-				{ error: "All fields are required: email, full name, user number, mobile, room number, hostel, class section, batch, and department" },
+				{ error: "All fields are required: email, full name, mobile, room number, hostel, class section, batch, and blood group" },
 				{ status: 400 }
 			);
 		}
@@ -119,6 +118,30 @@ export async function POST(request: NextRequest) {
 			);
 		}
 
+		// Normalize and validate blood group
+		const normalizedBloodGroup = String(blood_group).trim().toUpperCase();
+		const allowedBloodGroups = new Set([
+			"A+",
+			"A-",
+			"B+",
+			"B-",
+			"O+",
+			"O-",
+			"AB+",
+			"AB-",
+		]);
+		if (!allowedBloodGroups.has(normalizedBloodGroup)) {
+			return NextResponse.json(
+				{ error: "Blood group must be one of A+, A-, B+, B-, O+, O-, AB+, AB-" },
+				{ status: 400 }
+			);
+		}
+
+		// Derive a technical roll_no so DB constraints are satisfied.
+		// Business flows no longer use roll numbers, so we just need a stable,
+		// short identifier that fits within varchar(32).
+		const generatedRollNo = cleanedEmail.slice(0, 32);
+
 		// Get student role
 		const [studentRole] = await db
 			.select({ id: roles.id })
@@ -142,32 +165,6 @@ export async function POST(request: NextRequest) {
 			.from(users)
 			.where(eq(users.email, cleanedEmail))
 			.limit(1);
-
-		// Check if student with this roll number already exists (and is linked to a different user)
-		const [existingStudentByRoll] = await db
-			.select({
-				id: students.id,
-				user_id: students.user_id,
-			})
-			.from(students)
-			.where(eq(students.roll_no, user_number.trim()))
-			.limit(1);
-
-		// If roll number exists and is linked to a different user, that's an error
-		if (existingStudentByRoll && existingUser && existingStudentByRoll.user_id !== existingUser.id) {
-			return NextResponse.json(
-				{ error: "A student with this roll number already exists and is linked to a different user" },
-				{ status: 400 }
-			);
-		}
-
-		// If roll number exists but no user exists, that's also an error (data inconsistency)
-		if (existingStudentByRoll && !existingUser) {
-			return NextResponse.json(
-				{ error: "A student with this roll number already exists. Please contact support." },
-				{ status: 400 }
-			);
-		}
 
 		// Create or update user and student in a transaction
 		const result = await db.transaction(async (tx) => {
@@ -213,13 +210,14 @@ export async function POST(request: NextRequest) {
 			let wasStudentCreated = false;
 			if (existingStudent) {
 				// Update existing student record
-				const studentUpdate: Partial<StudentInsert> = {
-					roll_no: user_number.trim(),
+				const studentUpdate: Partial<StudentInsert> & { roll_no?: string | null } = {
+					// Keep existing roll_no if present; otherwise backfill with generatedRollNo
+					roll_no: (existingStudent as { roll_no?: string | null })?.roll_no ?? generatedRollNo,
 					room_no: room_number.trim(),
 					hostel_id: hostel_id,
 					class_section_id: class_section_id,
 					batch_id: batch_id,
-					department: department.trim(),
+					blood_group: normalizedBloodGroup,
 					updated_at: new Date(),
 				};
 				const [updatedStudent] = await tx
@@ -231,14 +229,14 @@ export async function POST(request: NextRequest) {
 				wasStudentCreated = false;
 			} else {
 				// Create new student record
-				const studentData: StudentInsert = {
+				const studentData: StudentInsert & { roll_no?: string } = {
 					user_id: targetUser.id,
-					roll_no: user_number.trim(),
+					roll_no: generatedRollNo,
 					room_no: room_number.trim(),
 					hostel_id: hostel_id,
 					class_section_id: class_section_id,
 					batch_id: batch_id,
-					department: department.trim(),
+					blood_group: normalizedBloodGroup,
 				};
 				const [newStudent] = await tx
 					.insert(students)
@@ -259,7 +257,6 @@ export async function POST(request: NextRequest) {
 					: "Student profile updated successfully",
 				student: {
 					id: result.student.id,
-					roll_no: result.student.roll_no,
 					email: result.user.email,
 					full_name: cleanedName,
 				},

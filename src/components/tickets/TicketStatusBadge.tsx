@@ -4,7 +4,6 @@
  */
 
 import { Badge } from "@/components/ui/badge";
-import { getStatusMeta } from "@/conf/constants";
 import { cn, formatStatus, normalizeStatusForComparison } from "@/lib/utils";
 
 interface TicketStatusBadgeProps {
@@ -25,11 +24,9 @@ export function TicketStatusBadge({
   className = ""
 }: TicketStatusBadgeProps) {
   const normalizedValue = normalizeStatusForComparison(status?.value || statusValue);
-  const meta = getStatusMeta(normalizedValue);
-
-  // Use status object if provided, otherwise fall back to metadata or formatted value
-  const label = status?.label || meta?.label || formatStatus(normalizedValue || statusValue || "Unknown");
-  const badgeColor = status?.badge_color || meta?.badgeColor || "outline";
+  // Use status object if provided, otherwise fall back to formatted value
+  const label = status?.label || formatStatus(normalizedValue || statusValue || "Unknown");
+  const badgeColor = status?.badge_color || null;
 
   // Map badge_color from database to Badge variant and custom colors
   // Match STATUS_STYLES from TicketCard for consistency across dashboard and detail page

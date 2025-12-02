@@ -1,23 +1,20 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { UnifiedNav } from "./UnifiedNav";
+import { PublicNav } from "./PublicNav";
 
 /**
- * Conditionally renders UnifiedNav only on public routes (home page)
- * Role-specific routes use their own navigation via role layouts
+ * Conditionally renders a lightweight public nav only on the home page.
+ * Role-specific routes use their own navigation via their layout files.
  */
 export function ConditionalNav() {
   const pathname = usePathname();
 
-  // Only show UnifiedNav on home page (public route)
-  // All role-specific routes have their own navigation via layouts
   if (pathname === "/") {
-    return <UnifiedNav />;
+    return <PublicNav />;
   }
 
   // Role-specific routes handle their own navigation
   // via student/layout.tsx, admin/layout.tsx, etc.
   return null;
 }
-

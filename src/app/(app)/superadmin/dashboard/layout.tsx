@@ -25,8 +25,15 @@ export default async function SuperAdminDashboardLayout({
     // Get role from database (single source of truth)
     const role = await getUserRoleFromDB(userId);
     
+    // Redirect non-super_admin users to their appropriate dashboard
     if (role !== "super_admin") {
-      redirect("/student/dashboard");
+      if (role === "committee") {
+        redirect("/committee/dashboard");
+      } else if (role === "admin") {
+        redirect("/admin/dashboard");
+      } else {
+        redirect("/student/dashboard");
+      }
     }
 
     return (

@@ -149,14 +149,30 @@ export async function POST(request: NextRequest) {
 
     // Validate user_id if provided
     if (user_id) {
+      const { roles } = await import("@/db");
       const [userRecord] = await db
-        .select()
+        .select({
+          id: users.id,
+          external_id: users.external_id,
+          role_name: roles.name,
+        })
         .from(users)
+        .leftJoin(roles, eq(users.role_id, roles.id))
         .where(eq(users.id, user_id))
         .limit(1);
 
       if (!userRecord) {
         return NextResponse.json({ error: "User not found" }, { status: 404 });
+      }
+
+      // Edge case: Validate user has admin role (escalation targets must be admins)
+      if (!userRecord.role_name || (userRecord.role_name !== "admin" && userRecord.role_name !== "super_admin")) {
+        return NextResponse.json({ error: "Escalation target must be an admin or super admin" }, { status: 400 });
+      }
+
+      // Edge case: Validate user is not deleted (external_id should exist)
+      if (!userRecord.external_id) {
+        return NextResponse.json({ error: "Cannot assign escalation to deleted user" }, { status: 400 });
       }
     }
 

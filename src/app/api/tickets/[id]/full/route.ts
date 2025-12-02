@@ -85,7 +85,6 @@ export async function GET(
         user_full_name: users.full_name,
         user_email: users.email,
         // Student fields
-        student_roll_no: students.roll_no,
         student_hostel_id: students.hostel_id,
         student_room_no: students.room_no,
       })
@@ -304,7 +303,6 @@ export async function GET(
         email: ticketData.user_email,
       },
       student: {
-        roll_no: ticketData.student_roll_no,
         hostel_id: ticketData.student_hostel_id,
         room_no: ticketData.student_room_no,
       },

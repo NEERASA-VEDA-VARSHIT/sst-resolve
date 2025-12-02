@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { tickets, outbox, ticket_committee_tags, committees, ticket_statuses, ticket_groups } from "@/db/schema";
 import { getStatusIdByValue } from "@/lib/status/getTicketStatuses";
 import type { TicketInsert } from "@/db/inferred-types";
-import { eq, sql, and, inArray } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
 import { UpdateTicketStatusSchema } from "@/schemas/business/ticket";
@@ -14,13 +14,13 @@ import { TICKET_STATUS, getCanonicalStatus } from "@/conf/constants";
  * ============================================
  * /api/tickets/[id]/status
  * ============================================
- * 
+ *
  * PATCH → Update Ticket Status
  *   - Auth: Required
  *   - Permissions:
  *     • Admin: Update to ANY status
- *     • Committee: Can resolve/close only their tagged tickets
- *     • Student: Can only reopen their own closed/resolved tickets
+ *     • Committee: Admin-like control, but ONLY for tickets tagged to their committee
+ *     • Student: Can reopen their own closed/resolved tickets and "close" (self-resolve) their own active tickets
  *   - Returns: 200 OK with updated ticket
  * ============================================
  */
@@ -43,9 +43,9 @@ export async function PATCH(
       return NextResponse.json({ error: "Invalid ticket ID" }, { status: 400 });
 
     const body = await request.json();
-    
+
     const canonicalStatus = typeof body.status === "string" ? getCanonicalStatus(body.status) : null;
-    
+
     const parsed = UpdateTicketStatusSchema.safeParse({ status: canonicalStatus });
     if (!parsed.success) {
       return NextResponse.json(
@@ -54,7 +54,7 @@ export async function PATCH(
       );
     }
 
-    const newStatus = parsed.data.status;
+    let newStatus = parsed.data.status;
 
     // -------------------------
     // USER + ROLE
@@ -92,21 +92,38 @@ export async function PATCH(
     // PERMISSIONS
     // -------------------------
 
-    // Students → can ONLY reopen their own resolved ticket
+    // Students → can "close" (self-resolve) their own active tickets, or reopen their own resolved/closed tickets
     if (isStudent) {
-      const currentStatus = getCanonicalStatus(ticket.status) || ticket.status?.toLowerCase();
+      const currentCanonical = getCanonicalStatus(ticket.status) || null;
+
       if (ticket.created_by !== localUser.id) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
-      if (currentStatus !== TICKET_STATUS.RESOLVED || newStatus !== TICKET_STATUS.REOPENED) {
+
+      const isReopening = newStatus === TICKET_STATUS.REOPENED;
+      const isClosing = newStatus === TICKET_STATUS.RESOLVED;
+
+      const canReopen = currentCanonical === TICKET_STATUS.RESOLVED;
+      const canCloseFrom = new Set<string>([
+        TICKET_STATUS.OPEN,
+        TICKET_STATUS.IN_PROGRESS,
+        TICKET_STATUS.AWAITING_STUDENT,
+        TICKET_STATUS.REOPENED,
+      ]);
+
+      const canClose = currentCanonical ? canCloseFrom.has(currentCanonical) : false;
+
+      if ((isReopening && canReopen) || (isClosing && canClose)) {
+        // Allowed
+      } else {
         return NextResponse.json(
-          { error: "Students can only reopen resolved tickets" },
+          { error: "Students can only close their own active tickets or reopen closed/resolved tickets" },
           { status: 403 }
         );
       }
     }
 
-    // Committee → can only resolve tickets tagged to their committee
+    // Committee → can act like admins, but ONLY for tickets tagged to their committee or in groups assigned to their committee
     if (isCommittee) {
       const committeeRecords = await db
         .select({ id: committees.id })
@@ -156,13 +173,7 @@ export async function PATCH(
           );
         }
       }
-
-      if (newStatus !== TICKET_STATUS.RESOLVED) {
-        return NextResponse.json(
-          { error: "Committee members can only mark tickets as resolved" },
-          { status: 403 }
-        );
-      }
+      // No further restriction on newStatus here: committees have admin-like control on their tickets
     }
 
     // Admin → can change status freely
@@ -174,13 +185,31 @@ export async function PATCH(
     // STATUS TRANSITION RULES
     // -------------------------
 
+    // Validate status transitions - prevent invalid transitions
+    const currentStatusValue = ticket.status || "";
+    const currentCanonicalStatus = getCanonicalStatus(currentStatusValue) || currentStatusValue.toLowerCase();
+    
+    // Edge case: Prevent invalid transitions (e.g., resolved -> open should be reopened)
+    if (currentCanonicalStatus === TICKET_STATUS.RESOLVED && newStatus === TICKET_STATUS.OPEN) {
+      // If trying to go from resolved to open, change to reopened instead
+      const reopenedStatusId = await getStatusIdByValue(TICKET_STATUS.REOPENED);
+      if (reopenedStatusId) {
+        newStatus = TICKET_STATUS.REOPENED;
+        console.log(`[Status Update] Corrected invalid transition: resolved -> open changed to resolved -> reopened for ticket #${ticketId}`);
+      } else {
+        return NextResponse.json(
+          { error: "Invalid status transition: Cannot change from resolved to open. Use 'reopened' instead." },
+          { status: 400 }
+        );
+      }
+    }
+
     // Handle TAT pause when status changes to AWAITING_STUDENT
     let metadata: Record<string, unknown> = {};
-    if (ticket.metadata && typeof ticket.metadata === 'object' && !Array.isArray(ticket.metadata)) {
-      metadata = { ...ticket.metadata as Record<string, unknown> };
+    if (ticket.metadata && typeof ticket.metadata === "object" && !Array.isArray(ticket.metadata)) {
+      metadata = { ...(ticket.metadata as Record<string, unknown>) };
     }
-    const currentStatusValue = ticket.status || "";
-    if (newStatus === TICKET_STATUS.AWAITING_STUDENT && currentStatusValue !== TICKET_STATUS.AWAITING_STUDENT) {
+    if (newStatus === TICKET_STATUS.AWAITING_STUDENT && currentCanonicalStatus !== TICKET_STATUS.AWAITING_STUDENT) {
       // Pause TAT - record pause start time
       metadata.tatPauseStart = new Date().toISOString();
       // Initialize paused duration if not exists
@@ -189,12 +218,49 @@ export async function PATCH(
       }
     }
 
-    // Get status_id from status value
+    // Edge case: Validate status exists and is active before updating
     const newStatusId = await getStatusIdByValue(newStatus);
     if (!newStatusId) {
       return NextResponse.json(
-        { error: `Invalid status: ${newStatus}` },
+        { error: `Invalid status: ${newStatus}. The status may have been deleted or is inactive.` },
         { status: 400 }
+      );
+    }
+    
+    // Edge case: Verify status is still active (may have been deactivated)
+    const [statusRecord] = await db
+      .select({ is_active: ticket_statuses.is_active })
+      .from(ticket_statuses)
+      .where(eq(ticket_statuses.id, newStatusId))
+      .limit(1);
+    
+    if (!statusRecord || !statusRecord.is_active) {
+      return NextResponse.json(
+        { error: `Status "${newStatus}" is inactive and cannot be used. Please select a different status.` },
+        { status: 400 }
+      );
+    }
+    
+    // Edge case: Validate current status still exists (may have been deleted)
+    if (!currentCanonicalStatus) {
+      const { logWarning } = await import("@/lib/monitoring/alerts");
+      logWarning(
+        "Ticket has invalid or deleted status",
+        { ticketId, currentStatusValue, newStatus }
+      );
+    }
+    
+    // Edge case: Prevent updating ticket that was just deleted
+    const [ticketStillExists] = await db
+      .select({ id: tickets.id })
+      .from(tickets)
+      .where(eq(tickets.id, ticketId))
+      .limit(1);
+    
+    if (!ticketStillExists) {
+      return NextResponse.json(
+        { error: "Ticket was deleted. Cannot update status." },
+        { status: 404 }
       );
     }
 
@@ -232,30 +298,54 @@ export async function PATCH(
     // -------------------------
     // DB TRANSACTION — Update Ticket + Insert Outbox Event
     // -------------------------
-    const updatedTicket = await db.transaction(async (tx) => {
-      // Update ticket
-      const [ticketUpdated] = await tx
-        .update(tickets)
-        .set(updateData)
-        .where(eq(tickets.id, ticketId))
-        .returning();
+    let updatedTicket;
+    try {
+      updatedTicket = await db.transaction(async (tx) => {
+        // Update ticket
+        const [ticketUpdated] = await tx
+          .update(tickets)
+          .set(updateData)
+          .where(eq(tickets.id, ticketId))
+          .returning();
 
-      if (!ticketUpdated)
-        throw new Error("Failed to update ticket status");
+        if (!ticketUpdated)
+          throw new Error("Failed to update ticket status");
 
-      // Outbox event for worker (Slack + email notifications)
-      await tx.insert(outbox).values({
-        event_type: "ticket.status.updated",
-        payload: {
-          ticket_id: ticketId,
-          old_status: currentStatusValue,
-          new_status: newStatus,
-          updated_by_clerk_id: userId,
-        },
+        // Outbox event for worker (Slack + email notifications)
+        await tx.insert(outbox).values({
+          event_type: "ticket.status.updated",
+          payload: {
+            ticket_id: ticketId,
+            old_status: currentStatusValue,
+            new_status: newStatus,
+            updated_by_clerk_id: userId,
+          },
+        });
+
+        return ticketUpdated;
       });
-
-      return ticketUpdated;
-    });
+    } catch (transactionError) {
+      console.error(`[Status Update] Transaction failed for ticket #${ticketId}:`, transactionError);
+      
+      // Handle specific transaction errors
+      if (transactionError instanceof Error) {
+        if (transactionError.message.includes('deadlock') || transactionError.message.includes('timeout')) {
+          return NextResponse.json(
+            { error: "Database operation timed out. Please try again." },
+            { status: 503 }
+          );
+        }
+        if (transactionError.message.includes('not found') || transactionError.message.includes('does not exist')) {
+          return NextResponse.json(
+            { error: "Ticket or related data not found. It may have been deleted." },
+            { status: 404 }
+          );
+        }
+      }
+      
+      // Re-throw for generic error handling
+      throw transactionError;
+    }
 
     // Check if ticket belongs to a group and if all tickets in that group are now closed
     // If so, archive the group

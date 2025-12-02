@@ -40,6 +40,17 @@ export async function createTicket(args: {
     throw new Error("Only students and committee members can create tickets");
   }
 
+  // Edge case: Check if student is deactivated (students only)
+  // We treat users whose external_id has been prefixed with DELETED_ (via Clerk webhook)
+  // as deactivated and prevent new ticket creation.
+  if (role === "student") {
+    if (typeof dbUser.external_id === "string" && dbUser.external_id.startsWith("DELETED_")) {
+      throw new Error(
+        "Your account has been deactivated. Please contact support to reactivate your account."
+      );
+    }
+  }
+
   // Prepare profile updates (will be applied inside transaction)
   let profileUpdateNeeded = false;
   const userUpdates: Record<string, unknown> = {};
@@ -146,40 +157,82 @@ export async function createTicket(args: {
     throw new Error("Category not found");
   }
 
+  // Validate category is active
+  const { categories: categoriesSchema } = await import("@/db/schema");
+  const [categoryWithActive] = await db
+    .select({ is_active: categoriesSchema.is_active })
+    .from(categoriesSchema)
+    .where(eq(categoriesSchema.id, categoryRecord.id))
+    .limit(1);
+  
+  if (!categoryWithActive?.is_active) {
+    throw new Error("Category is inactive and cannot be used for ticket creation");
+  }
+
   // Subcategory resolution (optional) - can't parallelize as it depends on categoryRecord
+  // Edge case: Validate subcategory belongs to category and is active
   let subcategoryRecord: { id: number; name: string } | undefined;
   if (payload.subcategoryId) {
     const [s] = await db
-      .select({ id: subcategories.id, name: subcategories.name })
+      .select({ id: subcategories.id, name: subcategories.name, is_active: subcategories.is_active })
       .from(subcategories)
       .where(and(eq(subcategories.id, payload.subcategoryId), eq(subcategories.category_id, categoryRecord.id)))
       .limit(1);
-    subcategoryRecord = s;
+    if (s && s.is_active) {
+      subcategoryRecord = { id: s.id, name: s.name };
+    } else if (s && !s.is_active) {
+      throw new Error("Subcategory is inactive and cannot be used for ticket creation");
+    } else if (!s && payload.subcategoryId) {
+      // Edge case: Subcategory ID provided but doesn't exist or doesn't belong to category
+      throw new Error("Subcategory not found or does not belong to the selected category");
+    }
   } else if (payload.subcategory) {
     const [s] = await db
-      .select({ id: subcategories.id, name: subcategories.name })
+      .select({ id: subcategories.id, name: subcategories.name, is_active: subcategories.is_active })
       .from(subcategories)
       .where(and(eq(subcategories.name, payload.subcategory), eq(subcategories.category_id, categoryRecord.id)))
       .limit(1);
-    subcategoryRecord = s;
+    if (s && s.is_active) {
+      subcategoryRecord = { id: s.id, name: s.name };
+    } else if (s && !s.is_active) {
+      throw new Error("Subcategory is inactive and cannot be used for ticket creation");
+    } else if (!s && payload.subcategory) {
+      // Edge case: Subcategory name provided but doesn't exist or doesn't belong to category
+      throw new Error("Subcategory not found or does not belong to the selected category");
+    }
   }
 
   // Sub-subcategory resolution (optional) - depends on subcategoryRecord
+  // Edge case: Validate sub-subcategory belongs to subcategory and is active
   let subSubcategoryRecord: { id: number; name: string } | undefined;
   if (payload.subSubcategoryId && subcategoryRecord) {
     const [ss] = await db
-      .select({ id: sub_subcategories.id, name: sub_subcategories.name })
+      .select({ id: sub_subcategories.id, name: sub_subcategories.name, is_active: sub_subcategories.is_active })
       .from(sub_subcategories)
       .where(and(eq(sub_subcategories.id, payload.subSubcategoryId), eq(sub_subcategories.subcategory_id, subcategoryRecord.id)))
       .limit(1);
-    subSubcategoryRecord = ss;
+    if (ss && ss.is_active) {
+      subSubcategoryRecord = { id: ss.id, name: ss.name };
+    } else if (ss && !ss.is_active) {
+      throw new Error("Sub-subcategory is inactive and cannot be used for ticket creation");
+    } else if (!ss && payload.subSubcategoryId) {
+      // Edge case: Sub-subcategory ID provided but doesn't exist or doesn't belong to subcategory
+      throw new Error("Sub-subcategory not found or does not belong to the selected subcategory");
+    }
   } else if (payload.subSubcategory && subcategoryRecord) {
     const [ss] = await db
-      .select({ id: sub_subcategories.id, name: sub_subcategories.name })
+      .select({ id: sub_subcategories.id, name: sub_subcategories.name, is_active: sub_subcategories.is_active })
       .from(sub_subcategories)
       .where(and(eq(sub_subcategories.name, payload.subSubcategory), eq(sub_subcategories.subcategory_id, subcategoryRecord.id)))
       .limit(1);
-    subSubcategoryRecord = ss;
+    if (ss && ss.is_active) {
+      subSubcategoryRecord = { id: ss.id, name: ss.name };
+    } else if (ss && !ss.is_active) {
+      throw new Error("Sub-subcategory is inactive and cannot be used for ticket creation");
+    } else if (!ss && payload.subSubcategory) {
+      // Edge case: Sub-subcategory name provided but doesn't exist or doesn't belong to subcategory
+      throw new Error("Sub-subcategory not found or does not belong to the selected subcategory");
+    }
   }
 
   // Build metadata object (store both ids and names)
@@ -256,6 +309,31 @@ export async function createTicket(args: {
     extra: payload.extra || undefined,
   };
 
+  // Edge case: Validate metadata size (PostgreSQL JSONB limit is ~1GB, but we'll enforce a reasonable limit)
+  // This prevents extremely large metadata from causing performance issues
+  const METADATA_SIZE_LIMIT = 10 * 1024 * 1024; // 10MB limit
+  try {
+    const metadataJson = JSON.stringify(metadata);
+    const metadataSize = Buffer.byteLength(metadataJson, 'utf8');
+    if (metadataSize > METADATA_SIZE_LIMIT) {
+      const { logCriticalError } = await import("@/lib/monitoring/alerts");
+      logCriticalError(
+        "Ticket metadata exceeds size limit",
+        new Error(`Metadata size ${metadataSize} bytes exceeds limit of ${METADATA_SIZE_LIMIT} bytes`),
+        { categoryId: categoryRecord.id, metadataSize, limit: METADATA_SIZE_LIMIT }
+      );
+      throw new Error("Ticket data is too large. Please reduce the number of images or details and try again.");
+    }
+  } catch (sizeCheckError) {
+    // If JSON.stringify fails, metadata is invalid
+    if (sizeCheckError instanceof Error && sizeCheckError.message.includes("too large")) {
+      throw sizeCheckError;
+    }
+    // Otherwise, it's a serialization error - log and throw
+    console.error("[createTicket] Error validating metadata size:", sizeCheckError);
+    throw new Error("Invalid ticket data format. Please try again.");
+  }
+
   // Determine assignment (SPOC or super admin)
   // Pre-fetch super admin user ID in parallel with SPOC lookup for faster fallback
   let assignedUserId: string | null = null;
@@ -309,30 +387,145 @@ export async function createTicket(args: {
   }
 
   // Final fallback if still no assignment
-  if (!assignedUserId) {
-    assignedUserId = await superAdminPromise;
-  }
+    if (!assignedUserId) {
+      assignedUserId = await superAdminPromise;
+      if (!assignedUserId) {
+        const { logCriticalError } = await import("@/lib/monitoring/alerts");
+        logCriticalError(
+          "No super admin found during ticket creation",
+          new Error("System has no super admin - tickets cannot be assigned"),
+          { category: categoryRecord.name, categoryId: categoryRecord.id }
+        );
+        // Ticket will be created without assignment - this should be monitored and alerted
+      }
+    }
 
   // Sanitize description
   const safeDescription = sanitizeText(payload.description || null);
-
-  // Get status_id for OPEN status
-  const statusId = await getStatusIdByValue(TICKET_STATUS.OPEN);
-  if (!statusId) {
-    throw new Error(`Status "${TICKET_STATUS.OPEN}" not found in ticket_statuses table`);
+  
+  // Edge case: Validate description length (enforce at DB level, not just client)
+  const DESCRIPTION_MAX_LENGTH = 20000; // Match validation schema
+  if (safeDescription && safeDescription.length > DESCRIPTION_MAX_LENGTH) {
+    throw new Error(`Description exceeds maximum length of ${DESCRIPTION_MAX_LENGTH} characters. Please shorten your description.`);
   }
 
+  // Get status_id for OPEN status
+  let statusId = await getStatusIdByValue(TICKET_STATUS.OPEN);
+    if (!statusId) {
+      // CRITICAL: Status not found - this should never happen in production
+      // Log error and try to find any active status as fallback
+      const { logCriticalError } = await import("@/lib/monitoring/alerts");
+      logCriticalError(
+        "OPEN status not found in database",
+        new Error(`Status "${TICKET_STATUS.OPEN}" not found in ticket_statuses table`),
+        { category: categoryRecord.name, categoryId: categoryRecord.id }
+      );
+      
+      const { ticket_statuses } = await import("@/db/schema");
+      const [fallbackStatus] = await db
+        .select({ id: ticket_statuses.id })
+        .from(ticket_statuses)
+        .where(eq(ticket_statuses.is_active, true))
+        .limit(1);
+      if (!fallbackStatus) {
+        throw new Error(`No active ticket status found in database. System configuration error.`);
+      }
+      console.warn(`[createTicket] Using fallback status ID ${fallbackStatus.id} instead of "${TICKET_STATUS.OPEN}"`);
+      statusId = fallbackStatus.id; // Use fallback status but this should be investigated
+    }
+
   // Process attachments from images array
+  // Edge case: Validate image URLs are valid before storing
   let attachments: Array<{ url: string; type: string }> | null = null;
   if (payload.images && payload.images.length > 0) {
-    attachments = payload.images.map(url => ({
-      url: url,
-      type: 'image'
-    }));
+    // Validate each image URL is a valid string and looks like a URL
+    const validImageUrls = payload.images.filter((url): url is string => {
+      if (typeof url !== 'string' || url.trim().length === 0) {
+        console.warn(`[createTicket] Invalid image URL skipped: ${url}`);
+        return false;
+      }
+      // Basic URL validation (starts with http/https or is a Cloudinary URL)
+      const trimmedUrl = url.trim();
+      if (trimmedUrl.startsWith('http://') || trimmedUrl.startsWith('https://') || trimmedUrl.startsWith('cloudinary://')) {
+        return true;
+      }
+      console.warn(`[createTicket] Image URL doesn't look valid: ${trimmedUrl}`);
+      return false;
+    });
+
+    if (validImageUrls.length !== payload.images.length) {
+      console.warn(`[createTicket] Some image URLs were invalid. Valid: ${validImageUrls.length}, Total: ${payload.images.length}`);
+    }
+
+    if (validImageUrls.length > 0) {
+      attachments = validImageUrls.map(url => ({
+        url: url.trim(),
+        type: 'image'
+      }));
+    }
   }
 
   // Use a DB transaction to ensure ticket + outbox + profile updates consistency
-  const result = await db.transaction(async (tx) => {
+  // Wrap in try-catch to handle transaction errors gracefully
+  let result;
+  try {
+    result = await db.transaction(async (tx) => {
+    // Edge case: Re-validate category exists and is active right before transaction
+    // This prevents race condition where category is deleted between form submission and ticket creation
+    const [revalidatedCategory] = await tx
+      .select({ id: categories.id, name: categories.name, is_active: categories.is_active })
+      .from(categories)
+      .where(eq(categories.id, categoryRecord.id))
+      .limit(1);
+    
+    if (!revalidatedCategory) {
+      throw new Error("Category was deleted. Please refresh the page and select a different category.");
+    }
+    
+    if (!revalidatedCategory.is_active) {
+      throw new Error("Category was deactivated. Please refresh the page and select a different category.");
+    }
+    
+    // Edge case: Re-validate subcategory if provided
+    if (subcategoryRecord) {
+      const [revalidatedSubcategory] = await tx
+        .select({ id: subcategories.id, is_active: subcategories.is_active })
+        .from(subcategories)
+        .where(and(
+          eq(subcategories.id, subcategoryRecord.id),
+          eq(subcategories.category_id, categoryRecord.id)
+        ))
+        .limit(1);
+      
+      if (!revalidatedSubcategory) {
+        throw new Error("Subcategory was deleted. Please refresh the page and select a different subcategory.");
+      }
+      
+      if (!revalidatedSubcategory.is_active) {
+        throw new Error("Subcategory was deactivated. Please refresh the page and select a different subcategory.");
+      }
+    }
+    
+    // Edge case: Re-validate sub-subcategory if provided
+    if (subSubcategoryRecord && subcategoryRecord) {
+      const [revalidatedSubSubcategory] = await tx
+        .select({ id: sub_subcategories.id, is_active: sub_subcategories.is_active })
+        .from(sub_subcategories)
+        .where(and(
+          eq(sub_subcategories.id, subSubcategoryRecord.id),
+          eq(sub_subcategories.subcategory_id, subcategoryRecord.id)
+        ))
+        .limit(1);
+      
+      if (!revalidatedSubSubcategory) {
+        throw new Error("Sub-subcategory was deleted. Please refresh the page and select a different sub-subcategory.");
+      }
+      
+      if (!revalidatedSubSubcategory.is_active) {
+        throw new Error("Sub-subcategory was deactivated. Please refresh the page and select a different sub-subcategory.");
+      }
+    }
+    
     // Update user profile if needed (inside transaction for atomicity)
     if (profileUpdateNeeded) {
       if (Object.keys(userUpdates).length > 0) {
@@ -380,9 +573,36 @@ export async function createTicket(args: {
       attempts: 0,
     });
 
-    console.log(`[createTicket] ✅ Created ticket #${newTicket.id} and outbox event for notifications`);
-    return newTicket;
-  });
+      console.log(`[createTicket] ✅ Created ticket #${newTicket.id} and outbox event for notifications`);
+      return newTicket;
+    });
+  } catch (transactionError) {
+    // Handle transaction errors (deadlocks, timeouts, constraint violations)
+    console.error(`[createTicket] Transaction failed:`, transactionError);
+    
+    // Check for specific error types
+    if (transactionError instanceof Error) {
+      // Deadlock or timeout - could retry, but for now just throw
+      if (transactionError.message.includes('deadlock') || transactionError.message.includes('timeout')) {
+        throw new Error("Database operation timed out. Please try again.");
+      }
+      // Foreign key violation - data integrity issue
+      if (transactionError.message.includes('foreign key') || 'code' in transactionError && transactionError.code === '23503') {
+        throw new Error("Invalid reference. One of the selected categories or admins no longer exists.");
+      }
+      // Unique constraint violation - duplicate
+      if (transactionError.message.includes('unique') || 'code' in transactionError && transactionError.code === '23505') {
+        throw new Error("A ticket with this information already exists. Please check and try again.");
+      }
+    }
+    
+    // Re-throw with original error for logging
+    throw transactionError;
+  }
+
+  if (!result) {
+    throw new Error("Ticket creation failed - no result returned from transaction");
+  }
 
   console.log(`[createTicket] ✅ Transaction completed for ticket #${result.id}`);
   return result;

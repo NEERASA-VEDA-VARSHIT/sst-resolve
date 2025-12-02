@@ -507,101 +507,103 @@ export function TicketGrouping({ selectedTicketIds, onGroupCreated }: TicketGrou
           </div>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {displayedGroups.map((group) => (
-                <Card 
-                  key={group.id} 
-                  className={`relative transition-all hover:shadow-md ${group.is_archived ? "opacity-60 border-dashed" : "hover:border-primary/50"}`}
-                >
-                  <CardHeader>
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <CardTitle className="text-base">{group.name}</CardTitle>
-                          {group.is_archived && (
-                            <Badge variant="secondary" className="text-xs">
-                              <Archive className="w-3 h-3 mr-1" />
-                              Archived
+              <Card 
+                key={group.id} 
+                className={`relative transition-all hover:shadow-md ${group.is_archived ? "opacity-60 border-dashed" : "hover:border-primary/50"}`}
+              >
+                <CardHeader>
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <CardTitle className="text-base">{group.name}</CardTitle>
+                        {group.is_archived && (
+                          <Badge variant="secondary" className="text-xs">
+                            <Archive className="w-3 h-3 mr-1" />
+                            Archived
+                          </Badge>
+                        )}
+                      </div>
+                      {group.description && (
+                        <p className="text-sm text-muted-foreground mt-1">{group.description}</p>
+                      )}
+                    </div>
+                    {!group.is_archived && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteGroup(group.id)}
+                        className="h-8 w-8 p-0"
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Badge variant="secondary">
+                        {group.ticketCount} ticket{group.ticketCount !== 1 ? "s" : ""}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">
+                        {group.created_at ? new Date(group.created_at).toLocaleDateString() : "N/A"}
+                      </span>
+                    </div>
+                    <div className="space-y-1.5">
+                      {group.tickets.slice(0, 3).map((ticket) => (
+                        <div key={ticket.id} className="text-sm flex items-center justify-between p-1.5 rounded-md hover:bg-accent/50 transition-colors">
+                          <span className="text-muted-foreground font-mono">#{ticket.id}</span>
+                          {ticket.category_name && (
+                            <Badge variant="outline" className="text-xs">
+                              {ticket.category_name}
                             </Badge>
                           )}
                         </div>
-                        {group.description && (
-                          <p className="text-sm text-muted-foreground mt-1">{group.description}</p>
-                        )}
-                      </div>
-                      {!group.is_archived && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleDeleteGroup(group.id)}
-                          className="h-8 w-8 p-0"
-                        >
-                          <X className="w-4 h-4" />
-                        </Button>
+                      ))}
+                      {group.tickets.length > 3 && (
+                        <p className="text-xs text-muted-foreground pl-1.5">
+                          +{group.tickets.length - 3} more ticket{group.tickets.length - 3 !== 1 ? "s" : ""}
+                        </p>
                       )}
                     </div>
-                  </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Badge variant="secondary">
-                      {group.ticketCount} ticket{group.ticketCount !== 1 ? "s" : ""}
-                    </Badge>
-                    <span className="text-xs text-muted-foreground">
-                      {group.created_at ? new Date(group.created_at).toLocaleDateString() : "N/A"}
-                    </span>
-                  </div>
-                  <div className="space-y-1.5">
-                    {group.tickets.slice(0, 3).map((ticket) => (
-                      <div key={ticket.id} className="text-sm flex items-center justify-between p-1.5 rounded-md hover:bg-accent/50 transition-colors">
-                        <span className="text-muted-foreground font-mono">#{ticket.id}</span>
-                        <Badge variant="outline" className="text-xs">
-                          {ticket.category_name || "Unknown"}
-                        </Badge>
+                    {!group.is_archived && (
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-1"
+                          onClick={() => {
+                            setSelectedGroupForManagement(group);
+                            setIsManageTicketsDialogOpen(true);
+                          }}
+                        >
+                          <Settings className="w-4 h-4 mr-2" />
+                          Manage Tickets
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-1"
+                          onClick={() => {
+                            setSelectedGroupId(group.id);
+                            setIsBulkActionDialogOpen(true);
+                          }}
+                        >
+                          <MessageSquare className="w-4 h-4 mr-2" />
+                          Bulk Actions
+                        </Button>
                       </div>
-                    ))}
-                    {group.tickets.length > 3 && (
-                      <p className="text-xs text-muted-foreground pl-1.5">
-                        +{group.tickets.length - 3} more ticket{group.tickets.length - 3 !== 1 ? "s" : ""}
-                      </p>
+                    )}
+                    {group.is_archived && (
+                      <div className="text-xs text-center text-muted-foreground py-2">
+                        All tickets resolved
+                      </div>
                     )}
                   </div>
-                  {!group.is_archived && (
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="flex-1"
-                        onClick={() => {
-                          setSelectedGroupForManagement(group);
-                          setIsManageTicketsDialogOpen(true);
-                        }}
-                      >
-                        <Settings className="w-4 h-4 mr-2" />
-                        Manage Tickets
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="flex-1"
-                        onClick={() => {
-                          setSelectedGroupId(group.id);
-                          setIsBulkActionDialogOpen(true);
-                        }}
-                      >
-                        <MessageSquare className="w-4 h-4 mr-2" />
-                        Bulk Actions
-                      </Button>
-                    </div>
-                  )}
-                  {group.is_archived && (
-                    <div className="text-xs text-center text-muted-foreground py-2">
-                      All tickets resolved
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         </div>
       )}
 
@@ -623,4 +625,3 @@ export function TicketGrouping({ selectedTicketIds, onGroupCreated }: TicketGrou
     </div>
   );
 }
-

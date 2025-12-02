@@ -3,6 +3,8 @@
  * 
  * List all students with search and filter
  * SuperAdmin-only endpoint
+ *
+ * Columns: name, email, hostel, room, section, batch, blood_group, phone
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -44,7 +46,6 @@ export async function GET(request: NextRequest) {
 				or(
 					ilike(users.full_name, `%${search}%`),
 					ilike(users.email, `%${search}%`),
-					ilike(students.roll_no, `%${search}%`),
 				),
 			);
 		}
@@ -66,12 +67,11 @@ export async function GET(request: NextRequest) {
 				email: users.email,
 				full_name: users.full_name,
 				phone: users.phone,
-				roll_no: students.roll_no,
 				room_no: students.room_no,
 				hostel: hostels.name, // Resolved from join
 				class_section: class_sections.name, // Resolved from join
 				batch_year: batches.batch_year, // Resolved from join
-				department: students.department,
+				blood_group: students.blood_group,
 				created_at: students.created_at,
 				updated_at: students.updated_at,
 			})
@@ -81,7 +81,7 @@ export async function GET(request: NextRequest) {
 			.leftJoin(class_sections, eq(students.class_section_id, class_sections.id))
 			.leftJoin(batches, eq(students.batch_id, batches.id))
 			.where(whereConditions.length > 0 ? and(...whereConditions) : undefined)
-			.orderBy(sql`${batches.batch_year} DESC NULLS LAST, ${students.roll_no} ASC`)
+			.orderBy(sql`${batches.batch_year} DESC NULLS LAST, ${users.full_name} ASC`)
 			.limit(limit)
 			.offset(offset);
 

@@ -237,13 +237,12 @@ export function StudentBulkUpload() {
 						<ul className="list-disc list-inside text-muted-foreground ml-2">
 							<li>email - Must be unique and valid format</li>
 							<li>full_name - Student&apos;s complete name</li>
-							<li>user_number - Roll number (e.g., 24bcs10005)</li>
-							<li>mobile - 10 digit phone number</li>
-							<li>room_number - Room number</li>
 							<li>hostel - Must match an active hostel name (case-insensitive)</li>
 							<li>class_section - Must match an active class section (e.g., A, B, C, D)</li>
 							<li>batch_year - Year (e.g., 2027) - Must match an active batch</li>
-							<li>department - Department name</li>
+							<li>blood_group - One of A+, A-, B+, B-, O+, O-, AB+, AB-</li>
+							<li>mobile - 10 digit phone number (required)</li>
+							<li>room_number - Optional; if provided, max 16 chars</li>
 						</ul>
 					</div>
 					<div className="pt-2 border-t">

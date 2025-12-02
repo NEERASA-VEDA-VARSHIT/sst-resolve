@@ -9,7 +9,6 @@ import { db, tickets, categories, users, roles, students, hostels, ticket_status
 import { eq, aliasedTable } from "drizzle-orm";
 import { AdminActions } from "@/components/tickets/AdminActions";
 import { CommitteeTagging } from "@/components/admin/CommitteeTagging";
-import { SlackThreadView } from "@/components/tickets/SlackThreadView";
 import { AdminCommentComposer } from "@/components/tickets/AdminCommentComposer";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
@@ -22,7 +21,6 @@ import type { TicketMetadata } from "@/db/inferred-types";
 import { buildTimeline } from "@/lib/ticket/buildTimeline";
 import { normalizeStatusForComparison } from "@/lib/utils";
 import { getTicketStatuses, buildProgressMap } from "@/lib/status/getTicketStatuses";
-import { buildStatusDisplay } from "@/conf/constants";
 import { getCategoryProfileFields, getCategorySchema } from "@/lib/category/categories";
 import { resolveProfileFields } from "@/lib/ticket/profileFieldResolver";
 import { extractDynamicFields } from "@/lib/ticket/formatDynamicFields";
@@ -57,6 +55,8 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
     .select({
       id: tickets.id,
       status_value: ticket_statuses.value,
+      status_label: ticket_statuses.label,
+      status_badge_color: ticket_statuses.badge_color,
       description: tickets.description,
       location: tickets.location,
       created_by: tickets.created_by,
@@ -95,10 +95,20 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
     // Ignore metadata parsing errors
   }
 
+  // Build status display from DB data
+  const statusValue = ticketRows[0].status_value;
+  const statusDisplay = statusValue
+    ? {
+        value: statusValue,
+        label: ticketRows[0].status_label || statusValue,
+        badge_color: ticketRows[0].status_badge_color || "default",
+      }
+    : null;
+
   const ticket = {
     ...ticketRows[0],
     creator_name: ticketRows[0].creator_full_name || null,
-    status: buildStatusDisplay(ticketRows[0].status_value || undefined),
+    status: statusDisplay,
     slack_thread_id: slackThreadId,
   };
 
@@ -690,17 +700,6 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
             </CardContent>
           </Card>
 
-          {/* Slack Thread */}
-          {ticket.slack_thread_id && (
-            <SlackThreadView
-              threadId={ticket.slack_thread_id}
-              channel={
-                (slackConfig.channels.hostel as string) ||
-                (Object.values(slackConfig.channels.hostels as Record<string, string> || {})[0]) ||
-                "#tickets-velankani"
-              }
-            />
-          )}
         </div>
 
         {/* Sidebar */}

@@ -47,10 +47,8 @@ export async function GET(
 			.select({
 				student_id: students.id,
 				user_id: students.user_id,
-				roll_no: students.roll_no,
 				room_no: students.room_no,
 				batch_year: batches.batch_year,
-				department: students.department,
 				hostel_id: students.hostel_id,
 				batch_id: students.batch_id,
 				class_section_id: students.class_section_id,
@@ -243,7 +241,6 @@ export async function DELETE(
 			message: "Student deleted successfully",
 			deleted: {
 				student_id: studentId,
-				roll_no: student.roll_no,
 				user_deleted: neverLoggedIn,
 			},
 			warning: neverLoggedIn ? "User record also deleted (never logged in)" : "User record preserved"

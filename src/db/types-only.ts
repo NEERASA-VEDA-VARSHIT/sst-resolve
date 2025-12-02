@@ -45,16 +45,15 @@ export interface Ticket {
  */
 export interface StudentProfile {
 	id: number;
-	user_number: string;
 	full_name: string;
 	email: string;
-	room_number: string | null;
 	mobile: string | null;
+	room_number: string | null;
 	hostel: string | null;
 	hostel_id: number | null;
 	class_section: string | null;
 	batch_year: number | null;
-	department: string | null;
+	blood_group: string | null;
 	created_at: string;
 	updated_at: string;
 }

@@ -19,6 +19,17 @@ export async function uploadImage(
   file: Buffer | string,
   folder: string = 'tickets'
 ): Promise<{ secure_url: string; public_id: string }> {
+  // Edge case: Validate Cloudinary configuration before attempting upload
+  if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+    const { logCriticalError } = await import("@/lib/monitoring/alerts");
+    logCriticalError(
+      "Cloudinary configuration missing",
+      new Error("Cloudinary environment variables not configured"),
+      { cloudName: !!process.env.CLOUDINARY_CLOUD_NAME, apiKey: !!process.env.CLOUDINARY_API_KEY, apiSecret: !!process.env.CLOUDINARY_API_SECRET }
+    );
+    throw new Error("Image upload service is not configured. Please contact support.");
+  }
+
   try {
     const uploadOptions: Record<string, unknown> = {
       folder: `sst-resolve/${folder}`,

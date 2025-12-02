@@ -211,11 +211,23 @@ export async function POST(request: NextRequest) {
         }
 
         // Update user with role and contact info
-        await db.update(users).set({
+        // Only update phone if whatsappNumber is provided and valid, otherwise keep existing value
+        const updateData: { role_id: number; phone?: string; updated_at: Date } = {
             role_id: roleRecord.id,
-            phone: whatsappNumber || targetUser.phone || null,
             updated_at: new Date(),
-        }).where(eq(users.id, targetUser.id));
+        };
+        if (whatsappNumber !== undefined && whatsappNumber !== null && whatsappNumber !== "" && typeof whatsappNumber === "string") {
+            updateData.phone = whatsappNumber;
+        } else if (targetUser.phone) {
+            updateData.phone = targetUser.phone;
+        }
+        
+        await db.update(users).set(updateData).where(eq(users.id, targetUser.id));
+
+        // Use provided slackUserId or empty string as default (NOT NULL constraint)
+        const finalSlackUserId = (slackUserId && typeof slackUserId === "string" && slackUserId.trim() !== "")
+            ? slackUserId.trim()
+            : "";
 
         // Update or create admin profile with domain, scope, and slack (all required)
         await db
@@ -224,14 +236,14 @@ export async function POST(request: NextRequest) {
                 user_id: targetUser.id,
                 primary_domain_id: domainRecord.id,
                 primary_scope_id: scopeRecord.id,
-                slack_user_id: slackUserId || null,
+                slack_user_id: finalSlackUserId,
             })
             .onConflictDoUpdate({
                 target: admin_profiles.user_id,
                 set: {
                     primary_domain_id: domainRecord.id,
                     primary_scope_id: scopeRecord.id,
-                    slack_user_id: slackUserId || null,
+                    slack_user_id: finalSlackUserId,
                     updated_at: new Date(),
                 },
             });
@@ -302,9 +314,24 @@ export async function PATCH(request: NextRequest) {
             updated_at: new Date(),
         };
         if (roleId) updateData.role_id = roleId;
-        if (whatsappNumber !== undefined) updateData.phone = whatsappNumber;
+        // Only update phone if whatsappNumber is a non-empty string (phone column has NOT NULL constraint)
+        if (whatsappNumber !== undefined && whatsappNumber !== null && whatsappNumber !== "" && typeof whatsappNumber === "string") {
+            updateData.phone = whatsappNumber;
+        }
 
         await db.update(users).set(updateData).where(eq(users.id, id));
+
+        // Check if admin profile exists to preserve existing slack_user_id if not provided
+        const [existingProfile] = await db
+            .select({ slack_user_id: admin_profiles.slack_user_id })
+            .from(admin_profiles)
+            .where(eq(admin_profiles.user_id, id))
+            .limit(1);
+
+        // Use provided slackUserId, or existing value, or empty string as default (NOT NULL constraint)
+        const finalSlackUserId = (slackUserId && typeof slackUserId === "string" && slackUserId.trim() !== "")
+            ? slackUserId.trim()
+            : (existingProfile?.slack_user_id || "");
 
         // Update admin profile with domain, scope, and slack (all required)
         await db
@@ -313,14 +340,14 @@ export async function PATCH(request: NextRequest) {
                 user_id: id,
                 primary_domain_id: domainId,
                 primary_scope_id: scopeId,
-                slack_user_id: slackUserId || null,
+                slack_user_id: finalSlackUserId,
             })
             .onConflictDoUpdate({
                 target: admin_profiles.user_id,
                 set: {
                     primary_domain_id: domainId,
                     primary_scope_id: scopeId,
-                    slack_user_id: slackUserId || null,
+                    slack_user_id: finalSlackUserId,
                     updated_at: new Date(),
                 },
             });

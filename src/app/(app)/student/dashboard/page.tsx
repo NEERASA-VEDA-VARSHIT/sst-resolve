@@ -192,6 +192,7 @@ export default async function StudentDashboardPage({
         category_id: tickets.category_id,
         subcategory_id: tickets.subcategory_id,
         sub_subcategory_id: tickets.sub_subcategory_id,
+        scope_id: tickets.scope_id,
         created_by: tickets.created_by,
         assigned_to: tickets.assigned_to,
         escalation_level: tickets.escalation_level,
@@ -361,10 +362,12 @@ export default async function StudentDashboardPage({
       title: ticket.title ?? null,
       description: ticket.description ?? null,
       location: ticket.location ?? null,
+      status_id: ticket.status_id ?? null,
       status: ticket.status ?? null,
       category_id: ticket.category_id ?? null,
       subcategory_id: ticket.subcategory_id ?? null,
       sub_subcategory_id: ticket.sub_subcategory_id ?? null,
+      scope_id: ticket.scope_id ?? null,
       created_by: ticket.created_by ?? null,
       assigned_to: ticket.assigned_to ?? null,
       escalation_level: Number(ticket.escalation_level) || 0,
@@ -376,14 +379,6 @@ export default async function StudentDashboardPage({
       category_name: ticket.category_name ?? null,
       creator_name: ticket.creator_full_name ?? null,
       creator_email: ticket.creator_email ?? null,
-      rating: null,
-      feedback_type: null,
-      rating_submitted: null,
-      feedback: null,
-      admin_link: null,
-      student_link: null,
-      slack_thread_id: null,
-      external_ref: null,
     };
   }).filter((ticket): ticket is NonNullable<typeof ticket> => ticket !== null); // Remove any null entries
 
@@ -395,24 +390,14 @@ export default async function StudentDashboardPage({
   const startIndex = totalCount > 0 ? offset + 1 : 0;
   const endIndex = Math.min(offset + allTickets.length, totalCount);
 
-  // Ensure stats is a valid object with default values
-  const stats = statsResult[0] || {
-    total: 0,
-    open: 0,
-    inProgress: 0,
-    awaitingStudent: 0,
-    resolved: 0,
-    escalated: 0,
-  };
-
-  // Ensure stats values are numbers (not null/undefined)
+  // Ensure stats values are numbers with safe defaults
   const safeStats = {
-    total: Number(stats.total) || 0,
-    open: Number(stats.open) || 0,
-    inProgress: Number(stats.inProgress) || 0,
-    awaitingStudent: Number(stats.awaitingStudent) || 0,
-    resolved: Number(stats.resolved) || 0,
-    escalated: Number(stats.escalated) || 0,
+    total: Number(statsResult[0]?.total) || 0,
+    open: Number(statsResult[0]?.open) || 0,
+    inProgress: Number(statsResult[0]?.inProgress) || 0,
+    awaitingStudent: Number(statsResult[0]?.awaitingStudent) || 0,
+    resolved: Number(statsResult[0]?.resolved) || 0,
+    escalated: Number(statsResult[0]?.escalated) || 0,
   };
 
   // Test serialization before rendering to catch any issues early

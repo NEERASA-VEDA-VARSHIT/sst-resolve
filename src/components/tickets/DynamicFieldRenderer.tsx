@@ -97,7 +97,18 @@ export function DynamicFieldRenderer({
           />
         );
 
+      case "multi_select":
+      case "select_multiple":
+      case "multiselect":
       case "select": {
+        const rules = (field.validation_rules || {}) as { multiSelect?: boolean };
+        const normalizedType = (field.field_type || "").toLowerCase();
+        const allowMultiple =
+          rules?.multiSelect === true ||
+          normalizedType === "multi_select" ||
+          normalizedType === "multiselect" ||
+          normalizedType === "select_multiple";
+
         // Filter valid options
         const validOptions = (field.options ?? [])
           .filter(option => option && option.value && typeof option.value === 'string' && option.value.trim() !== "");
@@ -117,6 +128,61 @@ export function DynamicFieldRenderer({
           return true;
         });
         
+        const buildOptionKey = (option: FieldOption, idx: number) => {
+          const fieldId = String(field?.id ?? 0);
+          const optionId = (option as { id?: number }).id;
+          if (optionId !== undefined && optionId !== null) {
+            return `opt-${fieldId}-${optionId}`;
+          }
+          const valueSafe = option.value
+            ? String(option.value).replace(/[^a-zA-Z0-9]/g, "_").slice(0, 30)
+            : `val${idx}`;
+          return `opt-${fieldId}-idx${idx}-${valueSafe}`;
+        };
+        
+        if (allowMultiple) {
+          const selectedValues = Array.isArray(value)
+            ? value.map((v) => String(v))
+            : value != null
+            ? [String(value)]
+            : [];
+
+          const toggleValue = (optionValue: string, checked: boolean) => {
+            const normalizedOption = String(optionValue);
+            let next = selectedValues.filter((v) => v !== normalizedOption);
+            if (checked) {
+              next = [...next, normalizedOption];
+            }
+            onChange(next);
+          };
+
+          return (
+            <div className="space-y-2">
+              {uniqueOptions.map((option, idx) => {
+                const optionValue = option.value;
+                const isChecked = selectedValues.includes(optionValue);
+                return (
+                  <label
+                    key={buildOptionKey(option, idx)}
+                    className="flex items-center gap-2 text-sm"
+                  >
+                    <Checkbox
+                      checked={isChecked}
+                      onCheckedChange={(checked) =>
+                        toggleValue(optionValue, checked === true)
+                      }
+                    />
+                    <span>{option.label || option.value}</span>
+                  </label>
+                );
+              })}
+              {placeholder && (
+                <p className="text-xs text-muted-foreground">{placeholder}</p>
+              )}
+            </div>
+          );
+        }
+
         // Normalize the current value to match option values
         // Convert value to string and trim, then find matching option
         const normalizedValue = value != null ? String(value).trim() : "";
@@ -141,32 +207,8 @@ export function DynamicFieldRenderer({
             </SelectTrigger>
             <SelectContent>
               {uniqueOptions.map((option, idx) => {
-                // Generate a truly unique key that cannot be misinterpreted
-                // Priority: Use option.id if available (most reliable), otherwise use field.id + index + value
-                const fieldId = String(field?.id ?? 0);
-                const optionId = (option as { id?: number }).id;
-                
-                // Create a unique key: prefer option ID, fallback to composite key with index
-                // Always use index as part of the key to ensure uniqueness even if IDs are missing
-                let uniqueKey: string;
-                if (optionId !== undefined && optionId !== null) {
-                  // Use option ID as primary key (most reliable)
-                  uniqueKey = `opt-${fieldId}-${optionId}`;
-                } else {
-                  // Fallback: use field ID + index + value for uniqueness
-                  // Index ensures uniqueness even if values are the same
-                  const valueSafe = option.value ? String(option.value).replace(/[^a-zA-Z0-9]/g, '_').slice(0, 30) : `val${idx}`;
-                  uniqueKey = `opt-${fieldId}-idx${idx}-${valueSafe}`;
-                }
-                
-                // Ensure key is always a valid non-empty string
-                if (!uniqueKey || typeof uniqueKey !== 'string' || uniqueKey.trim().length === 0) {
-                  // Last resort: use field ID + index + timestamp
-                  uniqueKey = `opt-${fieldId}-idx${idx}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
-                }
-                
                 return (
-                  <SelectItem key={uniqueKey} value={option.value}>
+                  <SelectItem key={buildOptionKey(option, idx)} value={option.value}>
                     {option.label || option.value}
                   </SelectItem>
                 );

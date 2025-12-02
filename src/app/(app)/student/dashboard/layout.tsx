@@ -2,6 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { isProfileComplete } from "@/lib/auth/profile-check";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
+import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 
 export default async function StudentDashboardLayout({
   children,
@@ -20,6 +21,24 @@ export default async function StudentDashboardLayout({
   if (!dbUser.id) {
     console.error("[StudentDashboardLayout] Missing dbUser.id", dbUser);
     redirect("/");
+  }
+
+  // Get role from database (single source of truth)
+  const role = await getUserRoleFromDB(userId);
+
+  // Redirect committee members to their own dashboard
+  if (role === "committee") {
+    redirect("/committee/dashboard");
+  }
+
+  // Redirect admin to admin dashboard
+  if (role === "admin") {
+    redirect("/admin/dashboard");
+  }
+
+  // Redirect super_admin to superadmin dashboard
+  if (role === "super_admin") {
+    redirect("/superadmin/dashboard");
   }
 
   // Profile check must use DB UUID (not Clerk ID)

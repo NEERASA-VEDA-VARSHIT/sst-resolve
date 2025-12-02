@@ -37,25 +37,23 @@ interface MasterData {
 interface StudentFormData {
 	email: string;
 	full_name: string;
-	user_number: string;
 	hostel_id: string;
 	room_number: string;
 	class_section_id: string;
 	batch_id: string;
 	mobile: string;
-	department: string;
+	blood_group: string;
 }
 
 interface FormErrors {
 	email?: string;
 	full_name?: string;
-	user_number?: string;
 	mobile?: string;
 	room_number?: string;
 	hostel_id?: string;
 	batch_id?: string;
 	class_section_id?: string;
-	department?: string;
+	blood_group?: string;
 }
 
 export function AddSingleStudentDialog({
@@ -74,13 +72,12 @@ export function AddSingleStudentDialog({
 	const [formData, setFormData] = useState<StudentFormData>({
 		email: "",
 		full_name: "",
-		user_number: "",
 		hostel_id: "",
 		room_number: "",
 		class_section_id: "",
 		batch_id: "",
 		mobile: "",
-		department: "",
+		blood_group: "",
 	});
 
 	useEffect(() => {
@@ -90,13 +87,12 @@ export function AddSingleStudentDialog({
 			setFormData({
 				email: "",
 				full_name: "",
-				user_number: "",
 				hostel_id: "",
 				room_number: "",
 				class_section_id: "",
 				batch_id: "",
 				mobile: "",
-				department: "",
+				blood_group: "",
 			});
 			setErrors({});
 		}
@@ -123,19 +119,6 @@ export function AddSingleStudentDialog({
 		}
 		if (name.trim().length > 120) {
 			return "Full name must not exceed 120 characters";
-		}
-		return undefined;
-	};
-
-	const validateRollNumber = (rollNo: string): string | undefined => {
-		if (!rollNo.trim()) {
-			return "Roll number is required";
-		}
-		if (rollNo.trim().length < 3) {
-			return "Roll number must be at least 3 characters";
-		}
-		if (rollNo.trim().length > 32) {
-			return "Roll number must not exceed 32 characters";
 		}
 		return undefined;
 	};
@@ -185,12 +168,21 @@ export function AddSingleStudentDialog({
 		return undefined;
 	};
 
-	const validateDepartment = (department: string): string | undefined => {
-		if (!department.trim()) {
-			return "Department is required";
-		}
-		if (department.trim().length > 120) {
-			return "Department must not exceed 120 characters";
+	const validateBloodGroup = (bg: string): string | undefined => {
+		if (!bg.trim()) return "Blood group is required";
+		const normalized = bg.trim().toUpperCase();
+		const allowed = new Set([
+			"A+",
+			"A-",
+			"B+",
+			"B-",
+			"O+",
+			"O-",
+			"AB+",
+			"AB-",
+		]);
+		if (!allowed.has(normalized)) {
+			return "Blood group must be one of A+, A-, B+, B-, O+, O-, AB+, AB-";
 		}
 		return undefined;
 	};
@@ -216,9 +208,6 @@ export function AddSingleStudentDialog({
 			case "full_name":
 				error = validateFullName(value);
 				break;
-			case "user_number":
-				error = validateRollNumber(value);
-				break;
 			case "mobile":
 				error = validateMobile(value);
 				break;
@@ -234,8 +223,8 @@ export function AddSingleStudentDialog({
 			case "class_section_id":
 				error = validateClassSection(value);
 				break;
-			case "department":
-				error = validateDepartment(value);
+			case "blood_group":
+				error = validateBloodGroup(value);
 				break;
 		}
 		setFieldError(fieldName, error);
@@ -250,14 +239,14 @@ export function AddSingleStudentDialog({
 		const nameError = validateFullName(formData.full_name);
 		if (nameError) newErrors.full_name = nameError;
 
-		const rollError = validateRollNumber(formData.user_number);
-		if (rollError) newErrors.user_number = rollError;
-
 		const mobileError = validateMobile(formData.mobile);
 		if (mobileError) newErrors.mobile = mobileError;
 
 		const roomError = validateRoomNumber(formData.room_number);
 		if (roomError) newErrors.room_number = roomError;
+
+		const bloodGroupError = validateBloodGroup(formData.blood_group);
+		if (bloodGroupError) newErrors.blood_group = bloodGroupError;
 
 		setErrors(newErrors);
 		return Object.keys(newErrors).length === 0;
@@ -267,31 +256,29 @@ export function AddSingleStudentDialog({
 	const isFormValid = (): boolean => {
 		// Check required fields are filled
 		if (!formData.email.trim() || 
-			!formData.full_name.trim() || 
-			!formData.user_number.trim() ||
+			!formData.full_name.trim() ||
 			!formData.mobile.trim() ||
 			!formData.room_number.trim() ||
 			!formData.hostel_id ||
 			!formData.batch_id ||
 			!formData.class_section_id ||
-			!formData.department.trim()) {
+			!formData.blood_group.trim()) {
 			return false;
 		}
 
 		// Check if there are any validation errors
 		const emailError = validateEmail(formData.email);
 		const nameError = validateFullName(formData.full_name);
-		const rollError = validateRollNumber(formData.user_number);
 		const mobileError = validateMobile(formData.mobile);
 		const roomError = validateRoomNumber(formData.room_number);
 		const hostelError = validateHostel(formData.hostel_id);
 		const batchError = validateBatch(formData.batch_id);
 		const sectionError = validateClassSection(formData.class_section_id);
-		const departmentError = validateDepartment(formData.department);
+		const bloodGroupError = validateBloodGroup(formData.blood_group);
 
 		// Form is valid if no errors
-		return !emailError && !nameError && !rollError && !mobileError && !roomError && 
-			!hostelError && !batchError && !sectionError && !departmentError;
+		return !emailError && !nameError && !mobileError && !roomError && 
+			!hostelError && !batchError && !sectionError && !bloodGroupError;
 	};
 
 	const fetchMasterData = async () => {
@@ -363,17 +350,16 @@ export function AddSingleStudentDialog({
 				headers: {
 					"Content-Type": "application/json",
 				},
-					body: JSON.stringify({
-						email: formData.email.trim().toLowerCase(),
-						full_name: formData.full_name.trim(),
-						user_number: formData.user_number.trim(),
-						hostel_id: parseInt(formData.hostel_id),
-						room_number: formData.room_number.trim(),
-						class_section_id: parseInt(formData.class_section_id),
-						batch_id: parseInt(formData.batch_id),
-						mobile: formData.mobile.replace(/\D/g, ""),
-						department: formData.department.trim(),
-					}),
+				body: JSON.stringify({
+					email: formData.email.trim().toLowerCase(),
+					full_name: formData.full_name.trim(),
+					hostel_id: parseInt(formData.hostel_id),
+					room_number: formData.room_number.trim(),
+					class_section_id: parseInt(formData.class_section_id),
+					batch_id: parseInt(formData.batch_id),
+					mobile: formData.mobile.replace(/\D/g, ""),
+					blood_group: formData.blood_group.trim().toUpperCase(),
+				}),
 			});
 
 			// Check Content-Type before parsing JSON
@@ -452,27 +438,6 @@ export function AddSingleStudentDialog({
 							/>
 							{errors.full_name && (
 								<p className="text-sm text-red-500 mt-1">{errors.full_name}</p>
-							)}
-						</div>
-
-						<div>
-							<Label htmlFor="user_number">
-								Roll Number <span className="text-red-500">*</span>
-							</Label>
-							<Input
-								id="user_number"
-								value={formData.user_number}
-								onChange={(e) => {
-									setFormData({ ...formData, user_number: e.target.value });
-									validateField("user_number", e.target.value);
-								}}
-								onBlur={(e) => validateField("user_number", e.target.value)}
-								placeholder="24bcs10005"
-								className={errors.user_number ? "border-red-500" : ""}
-								required
-							/>
-							{errors.user_number && (
-								<p className="text-sm text-red-500 mt-1">{errors.user_number}</p>
 							)}
 						</div>
 
@@ -611,25 +576,32 @@ export function AddSingleStudentDialog({
 						</div>
 
 						<div className="md:col-span-2">
-							<Label htmlFor="department">
-								Department <span className="text-red-500">*</span>
+							<Label htmlFor="blood_group">
+								Blood Group <span className="text-red-500">*</span>
 							</Label>
-							<Input
-								id="department"
-								value={formData.department}
-								onChange={(e) => {
-									setFormData({ ...formData, department: e.target.value });
-									if (errors.department) {
-										validateField("department", e.target.value);
-									}
+							<Select
+								value={formData.blood_group || undefined}
+								onValueChange={(value) => {
+									setFormData({ ...formData, blood_group: value });
+									validateField("blood_group", value);
 								}}
-								onBlur={(e) => validateField("department", e.target.value)}
-								placeholder="Computer Science"
-								className={errors.department ? "border-red-500" : ""}
-								required
-							/>
-							{errors.department && (
-								<p className="text-sm text-red-500 mt-1">{errors.department}</p>
+							>
+								<SelectTrigger className={errors.blood_group ? "border-red-500" : ""}>
+									<SelectValue placeholder="Select blood group" />
+								</SelectTrigger>
+								<SelectContent>
+									<SelectItem value="A+">A+</SelectItem>
+									<SelectItem value="A-">A-</SelectItem>
+									<SelectItem value="B+">B+</SelectItem>
+									<SelectItem value="B-">B-</SelectItem>
+									<SelectItem value="O+">O+</SelectItem>
+									<SelectItem value="O-">O-</SelectItem>
+									<SelectItem value="AB+">AB+</SelectItem>
+									<SelectItem value="AB-">AB-</SelectItem>
+								</SelectContent>
+							</Select>
+							{errors.blood_group && (
+								<p className="text-sm text-red-500 mt-1">{errors.blood_group}</p>
 							)}
 						</div>
 					</div>
@@ -668,4 +640,3 @@ export function AddSingleStudentDialog({
 		</Dialog>
 	);
 }
-

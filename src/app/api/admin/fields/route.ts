@@ -6,6 +6,8 @@ import { eq, and, desc, asc } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
 
+const CHOICE_FIELD_TYPES = new Set(["select", "multi_select"]);
+
 // GET: Fetch fields for a subcategory
 export async function GET(request: NextRequest) {
   try {
@@ -49,7 +51,7 @@ export async function GET(request: NextRequest) {
 
     const fieldsWithOptions = await Promise.all(
       fields.map(async (field) => {
-        if (field.field_type === "select") {
+        if (CHOICE_FIELD_TYPES.has(field.field_type)) {
           const options = await db
             .select()
             .from(field_options)
@@ -97,6 +99,12 @@ export async function POST(request: NextRequest) {
       assigned_admin_id,
       options, // Array of { label, value } for select fields
     } = body;
+
+    const isChoiceField = CHOICE_FIELD_TYPES.has(field_type);
+    const normalizedValidationRules =
+      field_type === "multi_select"
+        ? { ...(validation_rules || {}), multiSelect: true }
+        : validation_rules || null;
 
     if (!subcategory_id || !name || !slug || !field_type) {
       return NextResponse.json(
@@ -162,7 +170,7 @@ export async function POST(request: NextRequest) {
           required: required || false,
           placeholder: placeholder || null,
           help_text: help_text || null,
-          validation_rules: validation_rules || null,
+          validation_rules: normalizedValidationRules,
           display_order: display_order || 0,
           assigned_admin_id: assigned_admin_id === null || assigned_admin_id === "" ? null : String(assigned_admin_id),
           is_active: true,
@@ -185,7 +193,7 @@ export async function POST(request: NextRequest) {
           required: required || false,
           placeholder: placeholder || null,
           help_text: help_text || null,
-          validation_rules: validation_rules || null,
+          validation_rules: normalizedValidationRules,
           display_order: display_order || 0,
           assigned_admin_id: assigned_admin_id === null || assigned_admin_id === "" ? null : String(assigned_admin_id),
           is_active: true,
@@ -195,7 +203,7 @@ export async function POST(request: NextRequest) {
 
     // Create options if field_type is "select" and options are provided
     type FieldOption = { label?: string; value: string; display_order?: number };
-    if (field_type === "select" && Array.isArray(options) && options.length > 0) {
+    if (isChoiceField && Array.isArray(options) && options.length > 0) {
       // Validate for duplicate values (case-insensitive)
       const valueSet = new Set<string>();
       const duplicates: string[] = [];
@@ -229,7 +237,7 @@ export async function POST(request: NextRequest) {
     const transformedField = { ...fieldRest, active: is_active };
 
     // Fetch the field with options
-    if (field_type === "select") {
+    if (isChoiceField) {
       const fieldOptions = await db
         .select()
         .from(field_options)

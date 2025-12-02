@@ -80,8 +80,29 @@ export async function POST(
         return NextResponse.json({ error: "Comment is required for comment action" }, { status: 400 });
       }
 
+      // Edge case: Validate comment length (prevent extremely long comments)
+      const COMMENT_MAX_LENGTH = 10000; // Match AddCommentSchema
+      const trimmedComment = comment.trim();
+      if (trimmedComment.length > COMMENT_MAX_LENGTH) {
+        return NextResponse.json({ 
+          error: `Comment exceeds maximum length of ${COMMENT_MAX_LENGTH} characters` 
+        }, { status: 400 });
+      }
+
       for (const ticket of groupTickets) {
         try {
+          // Edge case: Verify ticket still exists before processing (may have been deleted)
+          const [ticketExists] = await db
+            .select({ id: tickets.id })
+            .from(tickets)
+            .where(eq(tickets.id, ticket.id))
+            .limit(1);
+
+          if (!ticketExists) {
+            results.push({ ticketId: ticket.id, success: false, error: "Ticket was deleted during bulk operation" });
+            continue;
+          }
+
           // Parse existing metadata (not details)
           type TicketMetadata = {
             [key: string]: unknown;
@@ -141,12 +162,25 @@ export async function POST(
 
       for (const ticket of groupTickets) {
         try {
+          // Edge case: Verify ticket still exists before processing (may have been deleted)
+          const [ticketExists] = await db
+            .select({ id: tickets.id })
+            .from(tickets)
+            .where(eq(tickets.id, ticket.id))
+            .limit(1);
+
+          if (!ticketExists) {
+            results.push({ ticketId: ticket.id, success: false, error: "Ticket was deleted during bulk operation" });
+            continue;
+          }
+
           const oldStatusValue = ticket.status_value || "";
 
           // Get status ID for new status
           const newStatusId = await getStatusIdByValue(newStatusValue);
           if (!newStatusId) {
             console.error(`Status ID not found for: ${newStatusValue}`);
+            results.push({ ticketId: ticket.id, success: false, error: `Status "${newStatusValue}" not found` });
             continue;
           }
 

@@ -26,10 +26,10 @@ export async function GET(request: NextRequest) {
 		// Get role from database (single source of truth)
 		const role = await getUserRoleFromDB(userId);
 
-		// Only super admins can access full admin roster for reassignment
-		if (role !== "super_admin") {
-			return NextResponse.json({ error: "Only super admins can access this" }, { status: 403 });
-		}
+    // Allow both admins and super admins to access admin roster for reassignment
+    if (role !== "admin" && role !== "super_admin") {
+      return NextResponse.json({ error: "Only admins and super admins can access this" }, { status: 403 });
+    }
 
 		const { searchParams } = new URL(request.url);
 		const includeCommittee = searchParams.get("include_committee") === "true";
