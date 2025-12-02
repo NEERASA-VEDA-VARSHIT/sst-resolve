@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth, clerkClient } from "@clerk/nextjs/server";
 import { db, tickets, ticket_committee_tags, committees, categories, users, ticket_statuses, ticket_groups } from "@/db";
 import { getStatusIdByValue } from "@/lib/status/getTicketStatuses";
-import { eq, and, inArray, sql } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { sendEmail, getStatusUpdateEmail } from "@/lib/integration/email";
 import { postThreadReply } from "@/lib/integration/slack";
 import { TICKET_STATUS, getCanonicalStatus } from "@/conf/constants";
@@ -549,9 +549,6 @@ export async function PATCH(
         return NextResponse.json({ error: "Ticket not found after update" }, { status: 404 });
       }
       
-      // Use updateResult for the response instead of re-fetching
-      const finalTicket = updateResult;
-
       // Get metadata for notifications
       const updatedMetadata = (updatedTicket.metadata as TicketMetadata) || {};
       const slackMessageTs = updatedMetadata?.slackMessageTs;
