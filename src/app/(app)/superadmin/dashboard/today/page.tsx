@@ -1,7 +1,8 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { db, tickets, ticket_statuses } from "@/db";
+import { db, tickets, ticket_statuses, categories, users } from "@/db";
 import { desc, eq } from "drizzle-orm";
+import { aliasedTable } from "drizzle-orm";
 import type { Ticket } from "@/db/types-only";
 import type { TicketMetadata } from "@/db/inferred-types";
 import { TicketCard } from "@/components/layout/TicketCard";
@@ -14,6 +15,8 @@ import { getOrCreateUser } from "@/lib/auth/user-sync";
 
 // Force dynamic rendering since we use auth headers
 export const dynamic = "force-dynamic";
+// Cache response for 30 seconds to improve performance
+export const revalidate = 30;
 
 export default async function SuperAdminTodayPendingPage() {
   const { userId } = await auth();
@@ -26,6 +29,8 @@ export default async function SuperAdminTodayPendingPage() {
   const role = await getUserRoleFromDB(userId);
   if (role !== "super_admin") redirect("/student/dashboard");
 
+  const creatorUser = aliasedTable(users, "creator");
+  
   const allTicketRows = await db
     .select({
       id: tickets.id,
@@ -35,9 +40,12 @@ export default async function SuperAdminTodayPendingPage() {
       status_id: tickets.status_id,
       status_value: ticket_statuses.value,
       category_id: tickets.category_id,
+      category_name: categories.name,
       subcategory_id: tickets.subcategory_id,
       sub_subcategory_id: tickets.sub_subcategory_id,
       created_by: tickets.created_by,
+      creator_full_name: creatorUser.full_name,
+      creator_email: creatorUser.email,
       assigned_to: tickets.assigned_to,
       group_id: tickets.group_id,
       escalation_level: tickets.escalation_level,
@@ -49,6 +57,8 @@ export default async function SuperAdminTodayPendingPage() {
     })
     .from(tickets)
     .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
+    .leftJoin(categories, eq(tickets.category_id, categories.id))
+    .leftJoin(creatorUser, eq(tickets.created_by, creatorUser.id))
     .orderBy(desc(tickets.created_at));
   
   // Transform to include status field for compatibility and extract metadata fields
@@ -75,7 +85,7 @@ export default async function SuperAdminTodayPendingPage() {
   const todayMonth = now.getMonth();
   const todayDate = now.getDate();
 
-  const pendingStatuses = new Set(["open", "in_progress", "awaiting_student_response", "reopened"]);
+  const pendingStatuses = new Set(["open", "in_progress", "awaiting_student", "reopened"]);
 
   const todayPending = allTickets.filter(t => {
     const status = (t.status || "").toLowerCase();
@@ -106,8 +116,8 @@ export default async function SuperAdminTodayPendingPage() {
     if (!pendingStatuses.has(status)) return false;
     
     // Exclude tickets awaiting student response from overdue
-    const statusUpper = (t.status || "").toUpperCase();
-    if (statusUpper === "AWAITING_STUDENT" || statusUpper === "AWAITING_STUDENT_RESPONSE") {
+    const normalizedStatus = (t.status || "").toLowerCase();
+    if (normalizedStatus === "awaiting_student") {
       return false;
     }
     
@@ -202,8 +212,10 @@ export default async function SuperAdminTodayPendingPage() {
                 <TicketCard ticket={{
                   ...t,
                   status: t.status_value || null,
-                  category_name: null,
-                } as unknown as Ticket & { status?: string | null; category_name?: string | null }} basePath="/superadmin/dashboard" />
+                  category_name: t.category_name || null,
+                  creator_name: t.creator_full_name || null,
+                  creator_email: t.creator_email || null,
+                } as unknown as Ticket & { status?: string | null; category_name?: string | null; creator_name?: string | null; creator_email?: string | null }} basePath="/superadmin/dashboard" />
               </div>
             ))}
           </div>

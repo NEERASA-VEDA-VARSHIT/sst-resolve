@@ -683,6 +683,7 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
                 isSuperAdmin={true}
                 currentAssignedTo={ticket.assigned_staff_id?.toString() || null}
                 forwardTargets={forwardTargets}
+                tatExtensionCount={Array.isArray(metadata?.tatExtensions) ? metadata.tatExtensions.length : 0}
               />
             </CardContent>
           </Card>

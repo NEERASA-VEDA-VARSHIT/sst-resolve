@@ -1505,6 +1505,8 @@ export default async function AdminTicketPage({ params }: { params: Promise<{ ti
 
                 forwardTargets={forwardTargets}
 
+                tatExtensionCount={Array.isArray(metadata?.tatExtensions) ? metadata.tatExtensions.length : 0}
+
               />
 
             </CardContent>

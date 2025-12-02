@@ -30,6 +30,9 @@ import { getCachedAdminUser } from "@/lib/cache/cached-queries";
 
 import { normalizeStatusForComparison } from "@/lib/utils";
 
+// Cache response for 30 seconds to improve performance
+export const revalidate = 30;
+
 
 
 export default async function SuperAdminDashboardPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {

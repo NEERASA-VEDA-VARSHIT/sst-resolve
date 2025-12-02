@@ -2,9 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { categories, subcategories, sub_subcategories, category_fields, field_options } from "@/db/schema";
-import { eq, desc, asc, and } from "drizzle-orm";
+import { eq, desc, asc, and, inArray } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
+
+// Cache configuration for this route
+export const revalidate = 30; // Revalidate every 30 seconds
 
 // GET: Fetch all categories with their subcategories and fields
 export async function GET(request: NextRequest) {
@@ -81,98 +84,128 @@ export async function GET(request: NextRequest) {
         )
         .orderBy(asc(subcategories.display_order), desc(subcategories.created_at));
 
-      // Fetch sub-subcategories and fields for each subcategory
-      const subcatsWithData = await Promise.all(
-        subcats.map(async (subcat) => {
-          const subSubcats = await db
-            .select({
-              id: sub_subcategories.id,
-              subcategory_id: sub_subcategories.subcategory_id,
-              name: sub_subcategories.name,
-              slug: sub_subcategories.slug,
-              description: sub_subcategories.description,
-              is_active: sub_subcategories.is_active,
-              display_order: sub_subcategories.display_order,
-              created_at: sub_subcategories.created_at,
-              updated_at: sub_subcategories.updated_at,
-            })
-            .from(sub_subcategories)
-            .where(
-              and(
-                eq(sub_subcategories.subcategory_id, subcat.id),
-                includeInactive ? undefined : eq(sub_subcategories.is_active, true)
-              )
-            )
-            .orderBy(asc(sub_subcategories.display_order), desc(sub_subcategories.created_at));
-
-          const fields = await db
-            .select({
-              id: category_fields.id,
-              subcategory_id: category_fields.subcategory_id,
-              name: category_fields.name,
-              slug: category_fields.slug,
-              field_type: category_fields.field_type,
-              required: category_fields.required,
-              placeholder: category_fields.placeholder,
-              help_text: category_fields.help_text,
-              validation_rules: category_fields.validation_rules,
-              display_order: category_fields.display_order,
-              is_active: category_fields.is_active,
-              created_at: category_fields.created_at,
-              updated_at: category_fields.updated_at,
-            })
-            .from(category_fields)
-            .where(
-              and(
-                eq(category_fields.subcategory_id, subcat.id),
-                includeInactive ? undefined : eq(category_fields.is_active, true)
-              )
-            )
-            .orderBy(asc(category_fields.display_order), desc(category_fields.created_at));
-
-          // Fetch options for select fields
-          const fieldsWithOptions = await Promise.all(
-            fields.map(async (field) => {
-              if (field.field_type === "select") {
-                const options = await db
-                  .select({
-                    id: field_options.id,
-                    field_id: field_options.field_id,
-                    value: field_options.value,
-                    label: field_options.label,
-                    display_order: field_options.display_order,
-                    created_at: field_options.created_at,
-                    updated_at: field_options.updated_at,
-                  })
-                  .from(field_options)
-                  .where(eq(field_options.field_id, field.id))
-                  .orderBy(asc(field_options.display_order), desc(field_options.created_at));
-                return { ...field, options };
-              }
-              return { ...field, options: [] };
-            })
-          );
-
-          // Transform is_active to active for frontend compatibility
-          const transformedSubcat: Record<string, unknown> = {
-            ...subcat,
-            active: subcat.is_active,
-          };
-          delete transformedSubcat.is_active;
-
-          transformedSubcat.sub_subcategories = subSubcats.map(subSubcat => {
-            const { is_active, ...rest } = subSubcat;
-            return { ...rest, active: is_active };
-          });
-
-          transformedSubcat.fields = fieldsWithOptions.map(field => {
-            const { is_active, ...rest } = field;
-            return { ...rest, active: is_active };
-          });
-
-          return transformedSubcat;
+      // Optimized: Fetch all sub-subcategories and fields in parallel (reduces N+1 queries)
+      const subcategoryIds = subcats.map(s => s.id);
+      
+      // Fetch all sub-subcategories for all subcategories in one query (optimized)
+      const allSubSubcatsOptimized = subcategoryIds.length > 0 ? await db
+        .select({
+          id: sub_subcategories.id,
+          subcategory_id: sub_subcategories.subcategory_id,
+          name: sub_subcategories.name,
+          slug: sub_subcategories.slug,
+          description: sub_subcategories.description,
+          is_active: sub_subcategories.is_active,
+          display_order: sub_subcategories.display_order,
+          created_at: sub_subcategories.created_at,
+          updated_at: sub_subcategories.updated_at,
         })
-      );
+        .from(sub_subcategories)
+        .where(
+          and(
+            inArray(sub_subcategories.subcategory_id, subcategoryIds),
+            includeInactive ? undefined : eq(sub_subcategories.is_active, true)
+          )
+        )
+        .orderBy(asc(sub_subcategories.display_order), desc(sub_subcategories.created_at)) : [];
+
+      // Fetch all fields for all subcategories in one query
+      const allFields = subcategoryIds.length > 0 ? await db
+        .select({
+          id: category_fields.id,
+          subcategory_id: category_fields.subcategory_id,
+          name: category_fields.name,
+          slug: category_fields.slug,
+          field_type: category_fields.field_type,
+          required: category_fields.required,
+          placeholder: category_fields.placeholder,
+          help_text: category_fields.help_text,
+          validation_rules: category_fields.validation_rules,
+          display_order: category_fields.display_order,
+          is_active: category_fields.is_active,
+          created_at: category_fields.created_at,
+          updated_at: category_fields.updated_at,
+        })
+        .from(category_fields)
+        .where(
+          and(
+            inArray(category_fields.subcategory_id, subcategoryIds),
+            includeInactive ? undefined : eq(category_fields.is_active, true)
+          )
+        )
+        .orderBy(asc(category_fields.display_order), desc(category_fields.created_at)) : [];
+
+      // Fetch all options for all select fields in one query
+      const selectFieldIds = allFields.filter(f => f.field_type === "select").map(f => f.id);
+      const allOptions = selectFieldIds.length > 0 ? await db
+        .select({
+          id: field_options.id,
+          field_id: field_options.field_id,
+          value: field_options.value,
+          label: field_options.label,
+          display_order: field_options.display_order,
+          created_at: field_options.created_at,
+          updated_at: field_options.updated_at,
+        })
+        .from(field_options)
+        .where(inArray(field_options.field_id, selectFieldIds))
+        .orderBy(asc(field_options.display_order), desc(field_options.created_at)) : [];
+
+      // Group data by subcategory_id for efficient lookup
+      const subSubcatsBySubcatId = new Map<number, typeof allSubSubcatsOptimized>();
+      for (const subSubcat of allSubSubcatsOptimized) {
+        const existing = subSubcatsBySubcatId.get(subSubcat.subcategory_id) || [];
+        existing.push(subSubcat);
+        subSubcatsBySubcatId.set(subSubcat.subcategory_id, existing);
+      }
+
+      const fieldsBySubcatId = new Map<number, typeof allFields>();
+      for (const field of allFields) {
+        const existing = fieldsBySubcatId.get(field.subcategory_id) || [];
+        existing.push(field);
+        fieldsBySubcatId.set(field.subcategory_id, existing);
+      }
+
+      const optionsByFieldId = new Map<number, typeof allOptions>();
+      for (const option of allOptions) {
+        const existing = optionsByFieldId.get(option.field_id) || [];
+        existing.push(option);
+        optionsByFieldId.set(option.field_id, existing);
+      }
+
+      // Transform subcategories with grouped data
+      const subcatsWithData = subcats.map((subcat) => {
+        const subSubcats = subSubcatsBySubcatId.get(subcat.id) || [];
+        const fields = fieldsBySubcatId.get(subcat.id) || [];
+        
+        // Attach options to select fields
+        const fieldsWithOptions = fields.map(field => {
+          if (field.field_type === "select") {
+            const options = optionsByFieldId.get(field.id) || [];
+            return { ...field, options };
+          }
+          return { ...field, options: [] };
+        });
+
+        // Transform is_active to active for frontend compatibility
+        const transformedSubcat: Record<string, unknown> = {
+          ...subcat,
+          active: subcat.is_active,
+        };
+        delete transformedSubcat.is_active;
+
+        transformedSubcat.sub_subcategories = subSubcats.map(subSubcat => {
+          const { is_active, ...rest } = subSubcat;
+          return { ...rest, active: is_active };
+        });
+
+        transformedSubcat.fields = fieldsWithOptions.map(field => {
+          const { is_active, ...rest } = field;
+          return { ...rest, active: is_active };
+        });
+
+        return transformedSubcat;
+      });
 
       // Transform is_active to active for frontend compatibility
       const { is_active, ...categoryRest } = category;

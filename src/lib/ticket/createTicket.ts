@@ -129,43 +129,38 @@ export async function createTicket(args: {
     }
   }
 
-  // Resolve category and subcategory in parallel where possible
-  let categoryRecord;
-  let categoryQuery;
+  // Resolve category with active check in single query (optimized)
+  let categoryRecord: { id: number; name: string; is_active: boolean } | undefined;
   
   if (payload.categoryId) {
-    categoryQuery = db
-      .select({ id: categories.id, name: categories.name })
+    const [c] = await db
+      .select({ 
+        id: categories.id, 
+        name: categories.name,
+        is_active: categories.is_active 
+      })
       .from(categories)
       .where(eq(categories.id, payload.categoryId))
       .limit(1);
+    categoryRecord = c;
   } else if (payload.category) {
-    categoryQuery = db
-      .select({ id: categories.id, name: categories.name })
+    const [c] = await db
+      .select({ 
+        id: categories.id, 
+        name: categories.name,
+        is_active: categories.is_active 
+      })
       .from(categories)
       .where(eq(categories.name, payload.category))
       .limit(1);
-  }
-
-  // Execute category query
-  if (categoryQuery) {
-    const [c] = await categoryQuery;
     categoryRecord = c;
   }
 
   if (!categoryRecord) {
     throw new Error("Category not found");
   }
-
-  // Validate category is active
-  const { categories: categoriesSchema } = await import("@/db/schema");
-  const [categoryWithActive] = await db
-    .select({ is_active: categoriesSchema.is_active })
-    .from(categoriesSchema)
-    .where(eq(categoriesSchema.id, categoryRecord.id))
-    .limit(1);
   
-  if (!categoryWithActive?.is_active) {
+  if (!categoryRecord.is_active) {
     throw new Error("Category is inactive and cannot be used for ticket creation");
   }
 
@@ -334,86 +329,14 @@ export async function createTicket(args: {
     throw new Error("Invalid ticket data format. Please try again.");
   }
 
-  // Determine assignment (SPOC or super admin)
-  // Pre-fetch super admin user ID in parallel with SPOC lookup for faster fallback
+  // Determine assignment (SPOC or super admin) - optimized parallel lookups
   let assignedUserId: string | null = null;
   const { findSuperAdminClerkId } = await import("@/lib/db-helpers");
   
-  // Start fetching super admin in parallel (we'll need it either way)
-  const superAdminPromise = findSuperAdminClerkId().then(async (superClerk) => {
-    if (superClerk) {
-      const [u] = await db.select({ id: users.id }).from(users).where(eq(users.external_id, superClerk)).limit(1);
-      return u?.id || null;
-    }
-    return null;
-  });
-
-  if (categoryRecord.name === "Committee" || categoryRecord.name === "Others") {
-    // Use super admin directly
-    assignedUserId = await superAdminPromise;
-  } else {
-    // find SPOC via helper (uses the full assignment hierarchy)
-    const { findSPOCForTicket } = await import("@/lib/assignment/spoc-assignment");
-    // Safety check: ensure detailsObj is valid before calling Object.keys
-    const fieldSlugs = detailsObj && typeof detailsObj === 'object' && !Array.isArray(detailsObj)
-      ? Object.keys(detailsObj)
-      : [];
-    
-    // Run SPOC lookup and super admin lookup in parallel
-    const [clerkAssigned, superAdminId] = await Promise.all([
-      findSPOCForTicket(
-        categoryRecord.name,
-        payload.location || null,
-        categoryRecord.id,
-        (typeof metadata.subcategoryId === 'number' ? metadata.subcategoryId : null),
-        fieldSlugs
-      ),
-      superAdminPromise,
-    ]);
-    
-    if (clerkAssigned) {
-      // map clerkId to local users.id
-      const [u] = await db.select({ id: users.id }).from(users).where(eq(users.external_id, clerkAssigned)).limit(1);
-      if (u) {
-        assignedUserId = u.id;
-      }
-    }
-    
-    // Fallback: If no assignment found, assign to superadmin
-    if (!assignedUserId && superAdminId) {
-      assignedUserId = superAdminId;
-      console.log(`[createTicket] No assignment found, defaulting to superadmin for ticket in category: ${categoryRecord.name}`);
-    }
-  }
-
-  // Final fallback if still no assignment
-    if (!assignedUserId) {
-      assignedUserId = await superAdminPromise;
-      if (!assignedUserId) {
-        const { logCriticalError } = await import("@/lib/monitoring/alerts");
-        logCriticalError(
-          "No super admin found during ticket creation",
-          new Error("System has no super admin - tickets cannot be assigned"),
-          { category: categoryRecord.name, categoryId: categoryRecord.id }
-        );
-        // Ticket will be created without assignment - this should be monitored and alerted
-      }
-    }
-
-  // Sanitize description
-  const safeDescription = sanitizeText(payload.description || null);
-  
-  // Edge case: Validate description length (enforce at DB level, not just client)
-  const DESCRIPTION_MAX_LENGTH = 20000; // Match validation schema
-  if (safeDescription && safeDescription.length > DESCRIPTION_MAX_LENGTH) {
-    throw new Error(`Description exceeds maximum length of ${DESCRIPTION_MAX_LENGTH} characters. Please shorten your description.`);
-  }
-
-  // Get status_id for OPEN status
-  let statusId = await getStatusIdByValue(TICKET_STATUS.OPEN);
-    if (!statusId) {
+  // Get status_id for OPEN status (start early to parallelize with other operations)
+  const statusIdPromise = getStatusIdByValue(TICKET_STATUS.OPEN).then(async (id) => {
+    if (!id) {
       // CRITICAL: Status not found - this should never happen in production
-      // Log error and try to find any active status as fallback
       const { logCriticalError } = await import("@/lib/monitoring/alerts");
       logCriticalError(
         "OPEN status not found in database",
@@ -427,12 +350,94 @@ export async function createTicket(args: {
         .from(ticket_statuses)
         .where(eq(ticket_statuses.is_active, true))
         .limit(1);
+      
       if (!fallbackStatus) {
         throw new Error(`No active ticket status found in database. System configuration error.`);
       }
       console.warn(`[createTicket] Using fallback status ID ${fallbackStatus.id} instead of "${TICKET_STATUS.OPEN}"`);
-      statusId = fallbackStatus.id; // Use fallback status but this should be investigated
+      return fallbackStatus.id;
     }
+    return id;
+  });
+  
+  // Start fetching super admin early (we'll need it either way)
+  const superAdminPromise = findSuperAdminClerkId().then(async (superClerk) => {
+    if (superClerk) {
+      const [u] = await db.select({ id: users.id }).from(users).where(eq(users.external_id, superClerk)).limit(1);
+      return u?.id || null;
+    }
+    return null;
+  });
+
+  // Run assignment logic in parallel with status lookup
+  const [statusId, assignmentResult] = await Promise.all([
+    statusIdPromise,
+    (async () => {
+      if (categoryRecord.name === "Committee" || categoryRecord.name === "Others") {
+        // Use super admin directly
+        return await superAdminPromise;
+      } else {
+        // find SPOC via helper (uses the full assignment hierarchy)
+        const { findSPOCForTicket } = await import("@/lib/assignment/spoc-assignment");
+        // Safety check: ensure detailsObj is valid before calling Object.keys
+        const fieldSlugs = detailsObj && typeof detailsObj === 'object' && !Array.isArray(detailsObj)
+          ? Object.keys(detailsObj)
+          : [];
+        
+        // Run SPOC lookup and super admin lookup in parallel
+        const [clerkAssigned, superAdminId] = await Promise.all([
+          findSPOCForTicket(
+            categoryRecord.name,
+            payload.location || null,
+            categoryRecord.id,
+            (typeof metadata.subcategoryId === 'number' ? metadata.subcategoryId : null),
+            fieldSlugs
+          ),
+          superAdminPromise,
+        ]);
+        
+        if (clerkAssigned) {
+          // map clerkId to local users.id
+          const [u] = await db.select({ id: users.id }).from(users).where(eq(users.external_id, clerkAssigned)).limit(1);
+          if (u) {
+            return u.id;
+          }
+        }
+        
+        // Fallback: If no assignment found, assign to superadmin
+        if (superAdminId) {
+          console.log(`[createTicket] No assignment found, defaulting to superadmin for ticket in category: ${categoryRecord.name}`);
+          return superAdminId;
+        }
+        return null;
+      }
+    })()
+  ]);
+
+  assignedUserId = assignmentResult;
+
+  // Final fallback if still no assignment
+  if (!assignedUserId) {
+    assignedUserId = await superAdminPromise;
+    if (!assignedUserId) {
+      const { logCriticalError } = await import("@/lib/monitoring/alerts");
+      logCriticalError(
+        "No super admin found during ticket creation",
+        new Error("System has no super admin - tickets cannot be assigned"),
+        { category: categoryRecord.name, categoryId: categoryRecord.id }
+      );
+      // Ticket will be created without assignment - this should be monitored and alerted
+    }
+  }
+
+  // Sanitize description
+  const safeDescription = sanitizeText(payload.description || null);
+  
+  // Edge case: Validate description length (enforce at DB level, not just client)
+  const DESCRIPTION_MAX_LENGTH = 20000; // Match validation schema
+  if (safeDescription && safeDescription.length > DESCRIPTION_MAX_LENGTH) {
+    throw new Error(`Description exceeds maximum length of ${DESCRIPTION_MAX_LENGTH} characters. Please shorten your description.`);
+  }
 
   // Process attachments from images array
   // Edge case: Validate image URLs are valid before storing
@@ -470,61 +475,59 @@ export async function createTicket(args: {
   let result;
   try {
     result = await db.transaction(async (tx) => {
-    // Edge case: Re-validate category exists and is active right before transaction
+    // Optimized: Re-validate all category hierarchy in parallel (single query per level)
     // This prevents race condition where category is deleted between form submission and ticket creation
-    const [revalidatedCategory] = await tx
-      .select({ id: categories.id, name: categories.name, is_active: categories.is_active })
-      .from(categories)
-      .where(eq(categories.id, categoryRecord.id))
-      .limit(1);
-    
-    if (!revalidatedCategory) {
-      throw new Error("Category was deleted. Please refresh the page and select a different category.");
-    }
-    
-    if (!revalidatedCategory.is_active) {
-      throw new Error("Category was deactivated. Please refresh the page and select a different category.");
-    }
-    
-    // Edge case: Re-validate subcategory if provided
+    const validationPromises: Promise<unknown>[] = [
+      tx
+        .select({ id: categories.id, name: categories.name, is_active: categories.is_active })
+        .from(categories)
+        .where(eq(categories.id, categoryRecord.id))
+        .limit(1)
+        .then(([c]) => {
+          if (!c) throw new Error("Category was deleted. Please refresh the page and select a different category.");
+          if (!c.is_active) throw new Error("Category was deactivated. Please refresh the page and select a different category.");
+          return c;
+        })
+    ];
+
     if (subcategoryRecord) {
-      const [revalidatedSubcategory] = await tx
-        .select({ id: subcategories.id, is_active: subcategories.is_active })
-        .from(subcategories)
-        .where(and(
-          eq(subcategories.id, subcategoryRecord.id),
-          eq(subcategories.category_id, categoryRecord.id)
-        ))
-        .limit(1);
-      
-      if (!revalidatedSubcategory) {
-        throw new Error("Subcategory was deleted. Please refresh the page and select a different subcategory.");
-      }
-      
-      if (!revalidatedSubcategory.is_active) {
-        throw new Error("Subcategory was deactivated. Please refresh the page and select a different subcategory.");
-      }
+      validationPromises.push(
+        tx
+          .select({ id: subcategories.id, is_active: subcategories.is_active })
+          .from(subcategories)
+          .where(and(
+            eq(subcategories.id, subcategoryRecord.id),
+            eq(subcategories.category_id, categoryRecord.id)
+          ))
+          .limit(1)
+          .then(([s]) => {
+            if (!s) throw new Error("Subcategory was deleted. Please refresh the page and select a different subcategory.");
+            if (!s.is_active) throw new Error("Subcategory was deactivated. Please refresh the page and select a different subcategory.");
+            return s;
+          })
+      );
     }
-    
-    // Edge case: Re-validate sub-subcategory if provided
+
     if (subSubcategoryRecord && subcategoryRecord) {
-      const [revalidatedSubSubcategory] = await tx
-        .select({ id: sub_subcategories.id, is_active: sub_subcategories.is_active })
-        .from(sub_subcategories)
-        .where(and(
-          eq(sub_subcategories.id, subSubcategoryRecord.id),
-          eq(sub_subcategories.subcategory_id, subcategoryRecord.id)
-        ))
-        .limit(1);
-      
-      if (!revalidatedSubSubcategory) {
-        throw new Error("Sub-subcategory was deleted. Please refresh the page and select a different sub-subcategory.");
-      }
-      
-      if (!revalidatedSubSubcategory.is_active) {
-        throw new Error("Sub-subcategory was deactivated. Please refresh the page and select a different sub-subcategory.");
-      }
+      validationPromises.push(
+        tx
+          .select({ id: sub_subcategories.id, is_active: sub_subcategories.is_active })
+          .from(sub_subcategories)
+          .where(and(
+            eq(sub_subcategories.id, subSubcategoryRecord.id),
+            eq(sub_subcategories.subcategory_id, subcategoryRecord.id)
+          ))
+          .limit(1)
+          .then(([ss]) => {
+            if (!ss) throw new Error("Sub-subcategory was deleted. Please refresh the page and select a different sub-subcategory.");
+            if (!ss.is_active) throw new Error("Sub-subcategory was deactivated. Please refresh the page and select a different sub-subcategory.");
+            return ss;
+          })
+      );
     }
+
+    // Execute all validations in parallel
+    await Promise.all(validationPromises);
     
     // Update user profile if needed (inside transaction for atomicity)
     if (profileUpdateNeeded) {

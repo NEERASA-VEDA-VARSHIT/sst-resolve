@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { RefreshCw, Clock, CheckCircle, Trash2, FileText, UserCog, ArrowUpRight, Loader2 } from "lucide-react";
+import { RefreshCw, Clock, CheckCircle, Trash2, FileText, UserCog, ArrowUpRight, Loader2, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { ReassignDialog } from "./ReassignDialog";
 import { normalizeStatusForComparison } from "@/lib/utils";
@@ -26,6 +26,7 @@ export function AdminActions({
 	isSuperAdmin = false,
 	currentAssignedTo,
 	forwardTargets = [],
+	tatExtensionCount = 0,
 }: {
 	ticketId: number;
 	currentStatus: string;
@@ -33,6 +34,7 @@ export function AdminActions({
 	isSuperAdmin?: boolean;
 	currentAssignedTo?: string | null;
 	forwardTargets?: ForwardTarget[];
+	tatExtensionCount?: number;
 }) {
 	const router = useRouter();
 	const [loading, setLoading] = useState<string | null>(null);
@@ -259,6 +261,34 @@ export function AdminActions({
 		}
 	};
 
+	const handleEscalate = async () => {
+		setLoading("escalate");
+		try {
+			const response = await fetch(`/api/tickets/${ticketId}/escalate`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ 
+					reason: tatExtensionCount >= 3 
+						? `TAT extension limit reached (${tatExtensionCount} extensions)`
+						: "Manual escalation"
+				}),
+			});
+
+			if (response.ok) {
+				toast.success("Ticket escalated successfully");
+				router.refresh();
+			} else {
+				const error = await response.json().catch(() => ({ error: "Failed to escalate ticket" }));
+				toast.error(error.error || "Failed to escalate ticket");
+			}
+		} catch (error) {
+			console.error("Error escalating ticket:", error);
+			toast.error("Failed to escalate ticket. Please try again.");
+		} finally {
+			setLoading(null);
+		}
+	};
+
 	return (
 		<div className="border-t pt-4 space-y-4">
 			<label className="text-sm font-medium text-muted-foreground block">
@@ -266,7 +296,7 @@ export function AdminActions({
 			</label>
 
 			<div className="flex flex-wrap gap-2">
-				{normalizedStatus !== "in_progress" && (
+				{normalizedStatus !== "in_progress" && normalizedStatus !== "awaiting_student" && (
 					<Button
 						variant="outline"
 						onClick={handleMarkInProgress}
@@ -468,6 +498,28 @@ export function AdminActions({
 							Reassign
 						</Button>
 					</>
+				)}
+
+				{/* Escalate Ticket */}
+				{normalizedStatus !== "resolved" && normalizedStatus !== "escalated" && (
+					<Button
+						variant="outline"
+						onClick={handleEscalate}
+						disabled={loading !== null}
+						className={tatExtensionCount >= 3 ? "border-orange-500 text-orange-600 hover:bg-orange-50" : ""}
+					>
+						{loading === "escalate" ? (
+							<>
+								<Loader2 className="w-4 h-4 mr-2 animate-spin" />
+								Escalating...
+							</>
+						) : (
+							<>
+								<AlertTriangle className="w-4 h-4 mr-2" />
+								{tatExtensionCount >= 3 ? `Escalate (${tatExtensionCount} TAT extensions)` : "Escalate"}
+							</>
+						)}
+					</Button>
 				)}
 
 				{/* Forward to Next Level */}

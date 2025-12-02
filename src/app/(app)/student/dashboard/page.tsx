@@ -19,6 +19,8 @@ import type { Ticket } from "@/db/types-only";
 
 // Force dynamic rendering for authenticated routes
 export const dynamic = 'force-dynamic';
+// Cache response for 30 seconds to improve performance
+export const revalidate = 30;
 
 export default async function StudentDashboardPage({
   searchParams,

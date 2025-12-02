@@ -156,6 +156,9 @@ function TicketCardComponent({ ticket, basePath = "/student/dashboard", disableL
   // Memoize status value
   const statusValue = useMemo(() => getStatusValue(ticket.status), [ticket.status]);
   
+  // Memoize status value in uppercase for STATUS_STYLES lookup
+  const statusValueUpper = useMemo(() => statusValue.toUpperCase(), [statusValue]);
+  
   // Memoize formatted status
   const formattedStatus = useMemo(() => formatStatus(ticket.status), [ticket.status]);
 
@@ -230,7 +233,7 @@ function TicketCardComponent({ ticket, basePath = "/student/dashboard", disableL
                     variant="outline"
                     className={cn(
                       "text-[10px] sm:text-xs font-semibold border transition-all",
-                      STATUS_STYLES[statusValue] || "bg-muted text-foreground",
+                      STATUS_STYLES[statusValueUpper] || "bg-muted text-foreground",
                       "group-hover:scale-105 group-hover:shadow-sm"
                     )}
                   >

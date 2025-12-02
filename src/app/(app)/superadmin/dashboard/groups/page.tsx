@@ -1,7 +1,8 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { db, tickets, categories, ticket_statuses, ticket_groups } from "@/db";
+import { db, tickets, categories, ticket_statuses, ticket_groups, users } from "@/db";
 import { desc, eq, isNotNull } from "drizzle-orm";
+import { aliasedTable } from "drizzle-orm";
 import { TicketGrouping } from "@/components/admin/TicketGrouping";
 import { SelectableTicketList } from "@/components/admin/SelectableTicketList";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,9 +13,12 @@ import { ArrowLeft, Users, Package, CheckCircle2, TrendingUp } from "lucide-reac
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
 import type { Ticket } from "@/db/types-only";
+import type { TicketMetadata } from "@/db/inferred-types";
 
 // Force dynamic rendering since we use auth headers
 export const dynamic = "force-dynamic";
+// Cache response for 30 seconds to improve performance
+export const revalidate = 30;
 
 export default async function SuperAdminGroupsPage() {
   const { userId } = await auth();
@@ -34,24 +38,38 @@ export default async function SuperAdminGroupsPage() {
   }
 
   // Fetch all tickets for super admin with proper joins
+  const creatorUser = aliasedTable(users, "creator");
+  
   const allTicketRows = await db
     .select({
       id: tickets.id,
+      title: tickets.title,
+      description: tickets.description,
+      location: tickets.location,
       status_id: tickets.status_id,
       status_value: ticket_statuses.value,
       category_id: tickets.category_id,
       category_name: categories.name,
-      description: tickets.description,
-      location: tickets.location,
+      subcategory_id: tickets.subcategory_id,
+      sub_subcategory_id: tickets.sub_subcategory_id,
+      created_by: tickets.created_by,
+      creator_full_name: creatorUser.full_name,
+      creator_email: creatorUser.email,
       assigned_to: tickets.assigned_to,
+      group_id: tickets.group_id,
+      escalation_level: tickets.escalation_level,
+      acknowledgement_due_at: tickets.acknowledgement_due_at,
+      resolution_due_at: tickets.resolution_due_at,
+      metadata: tickets.metadata,
       created_at: tickets.created_at,
       updated_at: tickets.updated_at,
     })
     .from(tickets)
     .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
     .leftJoin(categories, eq(tickets.category_id, categories.id))
+    .leftJoin(creatorUser, eq(tickets.created_by, creatorUser.id))
     .orderBy(desc(tickets.created_at))
-    .limit(1000); // Reasonable limit for grouping operations
+    .limit(500); // Reduced limit for better performance - can paginate if needed
 
   // Grouping stats based purely on data, not placeholders
   const totalTicketsCount = allTicketRows.length;
@@ -188,15 +206,26 @@ export default async function SuperAdminGroupsPage() {
             </div>
           ) : (
             <SelectableTicketList
-              tickets={allTicketRows.map(t => ({
-                id: t.id,
-                status: t.status_value || null,
-                description: t.description || null,
-                category_name: t.category_name || null,
-                location: t.location || null,
-                created_at: t.created_at,
-                updated_at: t.updated_at,
-              })) as unknown as Ticket[]}
+              tickets={allTicketRows.map(t => {
+                let ticketMetadata: TicketMetadata = {};
+                if (t.metadata && typeof t.metadata === 'object' && !Array.isArray(t.metadata)) {
+                  ticketMetadata = t.metadata as TicketMetadata;
+                }
+                return {
+                  ...t,
+                  status: t.status_value || null,
+                  status_id: t.status_id || null,
+                  scope_id: null,
+                  resolved_at: ticketMetadata.resolved_at ? new Date(ticketMetadata.resolved_at) : null,
+                  reopened_at: ticketMetadata.reopened_at ? new Date(ticketMetadata.reopened_at) : null,
+                  acknowledged_at: ticketMetadata.acknowledged_at ? new Date(ticketMetadata.acknowledged_at) : null,
+                  rating: ticketMetadata.rating as number | null || null,
+                  feedback: ticketMetadata.feedback as string | null || null,
+                  category_name: t.category_name || null,
+                  creator_name: t.creator_full_name || null,
+                  creator_email: t.creator_email || null,
+                };
+              }) as unknown as Ticket[]}
               basePath="/superadmin/dashboard"
             />
           )}
