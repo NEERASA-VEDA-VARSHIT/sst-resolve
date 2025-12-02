@@ -9,12 +9,15 @@ export const ticketFormSchema = z.any();
 
 export type TicketFormData = z.infer<typeof ticketFormSchema>;
 
-export function validateDynamicField(_value: unknown): boolean {
+export function validateDynamicField(value: unknown): boolean {
   // Placeholder: always treat dynamic fields as valid.
+  // Reference the value to avoid unused-parameter warnings.
+  void value;
   return true;
 }
 
-export function validateProfileField(_value: unknown): boolean {
+export function validateProfileField(value: unknown): boolean {
   // Placeholder: always treat profile fields as valid.
+  void value;
   return true;
 }

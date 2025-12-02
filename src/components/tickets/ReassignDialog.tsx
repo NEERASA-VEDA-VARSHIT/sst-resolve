@@ -13,8 +13,6 @@ interface ReassignDialogProps {
 	onOpenChange: (open: boolean) => void;
 	ticketId: number;
 	currentAssignedTo?: string | null;
-	ticketCategory: string;
-	ticketLocation?: string | null;
 	onReassigned?: () => void;
 }
 
@@ -23,8 +21,6 @@ export function ReassignDialog({
 	onOpenChange,
 	ticketId,
 	currentAssignedTo,
-	ticketCategory,
-	ticketLocation,
 	onReassigned,
 }: ReassignDialogProps) {
 	const { admins, loading: adminsLoading } = useAdminList();

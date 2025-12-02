@@ -144,8 +144,6 @@ export function FieldDialog({
 
   useEffect(() => {
     if (field) {
-      const hasInlineAdmin =
-        field.assigned_admin_id !== null && field.assigned_admin_id !== undefined;
       const initialRules: LogicValidationRules = {
         ...((field.validation_rules || {}) as LogicValidationRules),
         ...(field.field_type === "multi_select" ? { multiSelect: true } : {}),
@@ -336,7 +334,8 @@ export function FieldDialog({
 
   useEffect(() => {
     setManualLogicInput(logicValues.join(", "));
-  }, [dependsOnSlug, logicBehavior, logicValues.join("|")]);
+     
+  }, [dependsOnSlug, logicBehavior, logicValues]);
 
   const handleLogicToggle = (enabled: boolean) => {
     if (!enabled) {

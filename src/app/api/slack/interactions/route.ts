@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, tickets, categories, users } from "@/db";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { postThreadReply } from "@/lib/integration/slack";
 import { sendEmail, getStatusUpdateEmail, getTATSetEmail, getCommentAddedEmail, getStudentEmail } from "@/lib/integration/email";
 import { calculateTATDate } from "@/utils";
@@ -199,8 +199,6 @@ export async function POST(request: NextRequest) {
 
 								if (!emailResult) {
 									console.error(`❌ Failed to send TAT email to ${studentEmail} for ticket #${ticket.id}`);
-								} else {
-									console.log(`✅ TAT email sent to ${studentEmail} for ticket #${ticket.id}${originalMessageId ? ' (threaded)' : ''} via Slack`);
 								}
 							}
 						} catch (emailError) {
@@ -368,8 +366,6 @@ export async function POST(request: NextRequest) {
 
 								if (!emailResult) {
 									console.error(`❌ Failed to send comment email to ${studentEmail} for ticket #${ticket.id}`);
-								} else {
-									console.log(`✅ Comment email sent to ${studentEmail} for ticket #${ticket.id}${originalMessageId ? ' (threaded)' : ''} via Slack`);
 								}
 							}
 						} catch (emailError) {

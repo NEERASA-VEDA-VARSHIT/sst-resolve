@@ -28,7 +28,6 @@ import { DynamicFieldDisplay } from "@/components/tickets/DynamicFieldDisplay";
 import { CardDescription } from "@/components/ui/card";
 import { Info } from "lucide-react";
 import { format } from "date-fns";
-import { slackConfig } from "@/conf/config";
 
 // Revalidate every 10 seconds for ticket detail page (more frequent for real-time updates)
 export const revalidate = 10;
@@ -91,7 +90,7 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
       const meta = rawMetadata as Record<string, unknown>;
       slackThreadId = (typeof meta.slackMessageTs === 'string' ? meta.slackMessageTs : null);
     }
-  } catch (error) {
+  } catch {
     // Ignore metadata parsing errors
   }
 
@@ -682,8 +681,6 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
                 currentStatus={statusValueStr || "open"}
                 hasTAT={!!ticket.due_at || !!metadata?.tat}
                 isSuperAdmin={true}
-                ticketCategory={ticket.category_name || "General"}
-                ticketLocation={ticket.location}
                 currentAssignedTo={ticket.assigned_staff_id?.toString() || null}
                 forwardTargets={forwardTargets}
               />

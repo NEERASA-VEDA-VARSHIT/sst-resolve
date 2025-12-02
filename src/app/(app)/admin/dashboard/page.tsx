@@ -174,7 +174,7 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
   allTickets = applyCategoryFilter(allTickets, category, categoryMap);
   allTickets = applySubcategoryFilter(allTickets, subcategory);
   allTickets = applyLocationFilter(allTickets, location);
-  allTickets = applyStatusFilter(allTickets, status, finalStatusValues);
+  allTickets = applyStatusFilter(allTickets, status);
   allTickets = applyEscalatedFilter(allTickets, escalated);
   allTickets = applyUserFilter(allTickets, user);
   allTickets = applyDateRangeFilter(allTickets, createdFrom, createdTo);
@@ -186,7 +186,7 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
   }
 
   // Calculate statistics using centralized helper
-  const stats = calculateTicketStats(allTickets, finalStatusValues);
+  const stats = calculateTicketStats(allTickets);
 
   // Calculate today pending count (tickets with TAT due today that are not resolved)
   const now = new Date();

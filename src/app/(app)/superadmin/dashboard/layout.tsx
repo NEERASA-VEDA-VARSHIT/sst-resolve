@@ -3,6 +3,9 @@ import { redirect } from "next/navigation";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
 
+// Force dynamic rendering for authenticated routes
+export const dynamic = 'force-dynamic';
+
 export default async function SuperAdminDashboardLayout({
   children,
 }: {

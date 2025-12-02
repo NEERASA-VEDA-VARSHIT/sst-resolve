@@ -1,7 +1,6 @@
 import nodemailer from "nodemailer";
-import { db, students } from "@/db";
+import { db } from "@/db";
 import { eq } from "drizzle-orm";
-import { retryWithBackoff } from "@/lib/utils/retry";
 import { logCriticalError, logWarning } from "@/lib/monitoring/alerts";
 
 import { escapeHtml } from "@/utils";

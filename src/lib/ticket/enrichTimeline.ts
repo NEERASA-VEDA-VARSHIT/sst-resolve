@@ -3,7 +3,6 @@
  */
 
 import type { TicketTimelineEntry } from "@/types/ticket";
-import { buildTimeline } from "./buildTimeline";
 
 interface TATMetadata {
   tatSetAt?: string | null;

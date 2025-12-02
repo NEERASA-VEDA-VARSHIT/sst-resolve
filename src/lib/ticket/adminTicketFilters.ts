@@ -3,11 +3,9 @@
  * Centralized filtering logic for admin dashboard
  */
 
-import type { TicketMetadata } from "@/db/inferred-types";
 import { parseTicketMetadata } from "@/db/inferred-types";
-import { normalizeStatus, isOpenStatus } from "./normalizeStatus";
+import { normalizeStatus } from "./normalizeStatus";
 import { filterEscalatedTickets } from "./filterByStatus";
-import type { TicketSelect } from "@/db/inferred-types";
 
 /**
  * Type for ticket with joined data (from cached queries)
@@ -115,8 +113,7 @@ export function applyLocationFilter(
  */
 export function applyStatusFilter(
   tickets: AdminTicketRow[],
-  statusFilter: string,
-  finalStatusValues?: Set<string>
+  statusFilter: string
 ): AdminTicketRow[] {
   if (!statusFilter) return tickets;
   
@@ -250,7 +247,6 @@ export function applyTATFilter(
  */
 export function calculateTicketStats(
   tickets: AdminTicketRow[],
-  finalStatusValues?: Set<string>
 ): {
   total: number;
   open: number;

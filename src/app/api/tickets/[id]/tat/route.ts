@@ -3,7 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { tickets, categories, users } from "@/db/schema";
 import type { TicketInsert } from "@/db/inferred-types";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { sendEmail, getTATSetEmail } from "@/lib/integration/email";
 import { SetTATSchema } from "@/schemas/business/ticket";
 import { TICKET_STATUS } from "@/conf/constants";
@@ -99,18 +99,8 @@ export async function POST(
 
 		// Parse existing metadata and get original email Message-ID and subject BEFORE updating
 		const metadata: TicketMetadata = (ticket.metadata as TicketMetadata) || {};
-		let originalMessageId: string | undefined;
-		let originalSubject: string | undefined;
-		if (metadata.originalEmailMessageId) {
-			originalMessageId = metadata.originalEmailMessageId;
-			console.log(`   🔗 Found original Message-ID for threading: ${originalMessageId}`);
-		} else {
-			console.warn(`   ⚠️ No originalEmailMessageId in ticket metadata for ticket #${ticketId}`);
-		}
-		if (metadata.originalEmailSubject) {
-			originalSubject = metadata.originalEmailSubject;
-			console.log(`   📝 Found original subject: ${originalSubject}`);
-		}
+		const originalMessageId: string | undefined = metadata.originalEmailMessageId;
+		const originalSubject: string | undefined = metadata.originalEmailSubject;
 
 		// Parse TAT text and calculate date
 		const tatText = tat.trim();
@@ -193,7 +183,7 @@ export async function POST(
 						groupTicketMetadata = typeof groupTicket.metadata === 'string'
 							? JSON.parse(groupTicket.metadata) as TicketMetadata
 							: groupTicket.metadata as TicketMetadata;
-					} catch (e) {
+					} catch {
 						// If parse fails, start with empty metadata
 						groupTicketMetadata = {};
 					}
@@ -270,7 +260,7 @@ export async function POST(
 					if (!emailResult) {
 						console.error(`❌ Failed to send TAT email to ${creator.email} for ticket #${ticket.id}`);
 					} else {
-						console.log(`✅ TAT email sent to ${creator.email} for ticket #${ticket.id}${originalMessageId ? ' (threaded)' : ''}`);
+						// TAT email sent successfully
 					}
 				}
 			} catch (emailError) {
@@ -310,9 +300,9 @@ export async function POST(
 								ccUserIds
 							);
 						}
-						console.log(`✅ Posted TAT update to Slack thread for ticket #${ticket.id}`);
-					} else {
-						console.warn(`⚠️ No slackMessageTs found for ticket #${ticket.id} - Slack thread not posted`);
+					// Posted TAT update to Slack thread
+				} else {
+					// No slackMessageTs found - Slack thread not posted
 					}
 				}
 				} catch (slackError) {

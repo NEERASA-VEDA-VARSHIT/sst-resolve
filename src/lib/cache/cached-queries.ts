@@ -4,7 +4,7 @@ import { eq, or, isNull, desc } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
 import { getAdminAssignment } from "@/lib/assignment/admin-assignment";
-import { getTicketStatuses, getTicketStatusByValue } from "@/lib/status/getTicketStatuses";
+import { getTicketStatuses } from "@/lib/status/getTicketStatuses";
 
 /**
  * Cached helper functions for admin dashboard

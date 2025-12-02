@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, tickets, ticket_statuses, ticket_feedback, users, roles, categories, domains } from "@/db";
-import { and, eq, ne, or } from "drizzle-orm";
+import { db, tickets, ticket_feedback, users, roles, categories, domains } from "@/db";
+import { and, eq, ne } from "drizzle-orm";
 import { postThreadReply } from "@/lib/integration/slack";
 import type { TicketMetadata } from "@/db/inferred-types";
 import { appConfig } from "@/conf/config";
-import { TICKET_STATUS, DEFAULTS } from "@/conf/constants";
+import { TICKET_STATUS } from "@/conf/constants";
 import { verifyCronAuth } from "@/lib/cron-auth";
 import { getStatusIdByValue } from "@/lib/status/getTicketStatuses";
 
@@ -78,9 +78,6 @@ export async function GET(request: NextRequest) {
 					// Ignore parse errors
 				}
 			}
-
-			// Store metadata for later use in update
-			const ticketMetadata = details;
 
 			// Rule 1: TAT Extension Limit - 3rd time
 			const tatExtensionCount = details.tatExtensions?.length || 0;
@@ -304,7 +301,7 @@ export async function GET(request: NextRequest) {
 					updateData.metadata = metadata as unknown;
 				} else if (hasExistingTAT) {
 					// Preserve existing TAT - admin knows the issue might take more time
-					console.log(`[Auto-escalate] Ticket #${ticket.id} already has TAT set, preserving it`);
+					// Ticket already has TAT set, preserving it
 				}
 
 				await db
@@ -316,8 +313,7 @@ export async function GET(request: NextRequest) {
 				const details = ticketMetadata;
 				const categoryNameForSlack = category_name || categoryNameForEscalation || "College"; // Default fallback
 
-				// TODO: Get actual category name from category_id join
-				// For now, check if category_id exists (assuming non-null means it's a valid category)
+				// Check if category_id exists (assuming non-null means it's a valid category)
 				if (ticket.category_id) {
 					const slackMessageTs = details.slackMessageTs;
 					if (slackMessageTs) {
@@ -328,8 +324,6 @@ export async function GET(request: NextRequest) {
 							const escalationText = `🚨 *AUTO-ESCALATION #${newEscalationCount}*\nTicket #${ticket.id} has been automatically escalated due to: ${reason}.\nEscalation count: ${newEscalationCount}\nEscalated to: ${escalatedTo === "super_admin_urgent" ? "Super Admin (URGENT)" : "Super Admin"}`;
 							
 							const { slackConfig } = await import("@/conf/config");
-							// TODO: Get actual category/subcategory names from joins
-							// For now, use default mapping
 							const ccUserIds = slackConfig.defaultCc;
 
 							const channelOverride = details.slackChannel;
@@ -356,31 +350,6 @@ export async function GET(request: NextRequest) {
 					}
 				}
 
-				// Send email notification
-				// TODO: Re-enable email sending once we can properly join user data to get user_number
-				// For now, email sending is disabled as we need to join with users table to get user_number
-				// try {
-				// 	const studentEmail = await getStudentEmail(ticket.userNumber);
-				// 	if (studentEmail) {
-				// 		const emailTemplate = getEscalationEmail(
-				// 			ticket.id,
-				// 			categoryName,
-				// 			newEscalationCount
-				// 		);
-				// 		const originalMessageId = details.originalEmailMessageId;
-				// 		const originalSubject = details.originalEmailSubject;
-				// 		await sendEmail({
-				// 			to: studentEmail,
-				// 			subject: emailTemplate.subject,
-				// 			html: emailTemplate.html,
-				// 			ticketId: ticket.id,
-				// 			threadMessageId: originalMessageId,
-				// 			originalSubject: originalSubject,
-				// 		});
-				// 	}
-				// } catch (emailError) {
-				// 	console.error(`❌ Error sending auto-escalation email for ticket #${ticket.id}:`, emailError);
-				// }
 
 				escalated.push(ticket.id);
 			} catch (error) {

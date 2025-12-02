@@ -4,13 +4,7 @@
  */
 
 import { db } from "@/db";
-import {
-  tickets,
-  users,
-  students,
-  categories,
-  hostels,
-} from "@/db/schema";
+import { users, categories } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import {
   getCategorySchema,

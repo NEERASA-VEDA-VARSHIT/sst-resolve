@@ -24,8 +24,6 @@ export function AdminActions({
 	currentStatus,
 	hasTAT,
 	isSuperAdmin = false,
-	ticketCategory,
-	ticketLocation,
 	currentAssignedTo,
 	forwardTargets = [],
 }: {
@@ -33,8 +31,6 @@ export function AdminActions({
 	currentStatus: string;
 	hasTAT?: boolean;
 	isSuperAdmin?: boolean;
-	ticketCategory: string;
-	ticketLocation?: string | null;
 	currentAssignedTo?: string | null;
 	forwardTargets?: ForwardTarget[];
 }) {
@@ -456,15 +452,13 @@ export function AdminActions({
 				{/* Reassign - only for super admin */}
 				{isSuperAdmin && (
 					<>
-						<ReassignDialog
-							open={showReassignDialog}
-							onOpenChange={setShowReassignDialog}
-							ticketId={ticketId}
-							currentAssignedTo={currentAssignedTo}
-							ticketCategory={ticketCategory}
-							ticketLocation={ticketLocation}
-							onReassigned={() => router.refresh()}
-						/>
+					<ReassignDialog
+						open={showReassignDialog}
+						onOpenChange={setShowReassignDialog}
+						ticketId={ticketId}
+						currentAssignedTo={currentAssignedTo}
+						onReassigned={() => router.refresh()}
+					/>
 						<Button
 							variant="outline"
 							disabled={loading !== null}

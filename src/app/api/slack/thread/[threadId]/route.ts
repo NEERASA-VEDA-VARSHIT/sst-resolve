@@ -37,7 +37,6 @@ export async function GET(
             );
         }
 
-        console.log("[Slack API] Fetching thread", { threadId, channel });
 
         // Fetch thread messages
         const result = await slack.conversations.replies({
@@ -98,7 +97,6 @@ export async function GET(
             })
         );
 
-        console.log(`[Slack API] Fetched ${messages.length} messages`);
 
         return NextResponse.json({ messages });
     } catch (error) {

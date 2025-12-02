@@ -217,7 +217,7 @@ export async function POST(
 						slackMessageTs,
 						reassignText
 					);
-					console.log(`✅ Posted reassignment to Slack thread for ticket #${ticketId}`);
+					// Posted reassignment to Slack thread
 				} catch (slackError) {
 					console.error(`❌ Error posting reassignment to Slack for ticket #${ticketId}:`, slackError);
 				}
@@ -319,7 +319,7 @@ export async function POST(
 					threadMessageId: originalMessageId,
 					originalSubject: originalSubject,
 				});
-				console.log(`✅ Reassignment email sent to ${studentEmail} for ticket #${ticket.id}`);
+				// Reassignment email sent successfully
 			}
 		} catch (notificationError) {
 			console.error("Error sending reassignment notifications:", notificationError);

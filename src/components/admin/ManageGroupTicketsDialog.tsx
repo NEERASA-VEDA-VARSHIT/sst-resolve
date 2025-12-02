@@ -14,7 +14,6 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { Loader2, Plus, X, Search, Package, Clock, MapPin, Calendar, ExternalLink, FileText, Users } from "lucide-react";
 import { format } from "date-fns";
@@ -100,13 +99,6 @@ export function ManageGroupTicketsDialog({
     }
   }, [group]);
 
-  // Fetch committees when dialog opens
-  useEffect(() => {
-    if (open) {
-      fetchCommittees();
-    }
-  }, [open]);
-
   const fetchCommittees = useCallback(async () => {
     try {
       setLoadingCommittees(true);
@@ -121,21 +113,6 @@ export function ManageGroupTicketsDialog({
       setLoadingCommittees(false);
     }
   }, []);
-
-  // Fetch available tickets when dialog opens
-  useEffect(() => {
-    if (open && currentGroup?.id) {
-      fetchAvailableTickets();
-      fetchGroupData();
-    } else {
-      // Reset state when dialog closes
-      setSelectedTicketsToAdd([]);
-      setSelectedTicketsToRemove([]);
-      setSearchQuery("");
-      setAvailableTickets([]);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, currentGroup?.id]);
 
   const fetchGroupData = useCallback(async () => {
     if (!currentGroup?.id) return;
@@ -223,6 +200,28 @@ export function ManageGroupTicketsDialog({
     }
   }, [currentGroup?.id]);
 
+  // Fetch committees when dialog opens
+  useEffect(() => {
+    if (open) {
+      fetchCommittees();
+    }
+  }, [open, fetchCommittees]);
+
+  // Fetch available tickets when dialog opens
+  useEffect(() => {
+    if (open && currentGroup?.id) {
+      fetchAvailableTickets();
+      fetchGroupData();
+    } else {
+      // Reset state when dialog closes
+      setSelectedTicketsToAdd([]);
+      setSelectedTicketsToRemove([]);
+      setSearchQuery("");
+      setAvailableTickets([]);
+    }
+     
+  }, [open, currentGroup, fetchAvailableTickets, fetchGroupData]);
+
   const handleAddTickets = useCallback(async () => {
     if (!currentGroup || selectedTicketsToAdd.length === 0) {
       toast.error("Please select tickets to add");
@@ -261,7 +260,7 @@ export function ManageGroupTicketsDialog({
     } finally {
       setLoading(false);
     }
-  }, [currentGroup?.id, selectedTicketsToAdd, onSuccess, fetchAvailableTickets, fetchGroupData]);
+  }, [currentGroup, selectedTicketsToAdd, onSuccess, fetchAvailableTickets, fetchGroupData]);
 
   const handleRemoveTickets = useCallback(async () => {
     if (!currentGroup || selectedTicketsToRemove.length === 0) {
@@ -305,7 +304,7 @@ export function ManageGroupTicketsDialog({
     } finally {
       setLoading(false);
     }
-  }, [currentGroup?.id, selectedTicketsToRemove, onSuccess, fetchAvailableTickets, fetchGroupData]);
+  }, [currentGroup, selectedTicketsToRemove, onSuccess, fetchAvailableTickets, fetchGroupData]);
 
   const toggleTicketToAdd = (ticketId: number) => {
     setSelectedTicketsToAdd(prev =>
@@ -360,7 +359,7 @@ export function ManageGroupTicketsDialog({
     } finally {
       setLoadingTAT(false);
     }
-  }, [currentGroup?.id, groupTAT, fetchGroupData, onSuccess]);
+  }, [currentGroup, groupTAT, fetchGroupData, onSuccess]);
 
   const handleSetCommittee = useCallback(async () => {
     if (!currentGroup?.id) {
@@ -403,7 +402,7 @@ export function ManageGroupTicketsDialog({
     } finally {
       setLoadingCommitteeUpdate(false);
     }
-  }, [currentGroup?.id, selectedCommitteeId, fetchGroupData, onSuccess]);
+  }, [currentGroup, selectedCommitteeId, fetchGroupData, onSuccess]);
 
   const filteredAvailableTickets = availableTickets.filter(ticket => {
     if (!searchQuery.trim()) return true;

@@ -15,7 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Search, User, Users, Mail, Shield, UserCheck, UserX, Loader2, Building2, GraduationCap, MapPin, Settings, MessageSquare, Phone, Plus, Trash2 } from "lucide-react";
+import { Search, User, Users, Mail, Shield, UserCheck, UserX, Loader2, Building2, GraduationCap, MapPin, Settings, MessageSquare, Phone, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import type { Roles } from "@/types/globals";
 import {
@@ -87,6 +87,7 @@ export function IntegratedUserManagement({ users }: { users: User[] }) {
     fetchStaff();
     fetchMasterData();
     fetchClerkUsers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchClerkUsers = async () => {

@@ -6,7 +6,7 @@
  */
 
 import { db } from "@/db";
-import { tickets, ticket_statuses } from "@/db/schema";
+import { tickets } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { postThreadReplyToChannel } from "@/lib/integration/slack";
 import { sendEmail, getStatusUpdateEmail } from "@/lib/integration/email";

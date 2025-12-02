@@ -1,6 +1,5 @@
 import { WebClient } from "@slack/web-api";
 import { slackConfig } from "@/conf/config";
-import { retryWithBackoff } from "@/lib/utils/retry";
 import { logCriticalError, logWarning } from "@/lib/monitoring/alerts";
 
 const slack = slackConfig.botToken ? new WebClient(slackConfig.botToken) : null;

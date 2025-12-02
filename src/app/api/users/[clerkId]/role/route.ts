@@ -97,7 +97,7 @@ export async function POST(
         
         if (hasStudentRole) {
           await removeUserRole(clerkId, "student");
-          console.log(`[Role Assignment] Auto-removed student role from ${clerkId} after assigning ${role}`);
+          // Auto-removed student role after assigning elevated role
         }
       } catch (error) {
         // Don't fail the request if cleanup fails - elevated role is already assigned

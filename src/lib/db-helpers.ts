@@ -4,7 +4,7 @@
  */
 
 import { db, users, roles, admin_assignments, tickets, committees, categories, domains, scopes, admin_profiles, ticket_statuses } from "@/db";
-import { eq, and, isNull, isNotNull, lt, sql } from "drizzle-orm";
+import { eq, and, isNotNull, lt, sql } from "drizzle-orm";
 import type { UserRole } from "@/types/auth";
 
 /**

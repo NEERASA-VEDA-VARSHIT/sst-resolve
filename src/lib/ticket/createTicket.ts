@@ -1,6 +1,6 @@
 // lib/tickets/createTicket.ts
 import { db, tickets, users, outbox, categories, subcategories, sub_subcategories } from "@/db";
-import { eq, and, sql, or } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { TicketCreateInput } from "@/lib/validation/ticket";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";

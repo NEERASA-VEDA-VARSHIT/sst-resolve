@@ -79,8 +79,6 @@ export default function SuperAdminBatchStudentsPage() {
   const [selectedStudents, setSelectedStudents] = useState<number[]>([]);
   const [editingStudentId, setEditingStudentId] = useState<number | null>(null);
   const [showEditDialog, setShowEditDialog] = useState(false);
-  const [deletingStudentId, setDeletingStudentId] = useState<number | null>(null);
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
   const fetchStudents = async () => {
     if (!batchYear) return;
@@ -143,19 +141,17 @@ export default function SuperAdminBatchStudentsPage() {
     }
   };
 
-  const handleDelete = async () => {
-    if (!deletingStudentId) return;
+  const handleDelete = async (studentId: number) => {
+    if (!studentId) return;
 
     try {
-      const response = await fetch(`/api/superadmin/students/${deletingStudentId}`, {
+      const response = await fetch(`/api/superadmin/students/${studentId}`, {
         method: "DELETE",
       });
 
       if (response.ok) {
         const data = await response.json();
         toast.success(data.message || "Student deleted successfully");
-        setIsDeleteDialogOpen(false);
-        setDeletingStudentId(null);
         fetchStudents();
       } else {
         const error = await response.json();
@@ -347,10 +343,7 @@ export default function SuperAdminBatchStudentsPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => {
-                              setDeletingStudentId(student.student_id);
-                              setIsDeleteDialogOpen(true);
-                            }}
+                            onClick={() => handleDelete(student.student_id)}
                             className="text-destructive hover:text-destructive"
                           >
                             <Trash2 className="w-4 h-4" />

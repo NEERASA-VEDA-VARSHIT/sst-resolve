@@ -9,26 +9,6 @@ const isPublicRoute = createRouteMatcher([
   '/api/slack(.*)', // Allow Slack webhooks without authentication
 ]);
 
-const isAdminRoute = createRouteMatcher([
-  '/admin(.*)',
-  '/api/admin(.*)',
-]);
-
-const isSuperAdminRoute = createRouteMatcher([
-  '/superadmin(.*)',
-]);
-
-const isStudentRoute = createRouteMatcher([
-  '/student(.*)',
-  // NOTE: Do NOT include /api/tickets here. API routes handle auth internally.
-  // /api/tickets is accessible by students, admins, committees, and superadmins
-  // based on endpoint-level authorization checks.
-]);
-
-const isCommitteeRoute = createRouteMatcher([
-  '/committee(.*)',
-]);
-
 export default clerkMiddleware(async (auth, req) => {
   const { userId } = await auth();
   const { pathname } = req.nextUrl;

@@ -82,11 +82,6 @@ export async function POST(request: NextRequest) {
 		const eventData = evt.data;
 
 		const typedEventData = eventData as ClerkUserEventData;
-		
-		console.log(`[Clerk Webhook] Received event: ${eventType}`, {
-			userId: typedEventData.id,
-			email: Array.isArray(typedEventData.email_addresses) ? typedEventData.email_addresses[0]?.email_address : undefined,
-		});
 
 		try {
 			switch (eventType) {
@@ -103,7 +98,8 @@ export async function POST(request: NextRequest) {
 					break;
 
 				default:
-					console.log(`[Clerk Webhook] Unhandled event type: ${eventType}`);
+					// Unhandled event type - log for monitoring
+					logWarning(`[Clerk Webhook] Unhandled event type: ${eventType}`, { eventType });
 			}
 		} catch (handlerError) {
 			logCriticalError(
@@ -154,16 +150,16 @@ async function handleUserCreated(eventData: ClerkUserEventData) {
 			.limit(1);
 
 		if (existingUser) {
-			console.log(`[Clerk Webhook] User ${clerkUserId} already exists, skipping creation`);
+			// User already exists, skip creation (idempotency)
 			return;
 		}
 
 		// Create user record (role will be assigned via user_roles table in getOrCreateUser)
 		// Use getOrCreateUser which handles role assignment automatically
 		// getOrCreateUser now handles pending users and duplicate emails gracefully
-		const newUser = await getOrCreateUser(clerkUserId);
+		await getOrCreateUser(clerkUserId);
 
-		console.log(`[Clerk Webhook] Created/updated user record: ${newUser.id} for Clerk user: ${clerkUserId} with default role: student`);
+		// User record created/updated successfully
 	} catch (error) {
 		// Handle duplicate key errors gracefully
 		if (
@@ -188,7 +184,7 @@ async function handleUserCreated(eventData: ClerkUserEventData) {
 					)
 					.limit(1);
 				if (existingUser) {
-					console.log(`[Clerk Webhook] Found existing user after duplicate key error: ${existingUser.id}`);
+					// User already exists, skip creation
 					return;
 				}
 			} catch (fetchError) {
@@ -217,7 +213,7 @@ async function handleUserUpdated(eventData: ClerkUserEventData) {
 		// getOrCreateUser now handles pending users and duplicate emails gracefully
 		await getOrCreateUser(clerkUserId);
 
-		console.log(`[Clerk Webhook] Updated user record for Clerk user: ${clerkUserId}`);
+		// User record updated successfully
 	} catch (error) {
 		// Handle duplicate key errors gracefully
 		if (
@@ -262,7 +258,7 @@ async function handleUserDeleted(eventData: ClerkUserEventData) {
 			.limit(1);
 
 		if (!existingUser) {
-			console.log(`[Clerk Webhook] User ${clerkUserId} not found in database, skipping deletion`);
+			// User not found in database, skip deletion
 			return;
 		}
 
@@ -276,13 +272,7 @@ async function handleUserDeleted(eventData: ClerkUserEventData) {
 			})
 			.where(eq(users.id, existingUser.id));
 
-		console.log(`[Clerk Webhook] Soft deleted user: ${clerkUserId} (database record preserved)`);
-
-		// Option 2: Hard delete (NOT RECOMMENDED - breaks referential integrity)
-		// ⚠️ WARNING: This will fail if there are foreign key constraints
-		// Uncomment only if you want to completely remove user data
-		// await db.delete(users).where(eq(users.external_id, clerkUserId));
-		// console.log(`[Clerk Webhook] Hard deleted user: ${clerkUserId}`);
+		// User soft deleted successfully (database record preserved)
 	} catch (error) {
 		logCriticalError("[Clerk Webhook] Error handling user deletion", error, {
 			clerkUserId: eventData.id,

@@ -8,8 +8,6 @@ import {
   Building2,
   Shield,
   BarChart3,
-  UserCheck,
-  User,
   GraduationCap,
   Tag,
   Bell,
@@ -184,12 +182,7 @@ export function getNavItemsForRole(role: UserRole, mounted: boolean): NavItem[] 
             icon: Settings,
             show: true,
           },
-          {
-            title: "Ticket Assignment",
-            href: "/superadmin/settings/ticket-assignment",
-            icon: UserCheck,
-            show: true,
-          },
+          // Ticket Assignment (legacy) removed
           {
             title: "Notifications",
             href: "/superadmin/dashboard/notification-settings",

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { tickets, users, categories, admin_profiles, ticket_statuses } from "@/db/schema";
-import { eq, and, or, isNotNull, aliasedTable, inArray } from "drizzle-orm";
+import { eq, and, isNotNull, aliasedTable, inArray } from "drizzle-orm";
 import { postThreadReplyToChannel } from "@/lib/integration/slack";
 import { sendEmail } from "@/lib/integration/email";
 import { verifyCronAuth } from "@/lib/cron-auth";

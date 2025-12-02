@@ -7,8 +7,6 @@ import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
 import type { InferSelectModel } from "drizzle-orm";
 
-const CHOICE_FIELD_TYPES = new Set(["select", "multi_select"]);
-
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }

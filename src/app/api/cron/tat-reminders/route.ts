@@ -48,10 +48,6 @@ export async function GET(request: NextRequest) {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    console.log("[TAT Cron] Checking tickets due between", {
-      start: today.toISOString(),
-      end: tomorrow.toISOString(),
-    });
 
     // Use regular joins instead of relational query API
     const assignedUser = aliasedTable(users, "assigned_user");
@@ -107,7 +103,6 @@ export async function GET(request: NextRequest) {
       assigned_to: t.assigned_to,
     }));
 
-    console.log(`[TAT Cron] Found ${dueTickets.length} tickets due today`);
 
     if (dueTickets.length === 0) {
       return NextResponse.json({
@@ -142,7 +137,6 @@ export async function GET(request: NextRequest) {
             subject: `⏰ TAT Reminder: ${adminTickets.length} ticket(s) due today`,
             html: emailHtml,
           });
-          console.log(`[TAT Cron] Email sent to ${admin.user.email}`);
           remindersSent++;
         } catch (error) {
           console.error(`[TAT Cron] Failed to send email to ${adminName}:`, error);
@@ -170,7 +164,6 @@ export async function GET(request: NextRequest) {
           // Channel Summary
           const slackMessage = formatSlackTATReminder(categoryTickets, categoryName);
           await postToSlackChannel(channelKey, slackMessage);
-          console.log(`[TAT Cron] Slack summary sent to ${channelKey} for ${categoryName}`);
           remindersSent++;
 
         } catch (error) {
@@ -179,7 +172,6 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    console.log(`[TAT Cron] Completed. Sent ${remindersSent} reminders`);
 
     return NextResponse.json({
       success: true,

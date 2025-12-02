@@ -138,11 +138,7 @@ const validatePhone = (v?: string) => {
   return phoneRegex.test(cleaned);
 };
 
-function generateEmailFromRollNo(roll: string, name: string) {
-  if (!roll || !name) return "";
-  const namePart = name.toLowerCase().replace(/\s+/g, ".").replace(/[^a-z0-9.]/g, "");
-  return `${namePart}.${String(roll).toLowerCase()}@sst.scaler.com`;
-}
+// generateEmailFromRollNo helper was removed as ticket emails are now driven by backend logic.
 
 /* ===========================
    TicketForm
@@ -855,7 +851,7 @@ export default function TicketForm(props: TicketFormProps) {
     } finally {
       setLoading(false);
     }
-  }, [form, validateForm, router]);
+  }, [form, validateForm, router, loading]);
 
   /* ===========================
      Small internal subcomponents

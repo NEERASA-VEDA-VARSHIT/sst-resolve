@@ -433,23 +433,13 @@ export async function PATCH(
     }
 
     if (status) {
-      // Get original email Message-ID and subject BEFORE updating (to preserve them in metadata)
+      // Get original email Message-ID BEFORE updating (to preserve it in metadata)
       let originalMessageId: string | undefined;
-      let originalSubject: string | undefined;
       try {
         const metadata = (ticket.metadata as TicketMetadata) || {};
         originalMessageId = metadata.originalEmailMessageId;
-        originalSubject = metadata.originalEmailSubject;
-        if (originalMessageId) {
-          console.log(`   🔗 Found original Message-ID for threading: ${originalMessageId}`);
-        } else {
-          console.warn(`   ⚠️ No originalEmailMessageId in ticket metadata for ticket #${ticketId}`);
-        }
-        if (originalSubject) {
-          console.log(`   📝 Found original subject: ${originalSubject}`);
-        }
-      } catch (parseError) {
-        console.warn(`⚠️ Could not parse ticket metadata for ticket #${ticketId}:`, parseError);
+      } catch {
+        // Metadata parsing failed, continue without threading info
       }
 
       if (!canonicalStatus) {
@@ -629,10 +619,8 @@ export async function PATCH(
             if (!emailResult) {
               console.error(`❌ Failed to send status update email to ${studentEmail} for ticket #${updatedTicket.id}`);
             } else {
-              console.log(`✅ Status update email sent to ${studentEmail} for ticket #${updatedTicket.id} (status: ${status})`);
+              // Status update email sent successfully
             }
-          } else {
-            console.warn(`⚠️ No email found for creator (user_id: ${updatedTicket.created_by}) - status update email not sent`);
           }
         } catch (emailError) {
           console.error("Error sending status update email:", emailError);

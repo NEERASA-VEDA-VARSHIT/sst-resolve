@@ -158,7 +158,8 @@ export async function getFieldOptionsForFields(fieldIds: number[]) {
  * Get category profile field configuration
  * NOTE: Always returns empty array - all student details are fetched every time
  */
-export async function getCategoryProfileFields(categoryId: number) {
+export async function getCategoryProfileFields(_categoryId: number) {
+  void _categoryId;
   return [];
 }
 

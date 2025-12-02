@@ -156,8 +156,6 @@ export async function GET() {
 
 									if (!emailResult) {
 										console.error(`❌ Failed to send TAT reminder email to ${studentEmail} for ticket #${ticket.id}`);
-									} else {
-										console.log(`✅ TAT reminder email sent to ${studentEmail} for ticket #${ticket.id}${originalMessageId ? ' (threaded)' : ''}`);
 									}
 								}
 							} catch (emailError) {

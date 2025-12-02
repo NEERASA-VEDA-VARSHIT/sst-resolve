@@ -252,7 +252,7 @@ export async function PATCH(
               };
               break;
             }
-          } catch (e) {
+          } catch {
             // Ignore parse errors
           }
         }
@@ -350,7 +350,7 @@ export async function PATCH(
               metadata = typeof ticket.metadata === 'string'
                 ? JSON.parse(ticket.metadata) as TicketMetadata
                 : ticket.metadata as TicketMetadata;
-            } catch (e) {
+            } catch {
               // If parse fails, start with empty metadata
               metadata = {};
             }
@@ -403,7 +403,7 @@ export async function PATCH(
                 };
                 break;
               }
-            } catch (e) {
+            } catch {
               // Ignore parse errors
             }
           }
@@ -430,7 +430,7 @@ export async function PATCH(
                 metadata = typeof groupTicket.metadata === 'string'
                   ? JSON.parse(groupTicket.metadata) as TicketMetadata
                   : groupTicket.metadata as TicketMetadata;
-              } catch (e) {
+              } catch {
                 metadata = {};
               }
             }
@@ -498,7 +498,7 @@ export async function PATCH(
             metadata = typeof ticket.metadata === 'string'
               ? JSON.parse(ticket.metadata) as TicketMetadata
               : ticket.metadata as TicketMetadata;
-          } catch (e) {
+          } catch {
             metadata = {};
           }
         }
@@ -548,6 +548,17 @@ export async function PATCH(
           .set(updateData)
           .where(eq(tickets.id, ticket.id));
       }
+    }
+
+    // Update committee assignment for the group if provided
+    if (committee_id !== undefined) {
+      await db
+        .update(ticket_groups)
+        .set({
+          committee_id: committee_id === null ? null : committee_id,
+          updated_at: new Date(),
+        })
+        .where(eq(ticket_groups.id, groupIdNum));
     }
 
     // Fetch updated group

@@ -6,16 +6,12 @@ interface CommitteeActionsProps {
   ticketId: number;
   currentStatus: string;
   hasTAT: boolean;
-  categoryName: string | null;
-  location: string | null;
 }
 
 export function CommitteeActions({
   ticketId,
   currentStatus,
   hasTAT,
-  categoryName,
-  location,
 }: CommitteeActionsProps) {
   return (
     <Card className="border-2 border-blue-200 dark:border-blue-800">
@@ -34,8 +30,6 @@ export function CommitteeActions({
           currentStatus={currentStatus}
           hasTAT={hasTAT}
           isSuperAdmin={false}
-          ticketCategory={categoryName || "General"}
-          ticketLocation={location}
           currentAssignedTo={null}
           forwardTargets={[]}
         />

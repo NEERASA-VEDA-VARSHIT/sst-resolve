@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { tickets, users, outbox, ticket_statuses } from "@/db/schema";
 import type { TicketInsert } from "@/db/inferred-types";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { AddCommentSchema } from "@/schemas/business/ticket";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { getOrCreateUser } from "@/lib/auth/user-sync";

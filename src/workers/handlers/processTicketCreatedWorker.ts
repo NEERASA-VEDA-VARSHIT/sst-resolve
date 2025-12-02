@@ -444,6 +444,7 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
       if (roomNumber) contactLines.push(`Room: ${roomNumber}`);
       if (!Number.isNaN(batchYear) && batchYear) contactLines.push(`Batch: ${batchYear}`);
       if (classSection) contactLines.push(`Class: ${classSection}`);
+      if (hostelName) contactLines.push(`Hostel: ${hostelName}`);
 
       const body = [
         `*Ticket ID:* #${ticket.id}`,

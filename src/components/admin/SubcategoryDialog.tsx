@@ -119,9 +119,6 @@ export function SubcategoryDialog({
 
   useEffect(() => {
     if (subcategory) {
-      const hasInlineAdmin =
-        subcategory.assigned_admin_id !== null &&
-        subcategory.assigned_admin_id !== undefined;
       // If there is an explicit admin on the subcategory, do NOT inherit.
       // If there isn't, still default to NOT inheriting; user must opt in.
       setInheritFromCategory(false);

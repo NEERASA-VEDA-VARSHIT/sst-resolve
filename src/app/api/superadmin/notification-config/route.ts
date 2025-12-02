@@ -6,7 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db, notification_config, categories, subcategories, scopes, domains } from "@/db";
-import { eq, and, isNull, desc } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 
 /**

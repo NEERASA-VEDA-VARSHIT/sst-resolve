@@ -101,8 +101,6 @@ export async function POST(request: NextRequest) {
     // Fire and forget - don't await this
     (async () => {
       try {
-        console.log(`[Ticket API] 🔔 Starting async notification processing for ticket #${ticket.id}`);
-        
         // Small delay to ensure transaction is committed
         await new Promise(resolve => setTimeout(resolve, 100));
         
@@ -111,7 +109,6 @@ export async function POST(request: NextRequest) {
         const { db: dbInstance, outbox: outboxTable } = await import("@/db");
         const { eq, desc, and, isNull, sql } = await import("drizzle-orm");
         
-        console.log(`[Ticket API] 🔍 Searching for outbox event for ticket #${ticket.id}`);
         
         // Find the outbox event for this specific ticket using JSONB query
         // Only look for unprocessed events
@@ -131,7 +128,7 @@ export async function POST(request: NextRequest) {
         let eventToProcess = outboxEvent;
         
         if (!eventToProcess) {
-          console.warn(`[Ticket API] ⚠️ No unprocessed outbox event found for ticket #${ticket.id}. This might be a race condition - retrying...`);
+          // No outbox event found, retrying...
           // Wait a bit and retry once (race condition handling)
           await new Promise(resolve => setTimeout(resolve, 500));
           const [retryEvent] = await dbInstance
@@ -148,13 +145,10 @@ export async function POST(request: NextRequest) {
             .limit(1);
           
           if (!retryEvent) {
-            console.warn(`[Ticket API] ⚠️ Still no outbox event after retry for ticket #${ticket.id}. Cron job will handle it.`);
+            // Still no outbox event after retry, cron job will handle it
             return;
           }
           eventToProcess = retryEvent;
-          console.log(`[Ticket API] ✅ Found outbox event ${eventToProcess.id} after retry for ticket #${ticket.id}`);
-        } else {
-          console.log(`[Ticket API] ✅ Found outbox event ${eventToProcess.id} for ticket #${ticket.id}`);
         }
         
         if (eventToProcess && eventToProcess.payload) {
@@ -179,7 +173,7 @@ export async function POST(request: NextRequest) {
                 ...parsed
               };
             } else {
-              console.warn("[Ticket API] Invalid outbox payload type, using empty object:", typeof eventToProcess.payload);
+              console.warn("[Ticket API] Invalid outbox payload type, using empty object");
               payload = { ticket_id: 0 };
             }
           } catch (error) {
@@ -188,10 +182,8 @@ export async function POST(request: NextRequest) {
           }
           
           // Process immediately (non-blocking)
-          console.log(`[Ticket API] 🚀 Processing outbox event ${eventToProcess.id} for ticket #${payload.ticket_id} (email & Slack notifications)`);
           processTicketCreated(eventToProcess.id, payload)
             .then(() => {
-              console.log(`[Ticket API] ✅ Successfully processed outbox event ${eventToProcess.id} - notifications sent`);
               return markOutboxSuccess(eventToProcess.id);
             })
             .catch((error) => {
@@ -200,7 +192,7 @@ export async function POST(request: NextRequest) {
               return markOutboxFailure(eventToProcess.id, error instanceof Error ? error.message : "Unknown error");
             });
         } else {
-          console.warn(`[Ticket API] ⚠️ Outbox event ${eventToProcess?.id || 'unknown'} has no payload for ticket #${ticket.id}`);
+          console.warn(`[Ticket API] Outbox event has no payload for ticket #${ticket.id}`);
         }
       } catch (error) {
         // Log but don't fail the request if immediate processing fails
@@ -213,7 +205,7 @@ export async function POST(request: NextRequest) {
         if (error instanceof Error && error.stack) {
           console.error("[Ticket API] Error stack:", error.stack);
         }
-        console.warn("[Ticket API] Cron job will process this event as backup");
+        // Cron job will process this event as backup
       }
     })().catch((error) => {
       // Catch any unhandled errors in the async block

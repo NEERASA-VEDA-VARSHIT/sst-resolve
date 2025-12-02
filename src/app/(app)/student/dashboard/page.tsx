@@ -17,6 +17,9 @@ import { getCanonicalStatus } from "@/conf/constants";
 import { PaginationControls } from "@/components/dashboard/PaginationControls";
 import type { Ticket } from "@/db/types-only";
 
+// Force dynamic rendering for authenticated routes
+export const dynamic = 'force-dynamic';
+
 export default async function StudentDashboardPage({
   searchParams,
 }: {

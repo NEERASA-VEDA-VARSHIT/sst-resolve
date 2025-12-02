@@ -38,7 +38,6 @@ import {
   Bell,
   MessageSquare,
   Mail,
-  Settings,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -63,12 +62,6 @@ interface NotificationConfig {
   updated_at: Date | string;
 }
 
-interface Scope {
-  id: number;
-  name: string;
-  domain_id: number;
-}
-
 interface Category {
   id: number;
   name: string;
@@ -91,8 +84,6 @@ export function NotificationSettingsManager() {
   const [configs, setConfigs] = useState<NotificationConfig[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
-  const [scopes, setScopes] = useState<Scope[]>([]);
-  const [domains, setDomains] = useState<Array<{ id: number; name: string }>>([]);
   const [admins, setAdmins] = useState<Admin[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -165,25 +156,7 @@ export function NotificationSettingsManager() {
         setCategories(categoriesList);
         // Scopes are returned as formatted array, but we need full objects with id
         // Fetch scopes separately to get full data
-        try {
-          const scopesRes = await fetch("/api/superadmin/scopes?active=true");
-          if (scopesRes.ok) {
-            const scopesData = await scopesRes.json();
-            setScopes(scopesData.scopes || []);
-          }
-        } catch (error) {
-          console.error("Error fetching scopes:", error);
-        }
-        // Fetch domains for scope filtering
-        try {
-          const domainsRes = await fetch("/api/superadmin/domains?active=true");
-          if (domainsRes.ok) {
-            const domainsData = await domainsRes.json();
-            setDomains(domainsData.domains || []);
-          }
-        } catch (error) {
-          console.error("Error fetching domains:", error);
-        }
+        // Additional scope/domain fetching was removed as it was unused.
       }
 
       // Fetch all subcategories by fetching from each category

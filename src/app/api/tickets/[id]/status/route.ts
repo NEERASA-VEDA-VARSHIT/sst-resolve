@@ -195,7 +195,6 @@ export async function PATCH(
       const reopenedStatusId = await getStatusIdByValue(TICKET_STATUS.REOPENED);
       if (reopenedStatusId) {
         newStatus = TICKET_STATUS.REOPENED;
-        console.log(`[Status Update] Corrected invalid transition: resolved -> open changed to resolved -> reopened for ticket #${ticketId}`);
       } else {
         return NextResponse.json(
           { error: "Invalid status transition: Cannot change from resolved to open. Use 'reopened' instead." },

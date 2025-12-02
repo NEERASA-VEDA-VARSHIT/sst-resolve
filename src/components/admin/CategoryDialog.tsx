@@ -137,7 +137,6 @@ export function CategoryDialog({ open, onClose, category }: CategoryDialogProps)
       const adminList = (data.staff || []).map((staff: StaffMember) => {
         // Parse fullName if available, otherwise use email
         const fullName = staff.fullName || "";
-        const nameParts = fullName.split(" ");
         return {
           id: staff.id,
           full_name: fullName || null,
