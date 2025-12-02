@@ -20,6 +20,16 @@ import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
+// Status styles matching TicketCard
+const STATUS_STYLES: Record<string, string> = {
+  OPEN: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border-blue-200 dark:border-blue-800",
+  REOPENED: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800",
+  IN_PROGRESS: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 dark:border-amber-800",
+  AWAITING_STUDENT: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 border-purple-200 dark:border-purple-800",
+  ESCALATED: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-800",
+  RESOLVED: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800",
+};
+
 interface Ticket {
   id: number;
   status: string | null;
@@ -643,8 +653,14 @@ export function ManageGroupTicketsDialog({
                             <div className="flex items-center gap-2 flex-wrap flex-1">
                               <span className="text-sm font-mono font-semibold text-primary">#{ticket.id}</span>
                               {ticket.status && (
-                                <Badge variant="outline" className="text-xs">
-                                  {ticket.status}
+                                <Badge 
+                                  variant="outline" 
+                                  className={cn(
+                                    "text-xs font-semibold border",
+                                    STATUS_STYLES[ticket.status.toUpperCase()] || "bg-muted text-foreground"
+                                  )}
+                                >
+                                  {ticket.status.replaceAll("_", " ").replace(/\b\w/g, (l) => l.toUpperCase())}
                                 </Badge>
                               )}
                               {ticket.category_name && (
@@ -774,8 +790,14 @@ export function ManageGroupTicketsDialog({
                             <div className="flex items-center gap-2 flex-wrap flex-1">
                               <span className="text-sm font-mono font-semibold text-primary">#{ticket.id}</span>
                               {ticket.status && (
-                                <Badge variant="outline" className="text-xs">
-                                  {ticket.status}
+                                <Badge 
+                                  variant="outline" 
+                                  className={cn(
+                                    "text-xs font-semibold border",
+                                    STATUS_STYLES[ticket.status.toUpperCase()] || "bg-muted text-foreground"
+                                  )}
+                                >
+                                  {ticket.status.replaceAll("_", " ").replace(/\b\w/g, (l) => l.toUpperCase())}
                                 </Badge>
                               )}
                               {ticket.category_name && (

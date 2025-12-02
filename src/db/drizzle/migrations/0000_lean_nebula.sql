@@ -1,4 +1,8 @@
-CREATE TYPE "public"."scope_mode" AS ENUM('fixed', 'dynamic', 'none');--> statement-breakpoint
+DO $$ BEGIN
+ CREATE TYPE "public"."scope_mode" AS ENUM('fixed', 'dynamic', 'none');
+EXCEPTION
+ WHEN duplicate_object THEN null;
+END $$;--> statement-breakpoint
 CREATE TABLE "admin_assignments" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"user_id" uuid NOT NULL,
