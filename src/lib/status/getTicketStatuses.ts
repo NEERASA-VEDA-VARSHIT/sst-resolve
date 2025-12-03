@@ -3,6 +3,7 @@ import { getCanonicalStatus } from "@/conf/constants";
 import { db } from "@/db";
 import { tickets, ticket_statuses } from "@/db/schema";
 import { sql, eq } from "drizzle-orm";
+import { unstable_cache } from "next/cache";
 
 // Type for ticket status values (matches database values)
 export type TicketStatus =
@@ -15,25 +16,32 @@ export type TicketStatus =
 	| "resolved";
 
 /**
- * Get all ticket statuses from database
+ * Get all ticket statuses from database (cached for performance)
  */
-export async function getTicketStatuses(): Promise<Array<{
-    id: number;
-    value: string;
-    label: string;
-    description: string | null;
-    progress_percent: number | null;
-    badge_color: string | null;
-    is_active: boolean | null;
-    is_final: boolean | null;
-    display_order: number | null;
-}>> {
-    return await db
-        .select()
-        .from(ticket_statuses)
-        .where(eq(ticket_statuses.is_active, true))
-        .orderBy(ticket_statuses.display_order);
-}
+export const getTicketStatuses = unstable_cache(
+    async (): Promise<Array<{
+        id: number;
+        value: string;
+        label: string;
+        description: string | null;
+        progress_percent: number | null;
+        badge_color: string | null;
+        is_active: boolean | null;
+        is_final: boolean | null;
+        display_order: number | null;
+    }>> => {
+        return await db
+            .select()
+            .from(ticket_statuses)
+            .where(eq(ticket_statuses.is_active, true))
+            .orderBy(ticket_statuses.display_order);
+    },
+    ["ticket-statuses"],
+    {
+        revalidate: 300, // Cache for 5 minutes
+        tags: ["ticket-statuses"],
+    }
+);
 
 export async function getTicketStatusByValue(value: string): Promise<{
     id: number;

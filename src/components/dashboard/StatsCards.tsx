@@ -102,7 +102,14 @@ export function StatsCards({ stats }: StatsCardsProps) {
 
     if (type === "escalated") {
       const current = searchParams.get("escalated");
-      if (current !== "true") params.set("escalated", "true");
+      if (current === "true") {
+        // Toggle off if already active
+        params.delete("escalated");
+      } else {
+        // Toggle on and remove status filter (they're mutually exclusive)
+        params.set("escalated", "true");
+        params.delete("status");
+      }
     }
 
     if (type === "status" && value) {

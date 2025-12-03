@@ -101,10 +101,13 @@ export function DynamicFieldRenderer({
       case "select_multiple":
       case "multiselect":
       case "select": {
-        const rules = (field.validation_rules || {}) as { multiSelect?: boolean };
+        const rules = (field.validation_rules || {}) as { multiSelect?: boolean; allowMultiple?: boolean };
         const normalizedType = (field.field_type || "").toLowerCase();
+        // Check if field should allow multiple selections
+        // Priority: validation_rules.multiSelect > validation_rules.allowMultiple > field_type
         const allowMultiple =
           rules?.multiSelect === true ||
+          rules?.allowMultiple === true ||
           normalizedType === "multi_select" ||
           normalizedType === "multiselect" ||
           normalizedType === "select_multiple";
@@ -157,28 +160,33 @@ export function DynamicFieldRenderer({
           };
 
           return (
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               {uniqueOptions.map((option, idx) => {
                 const optionValue = option.value;
                 const isChecked = selectedValues.includes(optionValue);
                 return (
                   <label
                     key={buildOptionKey(option, idx)}
-                    className="flex items-center gap-2 text-sm"
+                    className={cn(
+                      "flex items-center gap-3 p-2.5 rounded-md border transition-colors cursor-pointer",
+                      isChecked 
+                        ? "bg-primary/5 border-primary/20" 
+                        : "bg-muted/30 border-muted hover:bg-muted/50"
+                    )}
                   >
                     <Checkbox
                       checked={isChecked}
                       onCheckedChange={(checked) =>
                         toggleValue(optionValue, checked === true)
                       }
+                      className="data-[state=checked]:bg-primary data-[state=checked]:border-primary"
                     />
-                    <span>{option.label || option.value}</span>
+                    <span className="text-sm font-medium flex-1">
+                      {option.label || option.value}
+                    </span>
                   </label>
                 );
               })}
-              {placeholder && (
-                <p className="text-xs text-muted-foreground">{placeholder}</p>
-              )}
             </div>
           );
         }

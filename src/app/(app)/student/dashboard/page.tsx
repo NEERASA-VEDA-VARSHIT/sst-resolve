@@ -53,6 +53,7 @@ export default async function StudentDashboardPage({
   const params = (await searchParams) ?? {};
   const search = params.search ?? "";
   const statusFilter = params.status ?? "";
+  const escalatedFilter = params.escalated ?? "";
   const categoryFilter = params.category ?? "";
   const subcategoryFilter = params.subcategory ?? "";
   const subSubcategoryFilter = params.sub_subcategory ?? "";
@@ -75,6 +76,11 @@ export default async function StudentDashboardPage({
     if (searchConditions.length > 0) {
       conditions.push(or(...searchConditions)!);
     }
+  }
+
+  // Escalated Filter (check this before status filter to avoid conflicts)
+  if (escalatedFilter === "true") {
+    conditions.push(sql`${tickets.escalation_level} > 0`);
   }
 
   // Status Filter
@@ -153,16 +159,16 @@ export default async function StudentDashboardPage({
       break;
 
     case "status":
-      // Join ticket_statuses for status-based sorting
+      // Use joined ticket_statuses for status-based sorting (no subquery needed)
       orderBy = sql`
         CASE 
-          WHEN LOWER((SELECT value FROM ticket_statuses WHERE id = ${tickets.status_id})) = 'open' THEN 1
-          WHEN LOWER((SELECT value FROM ticket_statuses WHERE id = ${tickets.status_id})) = 'in_progress' THEN 2
-          WHEN LOWER((SELECT value FROM ticket_statuses WHERE id = ${tickets.status_id})) = 'awaiting_student' THEN 3
-          WHEN LOWER((SELECT value FROM ticket_statuses WHERE id = ${tickets.status_id})) = 'reopened' THEN 4
-          WHEN LOWER((SELECT value FROM ticket_statuses WHERE id = ${tickets.status_id})) = 'escalated' THEN 5
-          WHEN LOWER((SELECT value FROM ticket_statuses WHERE id = ${tickets.status_id})) = 'forwarded' THEN 6
-          WHEN LOWER((SELECT value FROM ticket_statuses WHERE id = ${tickets.status_id})) = 'resolved' THEN 7
+          WHEN LOWER(${ticket_statuses.value}) = 'open' THEN 1
+          WHEN LOWER(${ticket_statuses.value}) = 'in_progress' THEN 2
+          WHEN LOWER(${ticket_statuses.value}) = 'awaiting_student' THEN 3
+          WHEN LOWER(${ticket_statuses.value}) = 'reopened' THEN 4
+          WHEN LOWER(${ticket_statuses.value}) = 'escalated' THEN 5
+          WHEN LOWER(${ticket_statuses.value}) = 'forwarded' THEN 6
+          WHEN LOWER(${ticket_statuses.value}) = 'resolved' THEN 7
           ELSE 999
         END
       `;
@@ -229,17 +235,18 @@ export default async function StudentDashboardPage({
       .leftJoin(users, eq(tickets.created_by, users.id))
       .where(and(...conditions)),
     
-    // Stats Query (Optimized)
+    // Stats Query (Optimized with JOIN instead of subqueries)
     db
       .select({
         total: sql<number>`COUNT(*)`,
-        open: sql<number>`SUM(CASE WHEN LOWER((SELECT value FROM ticket_statuses WHERE id = ${tickets.status_id}))='open' THEN 1 ELSE 0 END)`,
-        inProgress: sql<number>`SUM(CASE WHEN LOWER((SELECT value FROM ticket_statuses WHERE id = ${tickets.status_id})) IN ('in_progress','escalated') THEN 1 ELSE 0 END)`,
-        awaitingStudent: sql<number>`SUM(CASE WHEN LOWER((SELECT value FROM ticket_statuses WHERE id = ${tickets.status_id}))='awaiting_student' THEN 1 ELSE 0 END)`,
-        resolved: sql<number>`SUM(CASE WHEN LOWER((SELECT value FROM ticket_statuses WHERE id = ${tickets.status_id}))='resolved' THEN 1 ELSE 0 END)`,
+        open: sql<number>`SUM(CASE WHEN LOWER(${ticket_statuses.value})='open' THEN 1 ELSE 0 END)`,
+        inProgress: sql<number>`SUM(CASE WHEN LOWER(${ticket_statuses.value}) IN ('in_progress','escalated') THEN 1 ELSE 0 END)`,
+        awaitingStudent: sql<number>`SUM(CASE WHEN LOWER(${ticket_statuses.value})='awaiting_student' THEN 1 ELSE 0 END)`,
+        resolved: sql<number>`SUM(CASE WHEN LOWER(${ticket_statuses.value})='resolved' THEN 1 ELSE 0 END)`,
         escalated: sql<number>`SUM(CASE WHEN ${tickets.escalation_level} > 0 THEN 1 ELSE 0 END)`,
       })
       .from(tickets)
+      .leftJoin(ticket_statuses, eq(ticket_statuses.id, tickets.status_id))
       .where(eq(tickets.created_by, dbUser.id)),
     
     // Fetch categories hierarchy and statuses for search UI

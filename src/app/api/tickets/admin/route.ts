@@ -6,6 +6,7 @@ import { desc, eq, and, isNull, or, sql, aliasedTable } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { getCanonicalStatus } from "@/conf/constants";
 // Cache configuration for this route
+export const dynamic = 'force-dynamic'; // Required because we use auth() which uses headers()
 export const revalidate = 30; // Revalidate every 30 seconds
 
 /**

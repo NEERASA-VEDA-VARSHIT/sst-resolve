@@ -30,6 +30,8 @@ import { parseTicketMetadata } from "@/db/inferred-types";
 import { isOpenStatus, normalizeStatus } from "@/lib/ticket/normalizeStatus";
 import type { TicketStatusValue } from "@/conf/constants";
 
+// Force dynamic rendering for authenticated routes
+export const dynamic = 'force-dynamic';
 // Revalidate every 30 seconds for fresh data
 export const revalidate = 30;
 
