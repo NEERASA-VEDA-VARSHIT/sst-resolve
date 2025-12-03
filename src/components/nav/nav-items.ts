@@ -1,16 +1,11 @@
 import {
   FileText,
-  Settings,
   Calendar,
   AlertCircle,
   TrendingUp,
   Users,
-  Building2,
-  Shield,
   BarChart3,
-  GraduationCap,
   Tag,
-  Bell,
   LucideIcon,
 } from "lucide-react";
 import { UserRole } from "./useRole";
@@ -204,4 +199,3 @@ export function getRoleDisplayName(role: UserRole): string {
       return "Student";
   }
 }
-

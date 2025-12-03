@@ -40,7 +40,7 @@ const SIDE_ITEMS = [
     href: "/superadmin/dashboard/notification-settings",
     icon: Bell,
   },
-} as const;
+] as const;
 
 type SuperAdminSideNavProps = {
   open?: boolean;
