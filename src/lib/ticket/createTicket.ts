@@ -85,10 +85,12 @@ export async function createTicket(args: {
   const { clerkId, payload } = args;
 
   // Use cached functions for better performance (request-scoped deduplication)
-  // For students/committee, we use getCachedUser and then getUserRoleFromDB
+  // Parallelize user lookup and role lookup for better performance
   const { getCachedUser } = await import("@/lib/cache/cached-queries");
-  const dbUser = await getCachedUser(clerkId);
-  const role = await getUserRoleFromDB(clerkId);
+  const [dbUser, role] = await Promise.all([
+    getCachedUser(clerkId),
+    getUserRoleFromDB(clerkId),
+  ]);
   
   if (!dbUser) throw new Error("User not found in local DB after sync");
   if (!role) throw new Error("User role unknown");
@@ -190,13 +192,14 @@ export async function createTicket(args: {
   // Resolve category with active check in single query (optimized)
   // If subcategoryId is provided, we can fetch both category and subcategory in parallel
   
-  // Start category lookup
+  // Start category lookup (include default_admin_id to avoid redundant query later)
   const categoryPromise = payload.categoryId
     ? db
         .select({ 
           id: categories.id, 
           name: categories.name,
-          is_active: categories.is_active 
+          is_active: categories.is_active,
+          default_admin_id: categories.default_admin_id
         })
       .from(categories)
       .where(eq(categories.id, payload.categoryId))
@@ -207,7 +210,8 @@ export async function createTicket(args: {
         .select({ 
           id: categories.id, 
           name: categories.name,
-          is_active: categories.is_active 
+          is_active: categories.is_active,
+          default_admin_id: categories.default_admin_id
         })
       .from(categories)
       .where(eq(categories.name, payload.category))
@@ -465,6 +469,7 @@ export async function createTicket(args: {
         return await superAdminPromise;
   } else {
     // find SPOC via helper (uses the full assignment hierarchy)
+    // Pass category default_admin_id to avoid redundant query in SPOC assignment
     const { findSPOCForTicket } = await import("@/lib/assignment/spoc-assignment");
     // Safety check: ensure detailsObj is valid before calling Object.keys
     const fieldSlugs = detailsObj && typeof detailsObj === 'object' && !Array.isArray(detailsObj)
@@ -472,13 +477,15 @@ export async function createTicket(args: {
       : [];
     
     // Run SPOC lookup and super admin lookup in parallel
+    // Pass category default_admin_id from categoryRecord to avoid redundant query
     const [clerkAssigned, superAdminId] = await Promise.all([
       findSPOCForTicket(
         categoryRecord.name,
         payload.location || null,
         categoryRecord.id,
         (typeof metadata.subcategoryId === 'number' ? metadata.subcategoryId : null),
-        fieldSlugs
+        fieldSlugs,
+        categoryRecord.default_admin_id || null // Pass to avoid redundant query
       ),
       superAdminPromise,
     ]);

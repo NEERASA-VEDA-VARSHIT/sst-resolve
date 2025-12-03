@@ -312,8 +312,15 @@ export function ManageGroupTicketsDialog({
   }) || [];
 
   // Helper function to compute TAT info (exactly like TicketCard)
-  const computeTatInfo = (date?: Date | null) => {
+  const computeTatInfo = (date?: Date | null, status?: string | null) => {
     if (!date) return { overdue: false, label: null };
+
+    // If ticket is resolved or closed, don't show as overdue
+    const normalizedStatus = status ? status.toLowerCase() : "";
+    const isResolved = normalizedStatus === "resolved" || normalizedStatus === "closed";
+    if (isResolved) {
+      return { overdue: false, label: null };
+    }
 
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -364,7 +371,7 @@ export function ManageGroupTicketsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-6xl max-h-[90vh] flex flex-col p-0">
+      <DialogContent className="max-w-6xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
         <DialogHeader className="px-6 pt-6 pb-4 border-b flex-shrink-0">
           <DialogTitle className="text-2xl">Manage Tickets: {currentGroup.name}</DialogTitle>
           <DialogDescription className="text-sm mt-2">
@@ -372,8 +379,9 @@ export function ManageGroupTicketsDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 min-h-0 px-6">
-          <div className="space-y-4 py-4">
+        <div className="flex-1 min-h-0 overflow-hidden">
+          <ScrollArea className="h-full px-6">
+            <div className="space-y-4 py-4">
             {/* Group Settings Section */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Group Committee Assignment */}
@@ -517,8 +525,8 @@ export function ManageGroupTicketsDialog({
                   )}
                 </div>
               </CardHeader>
-              <CardContent>
-                <ScrollArea className="h-[450px] -mx-4 px-4">
+              <CardContent className="p-0">
+                <ScrollArea className="h-[400px] px-4">
                 {filteredGroupTickets.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full py-8 text-center">
                     <Package className="w-8 h-8 text-muted-foreground mb-2 opacity-50" />
@@ -567,7 +575,7 @@ export function ManageGroupTicketsDialog({
                               )}
                               {(() => {
                                 const tatDate = getTatDate(ticket);
-                                const tatInfo = computeTatInfo(tatDate);
+                                const tatInfo = computeTatInfo(tatDate, ticket.status || null);
                                 if (!tatDate || !tatInfo.label) return null;
                                 return (
                                   <div
@@ -629,7 +637,7 @@ export function ManageGroupTicketsDialog({
               </CardContent>
             </Card>
           </div>
-        </ScrollArea>
+        </div>
 
         <DialogFooter className="border-t pt-4 px-6 pb-6 flex-shrink-0">
           <div className="flex items-center justify-between w-full">

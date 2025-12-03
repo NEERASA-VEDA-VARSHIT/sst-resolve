@@ -342,9 +342,13 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
     };
 
     // Check if email should be sent (database-driven config)
-    // Note: shouldSendEmailNotification doesn't support scope yet, but getNotificationConfig does
-    // For now, pass category/subcategory; scope support can be added later if needed
-    const shouldSendEmail = await shouldSendEmailNotification(ticket.categoryId, null);
+    // Pass scope_id and location for scope-based notification config lookup
+    const shouldSendEmail = await shouldSendEmailNotification(
+      ticket.categoryId, 
+      null, // subcategoryId
+      ticketRow.scopeId || null, // scopeId from ticket
+      ticket.location || null // ticketLocation for scope resolution fallback
+    );
     const studentEmail = contactEmail || creator?.email;
     
     if (shouldSendEmail && studentEmail) {
@@ -414,10 +418,13 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
     }
 
     // Check if Slack should be sent (database-driven config, no hardcoding)
+    // Pass scope_id and location for scope-based notification config lookup
     const shouldSendSlack = await shouldSendSlackNotification(
       categoryName,
       ticket.categoryId,
-      null // subcategoryId not needed for initial check
+      null, // subcategoryId not needed for initial check
+      ticketRow.scopeId || null, // scopeId from ticket
+      ticket.location || null // ticketLocation for scope resolution fallback
     );
 
     // Track Slack message status for final log

@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
-import { db, committees, tickets, categories, ticket_statuses } from "@/db";
-import { eq, desc } from "drizzle-orm";
+import { db, committees } from "@/db";
+import { eq } from "drizzle-orm";
 import { TicketCard } from "@/components/layout/TicketCard";
 import TicketSearch from "@/components/student/TicketSearch";
 import { Card, CardContent } from "@/components/ui/card";
@@ -8,9 +8,9 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, FileText } from "lucide-react";
 import { StatsCards } from "@/components/dashboard/StatsCards";
-import { mapTicketRecord } from "@/lib/ticket/mapTicketRecord";
 import { filterTickets } from "@/lib/ticket/filterTickets";
 import { calculateTicketStats } from "@/lib/committee/calculateStats";
+import { getCommitteeTicketsById } from "@/lib/committee/getCommitteeTicketsById";
 import type { Ticket } from "@/db/types-only";
 
 export const dynamic = "force-dynamic";
@@ -57,39 +57,8 @@ export default async function CommitteeTicketsPage({
   const statusFilter = (typeof paramsObj["status"] === "string" ? paramsObj["status"] : paramsObj["status"]?.[0]) || "";
   const categoryFilter = (typeof paramsObj["category"] === "string" ? paramsObj["category"] : paramsObj["category"]?.[0]) || "";
 
-  // Fetch tickets created by the committee head where category is "Committee"
-  const ticketRows = await db
-    .select({
-      id: tickets.id,
-      title: tickets.title,
-      description: tickets.description,
-      location: tickets.location,
-      status_id: tickets.status_id,
-      status_value: ticket_statuses.value,
-      category_id: tickets.category_id,
-      subcategory_id: tickets.subcategory_id,
-      sub_subcategory_id: tickets.sub_subcategory_id,
-      created_by: tickets.created_by,
-      assigned_to: tickets.assigned_to,
-      group_id: tickets.group_id,
-      escalation_level: tickets.escalation_level,
-      acknowledgement_due_at: tickets.acknowledgement_due_at,
-      resolution_due_at: tickets.resolution_due_at,
-      metadata: tickets.metadata,
-      created_at: tickets.created_at,
-      updated_at: tickets.updated_at,
-      category_name: categories.name,
-    })
-    .from(tickets)
-    .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
-    .leftJoin(categories, eq(tickets.category_id, categories.id))
-    .where(eq(tickets.created_by, committee.head_id))
-    .orderBy(desc(tickets.created_at));
-
-  // Filter by category name = "Committee" and created_by not null, then transform for TicketCard
-  const allTickets = ticketRows
-    .filter(t => (t.category_name || "").toLowerCase() === "committee" && t.created_by !== null)
-    .map(mapTicketRecord);
+  // Use the same helper function used by committee dashboard for consistency
+  const allTickets = await getCommitteeTicketsById(id);
 
   // Apply filters
   const filteredTickets = filterTickets(allTickets, search, statusFilter, categoryFilter);
@@ -113,7 +82,7 @@ export default async function CommitteeTicketsPage({
             {committee.name} - Tickets
           </h1>
           <p className="text-muted-foreground">
-            Tickets raised by this committee
+            Tickets created by this committee or tagged to this committee
           </p>
         </div>
       </div>

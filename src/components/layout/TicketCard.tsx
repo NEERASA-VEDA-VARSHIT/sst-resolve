@@ -59,7 +59,7 @@ const getStatusValue = (status?: string | { value: string; label: string; badge_
   return status.value || "";
 };
 
-function computeTatInfo(date?: Date | string | null) {
+function computeTatInfo(date?: Date | string | null, status?: string | null) {
   if (!date) return { overdue: false, label: null };
 
   // Convert to Date object if it's a string
@@ -73,6 +73,13 @@ function computeTatInfo(date?: Date | string | null) {
       return { overdue: false, label: null };
     }
   } else {
+    return { overdue: false, label: null };
+  }
+
+  // If ticket is resolved or closed, don't show as overdue
+  const normalizedStatus = status ? status.toLowerCase() : "";
+  const isResolved = normalizedStatus === "resolved" || normalizedStatus === "closed";
+  if (isResolved) {
     return { overdue: false, label: null };
   }
 
@@ -129,7 +136,9 @@ function TicketCardComponent({ ticket, basePath = "/student/dashboard", disableL
       date = typeof metadata.tatDate === 'string' ? metadata.tatDate : null;
     }
     
-    const info = computeTatInfo(date);
+    // Get status value for overdue check
+    const statusValue = getStatusValue(ticket.status);
+    const info = computeTatInfo(date, statusValue);
     
     // Convert date to Date object for storage if it's a string
     const dateObj = date instanceof Date 
