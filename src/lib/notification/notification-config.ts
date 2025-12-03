@@ -20,6 +20,9 @@ export interface NotificationConfig {
  * Get notification configuration for a category/subcategory/scope combination
  * Priority: Category+Subcategory (20) > Category+Scope (10-15) > Category-only (10) > Scope-only (5) > Global Default (0)
  * 
+ * Note: Category-only (priority 10) is checked before Scope-only (priority 5) because
+ * category-level configs should take precedence over scope-level configs when both exist.
+ * 
  * @param categoryId - Category ID (optional)
  * @param subcategoryId - Subcategory ID (optional)
  * @param scopeId - Scope ID (optional, for scope-level configs)
@@ -91,28 +94,8 @@ export async function getNotificationConfig(
       }
     }
     
-    // If no category+scope config, try scope-only config (priority 5)
-    if (!config && resolvedScopeId) {
-      const [scopeConfig] = await db
-        .select()
-        .from(notification_config)
-        .where(
-          and(
-            eq(notification_config.scope_id, resolvedScopeId),
-            isNull(notification_config.category_id), // Scope-only configs don't use category
-            isNull(notification_config.subcategory_id),
-            eq(notification_config.is_active, true)
-          )
-        )
-        .orderBy(desc(notification_config.priority))
-        .limit(1);
-      
-      if (scopeConfig) {
-        config = scopeConfig;
-      }
-    }
-    
-    // If no scope config, try category-only config (priority 10)
+    // If no category+scope config, try category-only config (priority 10)
+    // This should come before scope-only since category has higher priority
     if (!config && categoryId) {
       const [categoryConfig] = await db
         .select()
@@ -130,6 +113,27 @@ export async function getNotificationConfig(
       
       if (categoryConfig) {
         config = categoryConfig;
+      }
+    }
+    
+    // If no category config, try scope-only config (priority 5)
+    if (!config && resolvedScopeId) {
+      const [scopeConfig] = await db
+        .select()
+        .from(notification_config)
+        .where(
+          and(
+            eq(notification_config.scope_id, resolvedScopeId),
+            isNull(notification_config.category_id), // Scope-only configs don't use category
+            isNull(notification_config.subcategory_id),
+            eq(notification_config.is_active, true)
+          )
+        )
+        .orderBy(desc(notification_config.priority))
+        .limit(1);
+      
+      if (scopeConfig) {
+        config = scopeConfig;
       }
     }
     
@@ -164,6 +168,9 @@ export async function getNotificationConfig(
         ? config.email_recipients.filter((email): email is string => typeof email === 'string')
         : [];
       
+      // Debug logging
+      console.log(`[getNotificationConfig] Found config: categoryId=${categoryId}, scopeId=${resolvedScopeId}, enableSlack=${config.enable_slack}, enableEmail=${config.enable_email}, slackChannel=${config.slack_channel}`);
+      
       return {
         enableSlack: config.enable_slack ?? true,
         enableEmail: config.enable_email ?? true,
@@ -172,6 +179,9 @@ export async function getNotificationConfig(
         emailRecipients,
       };
     }
+    
+    // Debug logging when no config found
+    console.log(`[getNotificationConfig] No config found: categoryId=${categoryId}, scopeId=${resolvedScopeId}, ticketLocation=${ticketLocation}`);
     
     // Fallback to environment-based config (backward compatibility)
     return getDefaultNotificationConfig();

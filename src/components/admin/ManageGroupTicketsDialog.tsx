@@ -379,9 +379,8 @@ export function ManageGroupTicketsDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 min-h-0 overflow-hidden">
-          <ScrollArea className="h-full px-6">
-            <div className="space-y-4 py-4">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6">
+          <div className="space-y-4 py-4">
             {/* Group Settings Section */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Group Committee Assignment */}
@@ -637,7 +636,6 @@ export function ManageGroupTicketsDialog({
               </CardContent>
             </Card>
           </div>
-          </ScrollArea>
         </div>
 
         <DialogFooter className="border-t pt-4 px-6 pb-6 flex-shrink-0">
