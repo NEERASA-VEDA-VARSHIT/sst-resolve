@@ -152,43 +152,8 @@ export function getNavItemsForRole(role: UserRole, mounted: boolean): NavItem[] 
             icon: Users,
             show: true,
           },
-          {
-            title: "Categories",
-            href: "/superadmin/dashboard/categories",
-            icon: Building2,
-            show: true,
-          },
-          {
-            title: "Staff",
-            href: "/superadmin/dashboard/staff",
-            icon: Shield,
-            show: true,
-          },
-          {
-            title: "Students",
-            href: "/superadmin/students",
-            icon: GraduationCap,
-            show: true,
-          },
-          {
-            title: "Committees",
-            href: "/superadmin/dashboard/committees",
-            icon: Users,
-            show: true,
-          },
-          {
-            title: "Master Data",
-            href: "/superadmin/dashboard/master-data",
-            icon: Settings,
-            show: true,
-          },
-          // Ticket Assignment (legacy) removed
-          {
-            title: "Notifications",
-            href: "/superadmin/dashboard/notification-settings",
-            icon: Bell,
-            show: true,
-          },
+          // Management sections (Categories, Staff, Students, Master Data, Notifications)
+          // are now available only in the collapsible SuperAdminSideNav, not top nav.
         ]
       : []),
   ];

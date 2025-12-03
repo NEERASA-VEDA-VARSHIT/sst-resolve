@@ -45,7 +45,7 @@ const SIDE_ITEMS = [
 
 export function SuperAdminSideNav() {
   const pathname = usePathname();
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
 
   return (
     <aside

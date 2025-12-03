@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { FileText } from "lucide-react";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
+import { getAdminAssignment, ticketMatchesAdminAssignment } from "@/lib/assignment/admin-assignment";
 import type { TicketMetadata } from "@/db/inferred-types";
 import type { Ticket } from "@/db/types-only";
 
@@ -183,6 +184,17 @@ export default async function SuperAdminAllTicketsPage({ searchParams }: { searc
   } catch (error) {
     console.error('[Super Admin All Tickets] Error fetching tickets:', error);
     throw new Error('Failed to load tickets');
+  }
+
+  // Limit super admin "All Tickets" view to their domain/scope if they have an assignment
+  const adminAssignment = await getAdminAssignment(userId);
+  if (adminAssignment && (adminAssignment.domain || adminAssignment.scope)) {
+    allTickets = allTickets.filter((t) =>
+      ticketMatchesAdminAssignment(
+        { category: t.category_name, location: t.location },
+        adminAssignment
+      )
+    );
   }
 
   if (tat) {
