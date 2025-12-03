@@ -458,8 +458,9 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
         .filter(Boolean)
         .join("\n");
 
-      // Get CC user IDs from notification_config (database-driven)
+      // Get channel + CC user IDs from notification_config (database-driven)
       let ccUserIds: string[] = [];
+      let overrideChannel: string | null = null;
       try {
         const { getNotificationConfig } = await import("@/lib/notification/notification-config");
         // Pass scope_id and location for scope-based notification config lookup
@@ -470,8 +471,9 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
           ticket.location || null // ticketLocation for scope resolution fallback
         );
         ccUserIds = notifConfig.slackCcUserIds || [];
+        overrideChannel = notifConfig.slackChannel || null;
         
-        // Fallback to env config if no database config
+        // Fallback to env config for CC only if database didn't specify any
         if (ccUserIds.length === 0 && Array.isArray(slackConfig.defaultCc) && slackConfig.defaultCc.length > 0) {
           ccUserIds = slackConfig.defaultCc;
         }
@@ -485,9 +487,9 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
 
       try {
         // Determine channel to use
-        // Priority: channelRouting.channel > fallback channel > category-based mapping (in postToSlackChannel)
+        // Priority: database config channel > channelRouting.channel > fallback channel > category-based mapping (in postToSlackChannel)
         // If slackUserId exists, we'd send DM (not yet implemented), so fall back to channel
-        const targetChannel = channelRouting.channel || getFallbackSuperAdminChannel();
+        const targetChannel = overrideChannel || channelRouting.channel || getFallbackSuperAdminChannel();
         
         console.log(`[processTicketCreated] Calling postToSlackChannel for ticket #${ticket.id}`, {
           category: categoryName,

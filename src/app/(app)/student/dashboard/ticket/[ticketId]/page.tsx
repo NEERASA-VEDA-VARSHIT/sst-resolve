@@ -13,13 +13,41 @@ import { getTicketStatuses, buildProgressMap } from "@/lib/status/getTicketStatu
 import { TicketHeader } from "@/components/student/ticket/TicketHeader";
 import { TicketQuickInfo } from "@/components/student/ticket/TicketQuickInfo";
 import { TicketSubmittedInfo } from "@/components/student/ticket/TicketSubmittedInfo";
-import { TicketTimeline } from "@/components/student/ticket/TicketTimeline";
-import { TicketConversation } from "@/components/student/ticket/TicketConversation";
-import { TicketRating } from "@/components/student/ticket/TicketRating";
-import { TicketTATInfo } from "@/components/student/ticket/TicketTATInfo";
-import { TicketStudentInfo } from "@/components/student/ticket/TicketStudentInfo";
+import nextDynamic from "next/dynamic";
 import { StudentActions } from "@/components/tickets/StudentActions";
 import type { TicketStatusDisplay, TicketComment, TicketTimelineEntry, ResolvedProfileField, TATInfo } from "@/types/ticket";
+
+// Lazy-load heavy, below-the-fold sections using dynamic imports.
+// Note: We don't disable SSR here because this is a Server Component.
+const TicketTimeline = nextDynamic(() =>
+  import("@/components/student/ticket/TicketTimeline").then(
+    (mod) => mod.TicketTimeline
+  )
+);
+
+const TicketConversation = nextDynamic(() =>
+  import("@/components/student/ticket/TicketConversation").then(
+    (mod) => mod.TicketConversation
+  )
+);
+
+const TicketRating = nextDynamic(() =>
+  import("@/components/student/ticket/TicketRating").then(
+    (mod) => mod.TicketRating
+  )
+);
+
+const TicketTATInfo = nextDynamic(() =>
+  import("@/components/student/ticket/TicketTATInfo").then(
+    (mod) => mod.TicketTATInfo
+  )
+);
+
+const TicketStudentInfo = nextDynamic(() =>
+  import("@/components/student/ticket/TicketStudentInfo").then(
+    (mod) => mod.TicketStudentInfo
+  )
+);
 
 export const dynamic = "force-dynamic";
 export const revalidate = 30;

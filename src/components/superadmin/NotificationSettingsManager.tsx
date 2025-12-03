@@ -67,6 +67,12 @@ interface Category {
   name: string;
 }
 
+interface Scope {
+  id: number;
+  name: string;
+  domain_id: number;
+}
+
 interface Subcategory {
   id: number;
   name: string;
@@ -83,6 +89,7 @@ interface Admin {
 export function NotificationSettingsManager() {
   const [configs, setConfigs] = useState<NotificationConfig[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [scopes, setScopes] = useState<Scope[]>([]);
   const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
   const [admins, setAdmins] = useState<Admin[]>([]);
   const [loading, setLoading] = useState(true);
@@ -149,10 +156,11 @@ export function NotificationSettingsManager() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [configsRes, masterDataRes, adminsRes] = await Promise.all([
+      const [configsRes, masterDataRes, adminsRes, scopesRes] = await Promise.all([
         fetch("/api/superadmin/notification-config"),
         fetch("/api/admin/master-data"),
         fetch("/api/admin/staff"),
+        fetch("/api/superadmin/scopes?active=true"),
       ]);
 
       if (configsRes.ok) {
@@ -165,9 +173,6 @@ export function NotificationSettingsManager() {
         const masterData = await masterDataRes.json();
         categoriesList = masterData.categories || [];
         setCategories(categoriesList);
-        // Scopes are returned as formatted array, but we need full objects with id
-        // Fetch scopes separately to get full data
-        // Additional scope/domain fetching was removed as it was unused.
       }
 
       // Fetch all subcategories by fetching from each category
@@ -201,6 +206,23 @@ export function NotificationSettingsManager() {
           (admin: Admin) => admin.slackUserId && admin.slackUserId.trim() !== ""
         );
         setAdmins(adminsWithSlack);
+      }
+
+      // Fetch scopes (for scope-level configs)
+      if (scopesRes.ok) {
+        const scopesData = await scopesRes.json();
+        const scopeList = Array.isArray(scopesData)
+          ? scopesData
+          : Array.isArray(scopesData.scopes)
+          ? scopesData.scopes
+          : [];
+        setScopes(
+          scopeList.map((s: { id: number; name: string; domain_id: number }) => ({
+            id: s.id,
+            name: s.name,
+            domain_id: s.domain_id,
+          }))
+        );
       }
     } catch (error) {
       console.error("Error fetching data:", error);
@@ -494,8 +516,38 @@ export function NotificationSettingsManager() {
           </DialogHeader>
 
           <div className="space-y-6 py-4">
-            {/* Scope Selection */}
+            {/* Scope / Category Selection */}
             <div className="space-y-4">
+              {/* Scope */}
+              <div>
+                <Label>Scope (Optional)</Label>
+                <Select
+                  value={formData.scope_id}
+                  onValueChange={(value) => {
+                    setFormData((prev) => ({
+                      ...prev,
+                      scope_id: value,
+                    }));
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select scope (leave empty for global)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">No specific scope (global or category-based)</SelectItem>
+                    {scopes.map((scope) => (
+                      <SelectItem key={scope.id} value={scope.id.toString()}>
+                        {scope.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Scope-level configs apply when category is not set. Category / subcategory configs override scope.
+                </p>
+              </div>
+
+              {/* Category */}
               <div>
                 <Label>Category (Optional)</Label>
                 <Select

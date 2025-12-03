@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
@@ -1287,25 +1287,18 @@ export default function TicketForm(props: TicketFormProps) {
             </div>
           ) : (
             <>
-              {loading && (
-                <Alert role="status" aria-live="polite" className="mb-4 sm:mb-6 flex items-start gap-3">
-                  <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 mt-0.5 animate-spin text-primary" />
-                  <div className="space-y-1">
-                    <AlertTitle className="text-sm sm:text-base">Creating your ticket…</AlertTitle>
-                    <AlertDescription className="text-xs sm:text-sm">
-                      Hang tight while we save your details and notify the right team.
-                    </AlertDescription>
-                  </div>
-                </Alert>
-              )}
               <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="space-y-4 sm:space-y-6 relative">
-              {/* Loading overlay */}
+              {/* Full-screen loading overlay (better on mobile) */}
               {loading && (
-                <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center rounded-lg">
-                  <div className="flex flex-col items-center gap-3">
-                    <Loader2 className="w-8 h-8 animate-spin text-primary" />
-                    <p className="text-sm font-medium">Creating your ticket...</p>
-                    <p className="text-xs text-muted-foreground">Please wait</p>
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-sm px-6">
+                  <div className="w-full max-w-xs sm:max-w-sm rounded-xl border bg-card/95 shadow-lg p-4 sm:p-5 flex flex-col items-center gap-3 text-center">
+                    <Loader2 className="w-6 h-6 sm:w-8 sm:h-8 animate-spin text-primary" />
+                    <div className="space-y-1">
+                      <p className="text-sm sm:text-base font-semibold">Creating your ticket…</p>
+                      <p className="text-xs sm:text-sm text-muted-foreground">
+                        This usually takes a few seconds. Please don&apos;t close this screen.
+                      </p>
+                    </div>
                   </div>
                 </div>
               )}

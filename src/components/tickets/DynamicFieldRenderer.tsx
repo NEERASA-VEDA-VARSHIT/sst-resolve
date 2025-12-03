@@ -275,16 +275,34 @@ export function DynamicFieldRenderer({
         );
 
       case "boolean": {
-        // Convert value to boolean for comparison
-        const boolValue = value === true || value === "true" || value === "yes" || String(value).toLowerCase() === "yes";
-        const selectValue = boolValue ? "yes" : "no";
-        
+        // Three states for UX:
+        // - undefined/null  -> no selection (placeholder)
+        // - true            -> "Yes"
+        // - false           -> "No"
+        const isTrue =
+          value === true ||
+          value === "true" ||
+          String(value).toLowerCase() === "yes";
+
+        const isFalse =
+          value === false ||
+          value === "false" ||
+          String(value).toLowerCase() === "no";
+
+        let selectValue = "";
+        if (isTrue) selectValue = "yes";
+        else if (isFalse) selectValue = "no";
+
         return (
           <Select
             value={selectValue}
             onValueChange={(newValue) => {
-              // Store as boolean true/false
-              onChange(newValue === "yes");
+              // Explicitly store boolean; empty string means "not answered"
+              if (!newValue) {
+                onChange(undefined);
+              } else {
+                onChange(newValue === "yes");
+              }
             }}
           >
             <SelectTrigger className={cn(error && "border-destructive")}>
