@@ -154,6 +154,12 @@ export function getNavItemsForRole(role: UserRole, mounted: boolean): NavItem[] 
           },
           // Management sections (Categories, Staff, Students, Master Data, Notifications)
           // are now available only in the collapsible SuperAdminSideNav, not top nav.
+          {
+            title: "Committees",
+            href: "/superadmin/dashboard/committees",
+            icon: Users,
+            show: true,
+          },
         ]
       : []),
   ];

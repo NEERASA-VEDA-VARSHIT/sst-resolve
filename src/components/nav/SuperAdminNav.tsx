@@ -7,12 +7,17 @@ import { MobileTopNav } from "./MobileTopNav";
 import { MobileBottomNav } from "./MobileBottomNav";
 import { NavLoadingShimmer } from "./NavLoadingShimmer";
 
+type SuperAdminNavProps = {
+  sideNavOpen?: boolean;
+  onToggleSideNav?: () => void;
+};
+
 /**
  * Super Admin Navigation Component
  * Handles navigation for super_admin role only
  * No role fetching needed - this is only used in superadmin layout
  */
-export function SuperAdminNav() {
+export function SuperAdminNav({ sideNavOpen, onToggleSideNav }: SuperAdminNavProps) {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -30,7 +35,13 @@ export function SuperAdminNav() {
 
   return (
     <>
-      <DesktopNav role="super_admin" navItems={navItems} mounted={mounted} />
+      <DesktopNav
+        role="super_admin"
+        navItems={navItems}
+        mounted={mounted}
+        sideNavOpen={sideNavOpen}
+        onToggleSideNav={onToggleSideNav}
+      />
       <MobileTopNav role="super_admin" mounted={mounted} />
       <MobileBottomNav navItems={navItems} />
     </>

@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
 import {
   Building2,
   Shield,
@@ -41,11 +40,15 @@ const SIDE_ITEMS = [
     href: "/superadmin/dashboard/notification-settings",
     icon: Bell,
   },
-] as const;
+} as const;
 
-export function SuperAdminSideNav() {
+type SuperAdminSideNavProps = {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+};
+
+export function SuperAdminSideNav({ open = false, onOpenChange }: SuperAdminSideNavProps) {
   const pathname = usePathname();
-  const [open, setOpen] = useState(false);
 
   return (
     <aside
@@ -60,7 +63,7 @@ export function SuperAdminSideNav() {
             variant="ghost"
             size="icon"
             className="h-7 w-7"
-            onClick={() => setOpen((prev) => !prev)}
+            onClick={() => onOpenChange?.(!open)}
             aria-label={open ? "Collapse sidebar" : "Expand sidebar"}
           >
             {open ? (

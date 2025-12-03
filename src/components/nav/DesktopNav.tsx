@@ -9,18 +9,28 @@ import { NavUserMenu } from "./NavUserMenu";
 import { NavItem, getDashboardLinkForRole } from "./nav-items";
 import { UserRole } from "./useRole";
 import { isRouteActive } from "./nav-utils";
+import { Button } from "@/components/ui/button";
+import { PanelLeftOpen, PanelLeftClose } from "lucide-react";
 
 type DesktopNavProps = {
   role: UserRole;
   navItems: NavItem[];
   mounted: boolean;
+  sideNavOpen?: boolean;
+  onToggleSideNav?: () => void;
 };
 
 /**
  * Desktop navigation component
  * Renders top navbar for desktop/tablet views (lg and above)
  */
-export function DesktopNav({ role, navItems, mounted }: DesktopNavProps) {
+export function DesktopNav({
+  role,
+  navItems,
+  mounted,
+  sideNavOpen,
+  onToggleSideNav,
+}: DesktopNavProps) {
   const pathname = usePathname();
 
   return (
@@ -71,6 +81,21 @@ export function DesktopNav({ role, navItems, mounted }: DesktopNavProps) {
 
           {/* Right Side Actions - Far right */}
           <div className="flex items-center gap-4 ml-auto mr-0">
+            {role === "super_admin" && typeof onToggleSideNav === "function" && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={onToggleSideNav}
+                aria-label={sideNavOpen ? "Hide side navigation" : "Show side navigation"}
+              >
+                {sideNavOpen ? (
+                  <PanelLeftClose className="w-4 h-4" />
+                ) : (
+                  <PanelLeftOpen className="w-4 h-4" />
+                )}
+              </Button>
+            )}
             <ThemeToggle />
             {mounted && <NavUserMenu role={role} variant="desktop" />}
           </div>
