@@ -88,8 +88,10 @@ export default async function AdminGroupsPage({
       );
     }
 
-    // Layout ensures user is an admin (not super_admin), so filter by assignment
-    conditions.push(eq(tickets.assigned_to, dbUser.id));
+    // Note: We don't filter by assigned_to here because we want to show:
+    // 1. Tickets explicitly assigned to this admin
+    // 2. Unassigned tickets matching admin's domain/scope (for grouping)
+    // The in-memory filtering below handles domain/scope matching
 
     // Fetch tickets with proper joins for better data
     const allTicketRows = await db
@@ -122,12 +124,30 @@ export default async function AdminGroupsPage({
       .limit(1000); // Reasonable limit for grouping operations
 
     // Filter tickets based on admin assignment
-    // Layout ensures user is an admin (not super_admin), so filter by assignment
+    // Show tickets that are:
+    // 1. Explicitly assigned to this admin, OR
+    // 2. Unassigned tickets matching admin's domain/scope
     let allTickets: AdminTicketRow[] = allTicketRows.filter(ticket => {
-      return ticketMatchesAdminAssignment({
-        category: ticket.category_name,
-        location: ticket.location,
-      }, adminAssignment);
+      // Priority 1: Tickets explicitly assigned to this admin
+      if (ticket.assigned_to === dbUser.id) {
+        // If admin has a scope, filter by scope for assigned tickets too
+        if (adminAssignment.scope && ticket.location) {
+          const ticketLocation = (ticket.location || "").toLowerCase();
+          const assignmentScope = (adminAssignment.scope || "").toLowerCase();
+          return ticketLocation === assignmentScope;
+        }
+        return true; // Always show tickets assigned to this admin (if no scope restriction)
+      }
+      
+      // Priority 2: Unassigned tickets matching admin's domain/scope
+      if (!ticket.assigned_to && adminAssignment.domain) {
+        return ticketMatchesAdminAssignment({
+          category: ticket.category_name,
+          location: ticket.location,
+        }, adminAssignment);
+      }
+      
+      return false;
     }) as AdminTicketRow[];
 
     // Apply additional in-memory filters that rely on metadata (subcategory, TAT)
