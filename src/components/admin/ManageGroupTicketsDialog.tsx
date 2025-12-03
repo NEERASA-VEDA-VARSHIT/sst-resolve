@@ -364,15 +364,15 @@ export function ManageGroupTicketsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-6xl max-h-[95vh] overflow-hidden flex flex-col">
-        <DialogHeader className="pb-4 border-b">
+      <DialogContent className="max-w-6xl max-h-[90vh] flex flex-col p-0">
+        <DialogHeader className="px-6 pt-6 pb-4 border-b flex-shrink-0">
           <DialogTitle className="text-2xl">Manage Tickets: {currentGroup.name}</DialogTitle>
           <DialogDescription className="text-sm mt-2">
             Remove tickets from this group and manage its committee assignment and TAT. Currently <span className="font-semibold">{currentGroup.ticketCount}</span> ticket{currentGroup.ticketCount !== 1 ? "s" : ""} in group.
           </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 pr-4">
+        <ScrollArea className="flex-1 min-h-0 px-6">
           <div className="space-y-4 py-4">
             {/* Group Settings Section */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -631,7 +631,7 @@ export function ManageGroupTicketsDialog({
           </div>
         </ScrollArea>
 
-        <DialogFooter className="border-t pt-4 mt-4">
+        <DialogFooter className="border-t pt-4 px-6 pb-6 flex-shrink-0">
           <div className="flex items-center justify-between w-full">
             <p className="text-xs text-muted-foreground">
               💡 Tip: Click the external link icon to view full ticket details. Use Bulk Actions from the groups page to comment or close all tickets in this group.

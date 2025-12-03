@@ -13,6 +13,7 @@ export const TicketStatus = z.enum([
   TICKET_STATUS.ESCALATED,
   TICKET_STATUS.FORWARDED,
   TICKET_STATUS.RESOLVED,
+  TICKET_STATUS.CLOSED,
 ] as [string, ...string[]]);
 
 export const TicketWorkflowStatusSchema = TicketStatus;

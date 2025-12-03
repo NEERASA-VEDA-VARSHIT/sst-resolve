@@ -3,7 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { tickets, outbox, ticket_statuses } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { getCachedAdminUser, getCachedUser, getCachedTicketStatuses } from "@/lib/cache/cached-queries";
+import { getCachedAdminUser, getCachedTicketStatuses } from "@/lib/cache/cached-queries";
 import { TICKET_STATUS, getCanonicalStatus } from "@/conf/constants";
 import { EscalateTicketSchema } from "@/schemas/business/ticket";
 

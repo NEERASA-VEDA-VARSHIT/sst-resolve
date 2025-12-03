@@ -30,17 +30,6 @@ import { TICKET_STATUS, getCanonicalStatus } from "@/conf/constants";
  * ============================================
  */
 
-// Utility – Get local DB user
-async function getLocalUserId(externalId: string) {
-  const [row] = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(eq(users.external_id, externalId))
-    .limit(1);
-
-  return row?.id ?? null;
-}
-
 // Utility – Load ticket
 async function loadTicket(ticketId: number) {
   const [row] = await db

@@ -2,7 +2,6 @@
 import { db, tickets, users, outbox, categories, subcategories, sub_subcategories } from "@/db";
 import { eq, and } from "drizzle-orm";
 import { TicketCreateInput } from "@/lib/validation/ticket";
-import { getOrCreateUser } from "@/lib/auth/user-sync";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 // findSPOCForTicket is imported dynamically from spoc-assignment.ts
 import { TICKET_STATUS } from "@/conf/constants";
