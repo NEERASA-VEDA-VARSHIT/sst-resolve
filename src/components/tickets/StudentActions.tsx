@@ -87,17 +87,17 @@ export function StudentActions({ ticketId, currentStatus }: { ticketId: number; 
 
   return (
     <Card className="border-2 border-blue-200 dark:border-blue-900 bg-blue-50/50 dark:bg-blue-950/20">
-      <CardContent className="p-5">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <CardContent className="p-4 sm:p-5">
+        <div className="flex flex-col gap-3 sm:gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex-1 min-w-0">
-            <h3 className="text-base font-semibold text-blue-900 dark:text-blue-100 mb-1">
+            <h3 className="text-sm sm:text-base font-semibold text-blue-900 dark:text-blue-100 mb-1">
               {canClose && !canReopen
                 ? "Close Ticket"
                 : canReopen && !canClose
                 ? "Reopen Ticket"
                 : "Manage Ticket"}
             </h3>
-            <p className="text-sm text-blue-700 dark:text-blue-300">
+            <p className="text-xs sm:text-sm text-blue-700 dark:text-blue-300">
               {canClose && !canReopen &&
                 "If you opened this ticket by mistake or the issue is no longer relevant, you can close it."}
               {canReopen && !canClose &&
@@ -106,14 +106,14 @@ export function StudentActions({ ticketId, currentStatus }: { ticketId: number; 
                 "You can close this ticket if it's no longer needed, or reopen it if the issue persists."}
             </p>
           </div>
-          <div className="flex flex-wrap gap-2 justify-end">
+          <div className="flex flex-col sm:flex-row gap-2 sm:justify-end w-full sm:w-auto">
             {canClose && (
               <Button
                 variant="outline"
                 onClick={handleClose}
                 disabled={loading}
-                className="border-red-300 text-red-700 hover:bg-red-100 dark:hover:bg-red-900 whitespace-nowrap"
-                size="lg"
+                className="border-red-300 text-red-700 hover:bg-red-100 dark:hover:bg-red-900 whitespace-nowrap w-full sm:w-auto"
+                size="default"
               >
                 <XCircle className="w-4 h-4 mr-2" />
                 {loading ? "Processing..." : "Close Ticket"}
@@ -124,8 +124,8 @@ export function StudentActions({ ticketId, currentStatus }: { ticketId: number; 
                 variant="outline"
                 onClick={handleReopen}
                 disabled={loading}
-                className="border-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900 whitespace-nowrap"
-                size="lg"
+                className="border-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900 whitespace-nowrap w-full sm:w-auto"
+                size="default"
               >
                 <RotateCcw className="w-4 h-4 mr-2" />
                 {loading ? "Processing..." : "Reopen Ticket"}

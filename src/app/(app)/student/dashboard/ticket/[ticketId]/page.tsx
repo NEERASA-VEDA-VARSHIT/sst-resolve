@@ -161,7 +161,7 @@ export default async function StudentTicketPage({ params }: { params: Promise<{ 
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
-      <div className="max-w-6xl mx-auto p-3 sm:p-4 md:p-6 lg:p-8 space-y-4 sm:space-y-6">
+      <div className="max-w-6xl mx-auto px-3 py-4 sm:px-4 sm:py-6 md:px-6 md:py-8 space-y-3 sm:space-y-4 md:space-y-6">
         <TicketHeader
           ticketId={ticket.id}
           status={statusDisplay}
@@ -171,7 +171,7 @@ export default async function StudentTicketPage({ params }: { params: Promise<{ 
         />
 
         <Card className="border-2 shadow-xl bg-card/50 backdrop-blur-sm">
-          <CardContent className="space-y-6 p-6">
+          <CardContent className="space-y-4 sm:space-y-6 p-4 sm:p-6">
             <TicketQuickInfo
               ticketProgress={ticketProgress}
               normalizedStatus={normalizedStatus}
@@ -225,7 +225,7 @@ export default async function StudentTicketPage({ params }: { params: Promise<{ 
 
             {(ticket.escalation_level ?? 0) > 0 && (
               <Card className="border-2 bg-muted/30">
-                <CardContent className="p-4">
+                <CardContent className="p-3 sm:p-4">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Escalation Level</span>
                     <span className="text-sm font-semibold">{ticket.escalation_level}</span>

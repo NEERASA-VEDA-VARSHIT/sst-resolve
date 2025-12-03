@@ -26,10 +26,10 @@ export function TicketQuickInfo({
   const isReopened = normalizedStatus === "reopened" || normalizedStatus.includes("reopened");
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
       {/* Progress Card */}
       <Card className="border-2 bg-gradient-to-br from-blue-50/50 to-blue-100/30 dark:from-blue-950/20 dark:to-blue-900/10">
-        <CardContent className="p-4">
+        <CardContent className="p-3 sm:p-4">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-blue-600 dark:text-blue-400" />
@@ -66,7 +66,7 @@ export function TicketQuickInfo({
 
       {/* Assignment Card */}
       <Card className="border-2 bg-gradient-to-br from-purple-50/50 to-purple-100/30 dark:from-purple-950/20 dark:to-purple-900/10">
-        <CardContent className="p-4">
+        <CardContent className="p-3 sm:p-4">
           <div className="flex items-center gap-2 mb-2">
             <UserCheck className="w-4 h-4 text-purple-600 dark:text-purple-400" />
             <span className="text-sm font-medium text-muted-foreground">Assigned To</span>
@@ -79,8 +79,8 @@ export function TicketQuickInfo({
 
       {/* SLA Card */}
       {isResolved ? (
-        <Card className="border-2 bg-gradient-to-br from-emerald-50/50 to-emerald-100/30 dark:from-emerald-950/20 dark:to-emerald-900/10">
-          <CardContent className="p-4">
+        <Card className="border-2 bg-gradient-to-br from-emerald-50/50 to-emerald-100/30 dark:from-emerald-950/20 dark:to-emerald-900/10 sm:col-span-2 md:col-span-1">
+          <CardContent className="p-3 sm:p-4">
             <div className="flex items-center gap-2 mb-2">
               <Clock className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
               <span className="text-sm font-medium text-muted-foreground">Status</span>
@@ -98,8 +98,8 @@ export function TicketQuickInfo({
           </CardContent>
         </Card>
       ) : isReopened ? (
-        <Card className="border-2 bg-gradient-to-br from-indigo-50/50 to-indigo-100/30 dark:from-indigo-950/20 dark:to-indigo-900/10">
-          <CardContent className="p-4">
+        <Card className="border-2 bg-gradient-to-br from-indigo-50/50 to-indigo-100/30 dark:from-indigo-950/20 dark:to-indigo-900/10 sm:col-span-2 md:col-span-1">
+          <CardContent className="p-3 sm:p-4">
             <div className="flex items-center gap-2 mb-2">
               <Clock className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
               <span className="text-sm font-medium text-muted-foreground">Status</span>
@@ -120,8 +120,8 @@ export function TicketQuickInfo({
           </CardContent>
         </Card>
       ) : tatInfo.expectedResolution ? (
-        <Card className={`border-2 ${tatInfo.isOverdue ? 'bg-gradient-to-br from-red-50/50 to-red-100/30 dark:from-red-950/20 dark:to-red-900/10' : 'bg-gradient-to-br from-green-50/50 to-green-100/30 dark:from-green-950/20 dark:to-green-900/10'}`}>
-          <CardContent className="p-4">
+        <Card className={`border-2 sm:col-span-2 md:col-span-1 ${tatInfo.isOverdue ? 'bg-gradient-to-br from-red-50/50 to-red-100/30 dark:from-red-950/20 dark:to-red-900/10' : 'bg-gradient-to-br from-green-50/50 to-green-100/30 dark:from-green-950/20 dark:to-green-900/10'}`}>
+          <CardContent className="p-3 sm:p-4">
             <div className="flex items-center gap-2 mb-2">
               <Clock className={`w-4 h-4 ${tatInfo.isOverdue ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`} />
               <span className="text-sm font-medium text-muted-foreground">Expected Resolution</span>

@@ -37,32 +37,32 @@ export function TicketSubmittedInfo({
 
   return (
     <Card className="border-2 shadow-md">
-      <CardHeader className="pb-3 bg-gradient-to-r from-muted/30 to-transparent">
-        <CardTitle className="flex items-center gap-2 text-xl">
+      <CardHeader className="pb-2 sm:pb-3 px-4 py-3 sm:px-6 sm:py-4 bg-gradient-to-r from-muted/30 to-transparent">
+        <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
           <div className="p-1.5 rounded-lg bg-primary/10">
-            <FileText className="w-5 h-5 text-primary" />
+            <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
           </div>
           Submitted Information
         </CardTitle>
-        <CardDescription>
+        <CardDescription className="text-xs sm:text-sm">
           Details you provided when creating this ticket
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4 pt-6">
+      <CardContent className="space-y-3 sm:space-y-4 pt-4 sm:pt-6 px-4 sm:px-6 pb-4 sm:pb-6">
         {description && (
-          <div className="p-4 rounded-lg bg-gradient-to-br from-muted/50 to-muted/30 border-2">
-            <div className="flex items-center gap-2 mb-3">
-              <Info className="w-4 h-4 text-muted-foreground" />
+          <div className="p-3 sm:p-4 rounded-lg bg-gradient-to-br from-muted/50 to-muted/30 border-2">
+            <div className="flex items-center gap-2 mb-2 sm:mb-3">
+              <Info className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-muted-foreground flex-shrink-0" />
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Description</p>
             </div>
-            <p className="text-base whitespace-pre-wrap leading-relaxed break-words font-medium">{description}</p>
+            <p className="text-sm sm:text-base whitespace-pre-wrap leading-relaxed break-words font-medium">{description}</p>
           </div>
         )}
 
         {location && (
-          <div className="p-4 rounded-lg bg-muted/50 border">
+          <div className="p-3 sm:p-4 rounded-lg bg-muted/50 border">
             <div className="flex items-center gap-2 mb-2">
-              <MapPin className="w-4 h-4 text-muted-foreground" />
+              <MapPin className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-muted-foreground flex-shrink-0" />
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Location</p>
             </div>
             <p className="text-sm font-semibold break-words">{location}</p>
@@ -70,9 +70,9 @@ export function TicketSubmittedInfo({
         )}
 
         {images.length > 0 && (
-          <div className="p-4 rounded-lg bg-muted/50 border">
-            <div className="flex items-center gap-2 mb-3">
-              <ImageIcon className="w-4 h-4 text-muted-foreground" />
+          <div className="p-3 sm:p-4 rounded-lg bg-muted/50 border">
+            <div className="flex items-center gap-2 mb-2 sm:mb-3">
+              <ImageIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-muted-foreground flex-shrink-0" />
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Attachments ({images.length})</p>
             </div>
             <ImageLightbox images={images} />
