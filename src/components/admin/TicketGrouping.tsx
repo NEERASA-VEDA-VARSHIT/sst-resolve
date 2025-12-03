@@ -66,8 +66,10 @@ export function TicketGrouping({ selectedTicketIds, onGroupCreated }: TicketGrou
   const [loading, setLoading] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [isAddToGroupDialogOpen, setIsAddToGroupDialogOpen] = useState(false);
   const [isBulkActionDialogOpen, setIsBulkActionDialogOpen] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
+  const [targetGroupIdForAdd, setTargetGroupIdForAdd] = useState<number | null>(null);
   const [groupName, setGroupName] = useState("");
   const [groupDescription, setGroupDescription] = useState("");
   const [bulkAction, setBulkAction] = useState<"comment" | "close">("comment");
@@ -208,6 +210,52 @@ export function TicketGrouping({ selectedTicketIds, onGroupCreated }: TicketGrou
     }
   }, [selectedGroupId, bulkAction, bulkComment, onGroupCreated, fetchGroups]);
 
+  const handleAddToExistingGroup = useCallback(async () => {
+    if (!targetGroupIdForAdd) {
+      toast.error("Please select a group");
+      return;
+    }
+
+    if (selectedTicketIds.length === 0) {
+      toast.error("Please select at least one ticket to add");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const response = await fetch(`/api/tickets/groups/${targetGroupIdForAdd}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          addTicketIds: selectedTicketIds,
+        }),
+      });
+
+      if (response.ok) {
+        toast.success(
+          `Added ${selectedTicketIds.length} ticket${selectedTicketIds.length !== 1 ? "s" : ""} to group`
+        );
+        setIsAddToGroupDialogOpen(false);
+        setTargetGroupIdForAdd(null);
+        fetchGroups();
+        onGroupCreated?.();
+      } else {
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const error = await response.json();
+          toast.error(error.error || "Failed to add tickets to group");
+        } else {
+          toast.error(`Failed to add tickets to group (${response.status} ${response.statusText})`);
+        }
+      }
+    } catch (error) {
+      console.error("Error adding tickets to group:", error);
+      toast.error("Failed to add tickets to group");
+    } finally {
+      setLoading(false);
+    }
+  }, [targetGroupIdForAdd, selectedTicketIds, fetchGroups, onGroupCreated]);
+
   const handleDeleteGroup = useCallback(async (groupId: number) => {
     if (!confirm("Are you sure you want to delete this group? Tickets will be ungrouped.")) {
       return;
@@ -280,7 +328,7 @@ export function TicketGrouping({ selectedTicketIds, onGroupCreated }: TicketGrou
             </Badge>
           )}
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
             size="sm"
@@ -341,6 +389,70 @@ export function TicketGrouping({ selectedTicketIds, onGroupCreated }: TicketGrou
                     </>
                   ) : (
                     "Create Group"
+                  )}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={isAddToGroupDialogOpen} onOpenChange={setIsAddToGroupDialogOpen}>
+            <DialogTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={selectedTicketIds.length === 0 || groups.length === 0}
+              >
+                <Users className="w-4 h-4 mr-2" />
+                Add to Group ({selectedTicketIds.length})
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add Tickets to Existing Group</DialogTitle>
+                <DialogDescription>
+                  Add the currently selected tickets into an existing ticket group.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="addGroupSelect">Select Group *</Label>
+                  <Select
+                    value={targetGroupIdForAdd?.toString() || ""}
+                    onValueChange={(value) => setTargetGroupIdForAdd(parseInt(value, 10))}
+                  >
+                    <SelectTrigger id="addGroupSelect">
+                      <SelectValue placeholder="Select a group" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {groups
+                        .filter(group => !group.is_archived)
+                        .map((group) => (
+                          <SelectItem key={group.id} value={group.id.toString()}>
+                            {group.name} ({group.ticketCount} tickets)
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {selectedTicketIds.length} ticket{selectedTicketIds.length !== 1 ? "s" : ""} will be added to the selected group.
+                </p>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsAddToGroupDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleAddToExistingGroup}
+                  disabled={loading || !targetGroupIdForAdd || selectedTicketIds.length === 0}
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Adding...
+                    </>
+                  ) : (
+                    "Add to Group"
                   )}
                 </Button>
               </DialogFooter>

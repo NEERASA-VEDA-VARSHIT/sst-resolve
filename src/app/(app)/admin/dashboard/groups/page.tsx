@@ -13,6 +13,8 @@ import { getCachedAdminUser, getCachedAdminAssignment } from "@/lib/cache/cached
 import { ticketMatchesAdminAssignment } from "@/lib/assignment/admin-assignment";
 import { AdminTicketFilters } from "@/components/admin/AdminTicketFilters";
 import type { Ticket } from "@/db/types-only";
+import type { AdminTicketRow } from "@/lib/ticket/adminTicketFilters";
+import { applySubcategoryFilter, applyTATFilter } from "@/lib/ticket/adminTicketFilters";
 
 // Force dynamic rendering since we use auth headers
 export const dynamic = "force-dynamic";
@@ -51,6 +53,7 @@ export default async function AdminGroupsPage({
     const subcategoryFilter = (typeof params["subcategory"] === "string" ? params["subcategory"] : params["subcategory"]?.[0]) || "";
     const searchQuery = (typeof params["search"] === "string" ? params["search"] : params["search"]?.[0]) || "";
     const locationFilter = (typeof params["location"] === "string" ? params["location"] : params["location"]?.[0]) || "";
+    const tatFilter = (typeof params["tat"] === "string" ? params["tat"] : params["tat"]?.[0]) || "";
 
     // Build where conditions
     const conditions = [];
@@ -65,9 +68,16 @@ export default async function AdminGroupsPage({
       }
     }
 
-    // Category filter
+    // Category filter - match by slug or name
     if (categoryFilter) {
-      conditions.push(ilike(categories.name, `%${categoryFilter}%`));
+      conditions.push(
+        and(
+          // Ensure category is present
+          isNotNull(tickets.category_id),
+          // Match either category slug or name (case-insensitive)
+          sql`(${categories.slug} ILIKE ${`%${categoryFilter}%`} OR ${categories.name} ILIKE ${`%${categoryFilter}%`})`
+        )
+      );
     }
 
     // Location filter
@@ -75,12 +85,7 @@ export default async function AdminGroupsPage({
       conditions.push(ilike(tickets.location, `%${locationFilter}%`));
     }
 
-    // Subcategory filter - uses JSONB metadata->>'subcategory' (same as admin dashboard)
-    if (subcategoryFilter) {
-      conditions.push(
-        sql`( ${tickets.metadata} ->> 'subcategory') ILIKE ${`%${subcategoryFilter}%`}`
-      );
-    }
+    // Note: subcategory and TAT filters are applied after fetching using shared helpers
 
     // Search query filter
     if (searchQuery) {
@@ -101,15 +106,24 @@ export default async function AdminGroupsPage({
     const allTicketRows = await db
       .select({
         id: tickets.id,
+        title: tickets.title,
+        description: tickets.description,
+        location: tickets.location,
         status_id: tickets.status_id,
         status_value: ticket_statuses.value,
         category_id: tickets.category_id,
-        category_name: categories.name,
-        description: tickets.description,
-        location: tickets.location,
+        subcategory_id: tickets.subcategory_id,
+        sub_subcategory_id: tickets.sub_subcategory_id,
+        created_by: tickets.created_by,
         assigned_to: tickets.assigned_to,
+        group_id: tickets.group_id,
+        escalation_level: tickets.escalation_level,
+        acknowledgement_due_at: tickets.acknowledgement_due_at,
+        resolution_due_at: tickets.resolution_due_at,
+        metadata: tickets.metadata,
         created_at: tickets.created_at,
         updated_at: tickets.updated_at,
+        category_name: categories.name,
       })
       .from(tickets)
       .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
@@ -119,7 +133,7 @@ export default async function AdminGroupsPage({
       .limit(1000); // Reasonable limit for grouping operations
 
     // Filter tickets based on admin assignment
-    const allTickets = allTicketRows.filter(ticket => {
+    let allTickets: AdminTicketRow[] = allTicketRows.filter(ticket => {
       // For admin role, filter by assignment
       if (role === "admin") {
         return ticketMatchesAdminAssignment({
@@ -129,7 +143,16 @@ export default async function AdminGroupsPage({
       }
       // For other roles, show all tickets
       return true;
-    });
+    }) as AdminTicketRow[];
+
+    // Apply additional in-memory filters that rely on metadata (subcategory, TAT)
+    if (subcategoryFilter) {
+      allTickets = applySubcategoryFilter(allTickets, subcategoryFilter);
+    }
+
+    if (tatFilter) {
+      allTickets = applyTATFilter(allTickets, tatFilter);
+    }
 
     // Fetch ticket groups to calculate stats
     const allGroups = await db

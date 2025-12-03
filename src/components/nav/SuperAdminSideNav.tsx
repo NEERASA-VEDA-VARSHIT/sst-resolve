@@ -50,11 +50,15 @@ type SuperAdminSideNavProps = {
 export function SuperAdminSideNav({ open = false, onOpenChange }: SuperAdminSideNavProps) {
   const pathname = usePathname();
 
+  // When closed, do not render the sidebar at all
+  if (!open) {
+    return null;
+  }
+
   return (
     <aside
       className={cn(
-        "hidden lg:flex fixed left-0 top-16 h-[calc(100vh-4rem)] border-r bg-background/95 backdrop-blur z-40 transition-all",
-        open ? "w-56" : "w-14"
+        "hidden lg:flex fixed left-0 top-16 h-[calc(100vh-4rem)] border-r bg-background/95 backdrop-blur z-40 transition-all w-56"
       )}
     >
       <div className="flex flex-col h-full w-full">
