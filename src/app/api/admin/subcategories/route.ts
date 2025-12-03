@@ -29,6 +29,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "category_id is required" }, { status: 400 });
     }
 
+    // Validate categoryId is a valid number
+    const parsedCategoryId = parseInt(categoryId, 10);
+    if (isNaN(parsedCategoryId) || parsedCategoryId <= 0) {
+      return NextResponse.json({ error: "Invalid category_id. Must be a positive integer." }, { status: 400 });
+    }
+
     const subcats = await db
       .select({
         id: subcategories.id,
@@ -44,7 +50,7 @@ export async function GET(request: NextRequest) {
       .from(subcategories)
       .where(
         and(
-          eq(subcategories.category_id, parseInt(categoryId)),
+          eq(subcategories.category_id, parsedCategoryId),
           eq(subcategories.is_active, true)
         )
       )
@@ -182,6 +188,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "category_id, name, and slug are required" }, { status: 400 });
     }
 
+    // Validate category_id is a valid number
+    const parsedCategoryId = parseInt(String(category_id), 10);
+    if (isNaN(parsedCategoryId) || parsedCategoryId <= 0) {
+      return NextResponse.json({ error: "Invalid category_id. Must be a positive integer." }, { status: 400 });
+    }
+
     // Check if an inactive item with the same slug exists
     const [existingInactive] = await db
       .select({
@@ -228,7 +240,7 @@ export async function POST(request: NextRequest) {
     const [newSubcategory] = await db
       .insert(subcategories)
       .values({
-        category_id: parseInt(category_id),
+        category_id: parsedCategoryId,
         name,
         slug,
         description: description || null,

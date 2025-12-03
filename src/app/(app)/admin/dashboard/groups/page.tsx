@@ -1,7 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { db, tickets, categories, ticket_statuses, ticket_groups } from "@/db";
-import { desc, eq, isNotNull } from "drizzle-orm";
+import { desc, eq, isNotNull, and, sql, ilike } from "drizzle-orm";
 import { TicketGrouping } from "@/components/admin/TicketGrouping";
 import { SelectableTicketList } from "@/components/admin/SelectableTicketList";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,12 +11,17 @@ import Link from "next/link";
 import { ArrowLeft, Users, Package, CheckCircle2, TrendingUp } from "lucide-react";
 import { getCachedAdminUser, getCachedAdminAssignment } from "@/lib/cache/cached-queries";
 import { ticketMatchesAdminAssignment } from "@/lib/assignment/admin-assignment";
+import { AdminTicketFilters } from "@/components/admin/AdminTicketFilters";
 import type { Ticket } from "@/db/types-only";
 
 // Force dynamic rendering since we use auth headers
 export const dynamic = "force-dynamic";
 
-export default async function AdminGroupsPage() {
+export default async function AdminGroupsPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
   try {
     const { userId } = await auth();
 
@@ -38,6 +43,47 @@ export default async function AdminGroupsPage() {
     // Get admin's domain/scope assignment (cached)
     const adminAssignment = await getCachedAdminAssignment(userId);
 
+    // Parse search params
+    const resolvedSearchParams = searchParams ? await searchParams : {};
+    const params = resolvedSearchParams || {};
+    const statusFilter = (typeof params["status"] === "string" ? params["status"] : params["status"]?.[0]) || "";
+    const categoryFilter = (typeof params["category"] === "string" ? params["category"] : params["category"]?.[0]) || "";
+    const searchQuery = (typeof params["search"] === "string" ? params["search"] : params["search"]?.[0]) || "";
+    const locationFilter = (typeof params["location"] === "string" ? params["location"] : params["location"]?.[0]) || "";
+
+    // Build where conditions
+    const conditions = [];
+
+    // Status filter
+    if (statusFilter) {
+      const normalizedStatus = statusFilter.toLowerCase();
+      if (normalizedStatus === "escalated") {
+        conditions.push(sql`${tickets.escalation_level} > 0`);
+      } else {
+        conditions.push(sql`LOWER(${ticket_statuses.value}) = ${normalizedStatus}`);
+      }
+    }
+
+    // Category filter
+    if (categoryFilter) {
+      conditions.push(ilike(categories.name, `%${categoryFilter}%`));
+    }
+
+    // Location filter
+    if (locationFilter) {
+      conditions.push(ilike(tickets.location, `%${locationFilter}%`));
+    }
+
+    // Search query filter
+    if (searchQuery) {
+      conditions.push(
+        sql`(
+          ${tickets.id}::text ILIKE ${`%${searchQuery}%`} OR
+          ${tickets.description} ILIKE ${`%${searchQuery}%`}
+        )`
+      );
+    }
+
     // Fetch tickets with proper joins for better data
     const allTicketRows = await db
       .select({
@@ -55,6 +101,7 @@ export default async function AdminGroupsPage() {
       .from(tickets)
       .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
       .leftJoin(categories, eq(tickets.category_id, categories.id))
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(tickets.created_at))
       .limit(1000); // Reasonable limit for grouping operations
 
@@ -116,6 +163,16 @@ export default async function AdminGroupsPage() {
               </Link>
             </Button>
           </div>
+
+          {/* Filters */}
+          <Card className="shadow-sm">
+            <CardHeader>
+              <CardTitle>Filters</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <AdminTicketFilters />
+            </CardContent>
+          </Card>
 
           {/* Stats Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

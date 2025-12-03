@@ -24,8 +24,9 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Users, Plus, X, MessageSquare, Loader2, Archive, RotateCcw, Search, Settings } from "lucide-react";
+import { Users, Plus, X, MessageSquare, Loader2, Archive, RotateCcw, Search, Settings, Clock } from "lucide-react";
 import { ManageGroupTicketsDialog } from "./ManageGroupTicketsDialog";
+import { cn } from "@/lib/utils";
 
 interface Ticket {
   id: number;
@@ -34,6 +35,11 @@ interface Ticket {
   location?: string | null;
   created_at: Date | string;
   category_name?: string | null;
+  resolution_due_at?: Date | string | null;
+  metadata?: {
+    tatDate?: string;
+    tat?: string;
+  } | null;
   // Legacy fields kept for backward compatibility with API responses
   user_number?: string | null;
   category?: string | null;
@@ -541,7 +547,7 @@ export function TicketGrouping({ selectedTicketIds, onGroupCreated }: TicketGrou
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
                       <Badge variant="secondary">
                         {group.ticketCount} ticket{group.ticketCount !== 1 ? "s" : ""}
                       </Badge>
@@ -549,6 +555,99 @@ export function TicketGrouping({ selectedTicketIds, onGroupCreated }: TicketGrou
                         {group.created_at ? new Date(group.created_at).toLocaleDateString() : "N/A"}
                       </span>
                     </div>
+                    {/* Group TAT Display */}
+                    {(() => {
+                      // Calculate group TAT from tickets
+                      const groupTATInfo = (() => {
+                        if (!group.tickets || group.tickets.length === 0) return null;
+                        
+                        // Get the most common TAT date or the earliest due date
+                        const tatDates: Date[] = [];
+                        const tatTexts: string[] = [];
+                        
+                        group.tickets.forEach(ticket => {
+                          // Try to get TAT from resolution_due_at first
+                          if (ticket.resolution_due_at) {
+                            const date = ticket.resolution_due_at instanceof Date 
+                              ? ticket.resolution_due_at 
+                              : new Date(ticket.resolution_due_at);
+                            if (!isNaN(date.getTime())) {
+                              tatDates.push(date);
+                            }
+                          }
+                          
+                          // Also check metadata
+                          if (ticket.metadata && typeof ticket.metadata === 'object') {
+                            const metadata = ticket.metadata as { tatDate?: string; tat?: string };
+                            if (metadata.tatDate) {
+                              const date = new Date(metadata.tatDate);
+                              if (!isNaN(date.getTime())) {
+                                tatDates.push(date);
+                              }
+                            }
+                            if (metadata.tat) {
+                              tatTexts.push(metadata.tat);
+                            }
+                          }
+                        });
+                        
+                        if (tatDates.length === 0) return null;
+                        
+                        // Get the earliest TAT date (most urgent)
+                        const earliestDate = new Date(Math.min(...tatDates.map(d => d.getTime())));
+                        const now = new Date();
+                        const diff = (earliestDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+                        const diffDays = Math.round(diff);
+                        
+                        let label = "";
+                        let isOverdue = false;
+                        
+                        if (diffDays < 0) {
+                          isOverdue = true;
+                          label = `${Math.abs(diffDays)} days overdue`;
+                        } else if (diffDays === 0) {
+                          label = "Due today";
+                        } else if (diffDays === 1) {
+                          label = "Due tomorrow";
+                        } else if (diffDays <= 7) {
+                          label = `Due in ${diffDays} days`;
+                        } else {
+                          label = earliestDate.toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          });
+                        }
+                        
+                        // Get most common TAT text if available
+                        const mostCommonTAT = tatTexts.length > 0 
+                          ? tatTexts.sort((a, b) => 
+                              tatTexts.filter(v => v === a).length - tatTexts.filter(v => v === b).length
+                            ).pop() || null
+                          : null;
+                        
+                        return { label, isOverdue, tatText: mostCommonTAT };
+                      })();
+                      
+                      if (!groupTATInfo) return null;
+                      
+                      return (
+                        <div className={cn(
+                          "flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs font-medium border",
+                          groupTATInfo.isOverdue
+                            ? "bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400 border-red-200 dark:border-red-800"
+                            : "bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400 border-amber-200 dark:border-amber-800"
+                        )}>
+                          <Clock className="w-3.5 h-3.5 flex-shrink-0" />
+                          <span className="flex-1">{groupTATInfo.label}</span>
+                          {groupTATInfo.tatText && (
+                            <span className="text-[10px] opacity-75 ml-1">
+                              ({groupTATInfo.tatText})
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
                     <div className="space-y-1.5">
                       {group.tickets.slice(0, 3).map((ticket) => (
                         <div key={ticket.id} className="text-sm flex items-center justify-between p-1.5 rounded-md hover:bg-accent/50 transition-colors">

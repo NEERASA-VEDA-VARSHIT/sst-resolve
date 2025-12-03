@@ -28,13 +28,15 @@ export async function createTicket(args: {
 }) {
   const { clerkId, payload } = args;
 
-  // Ensure user exists in our DB (returns local user record)
-  const dbUser = await getOrCreateUser(clerkId);
+  // Parallelize user and role lookups for better performance
+  const [dbUser, role] = await Promise.all([
+    getOrCreateUser(clerkId),
+    getUserRoleFromDB(clerkId),
+  ]);
+  
   if (!dbUser) throw new Error("User not found in local DB after sync");
-
-  // Role check (single source of truth)
-  const role = await getUserRoleFromDB(clerkId);
   if (!role) throw new Error("User role unknown");
+  
   // only allow student/committee per PRD
   if (role !== "student" && role !== "committee") {
     throw new Error("Only students and committee members can create tickets");
@@ -130,57 +132,67 @@ export async function createTicket(args: {
   }
 
   // Resolve category with active check in single query (optimized)
+  // If subcategoryId is provided, we can fetch both category and subcategory in parallel
   let categoryRecord: { id: number; name: string; is_active: boolean } | undefined;
+  let subcategoryRecord: { id: number; name: string } | undefined;
   
-  if (payload.categoryId) {
-    const [c] = await db
-      .select({ 
-        id: categories.id, 
-        name: categories.name,
-        is_active: categories.is_active 
-      })
-      .from(categories)
-      .where(eq(categories.id, payload.categoryId))
-      .limit(1);
-    categoryRecord = c;
-  } else if (payload.category) {
-    const [c] = await db
-      .select({ 
-        id: categories.id, 
-        name: categories.name,
-        is_active: categories.is_active 
-      })
-      .from(categories)
-      .where(eq(categories.name, payload.category))
-      .limit(1);
-    categoryRecord = c;
-  }
+  // Start category lookup
+  const categoryPromise = payload.categoryId
+    ? db
+        .select({ 
+          id: categories.id, 
+          name: categories.name,
+          is_active: categories.is_active 
+        })
+        .from(categories)
+        .where(eq(categories.id, payload.categoryId))
+        .limit(1)
+        .then(([c]) => c)
+    : payload.category
+    ? db
+        .select({ 
+          id: categories.id, 
+          name: categories.name,
+          is_active: categories.is_active 
+        })
+        .from(categories)
+        .where(eq(categories.name, payload.category))
+        .limit(1)
+        .then(([c]) => c)
+    : Promise.resolve(undefined);
 
+  // Start subcategory lookup early if we have subcategoryId (can run in parallel with category)
+  const subcategoryPromise = payload.subcategoryId
+    ? categoryPromise.then(async (cat) => {
+        if (!cat) return undefined;
+        const [s] = await db
+          .select({ id: subcategories.id, name: subcategories.name, is_active: subcategories.is_active })
+          .from(subcategories)
+          .where(and(eq(subcategories.id, payload.subcategoryId), eq(subcategories.category_id, cat.id)))
+          .limit(1);
+        if (s && s.is_active) {
+          return { id: s.id, name: s.name };
+        } else if (s && !s.is_active) {
+          throw new Error("Subcategory is inactive and cannot be used for ticket creation");
+        } else if (!s) {
+          throw new Error("Subcategory not found or does not belong to the selected category");
+        }
+        return undefined;
+      })
+    : Promise.resolve(undefined);
+
+  // Wait for category lookup
+  categoryRecord = await categoryPromise;
   if (!categoryRecord) {
     throw new Error("Category not found");
   }
-  
   if (!categoryRecord.is_active) {
     throw new Error("Category is inactive and cannot be used for ticket creation");
   }
 
-  // Subcategory resolution (optional) - can't parallelize as it depends on categoryRecord
-  // Edge case: Validate subcategory belongs to category and is active
-  let subcategoryRecord: { id: number; name: string } | undefined;
+  // Wait for subcategory if it was started early, otherwise do sequential lookup
   if (payload.subcategoryId) {
-    const [s] = await db
-      .select({ id: subcategories.id, name: subcategories.name, is_active: subcategories.is_active })
-      .from(subcategories)
-      .where(and(eq(subcategories.id, payload.subcategoryId), eq(subcategories.category_id, categoryRecord.id)))
-      .limit(1);
-    if (s && s.is_active) {
-      subcategoryRecord = { id: s.id, name: s.name };
-    } else if (s && !s.is_active) {
-      throw new Error("Subcategory is inactive and cannot be used for ticket creation");
-    } else if (!s && payload.subcategoryId) {
-      // Edge case: Subcategory ID provided but doesn't exist or doesn't belong to category
-      throw new Error("Subcategory not found or does not belong to the selected category");
-    }
+    subcategoryRecord = await subcategoryPromise;
   } else if (payload.subcategory) {
     const [s] = await db
       .select({ id: subcategories.id, name: subcategories.name, is_active: subcategories.is_active })
@@ -191,44 +203,58 @@ export async function createTicket(args: {
       subcategoryRecord = { id: s.id, name: s.name };
     } else if (s && !s.is_active) {
       throw new Error("Subcategory is inactive and cannot be used for ticket creation");
-    } else if (!s && payload.subcategory) {
-      // Edge case: Subcategory name provided but doesn't exist or doesn't belong to category
+    } else if (!s) {
       throw new Error("Subcategory not found or does not belong to the selected category");
     }
   }
 
   // Sub-subcategory resolution (optional) - depends on subcategoryRecord
-  // Edge case: Validate sub-subcategory belongs to subcategory and is active
-  let subSubcategoryRecord: { id: number; name: string } | undefined;
-  if (payload.subSubcategoryId && subcategoryRecord) {
-    const [ss] = await db
-      .select({ id: sub_subcategories.id, name: sub_subcategories.name, is_active: sub_subcategories.is_active })
-      .from(sub_subcategories)
-      .where(and(eq(sub_subcategories.id, payload.subSubcategoryId), eq(sub_subcategories.subcategory_id, subcategoryRecord.id)))
-      .limit(1);
-    if (ss && ss.is_active) {
-      subSubcategoryRecord = { id: ss.id, name: ss.name };
-    } else if (ss && !ss.is_active) {
-      throw new Error("Sub-subcategory is inactive and cannot be used for ticket creation");
-    } else if (!ss && payload.subSubcategoryId) {
-      // Edge case: Sub-subcategory ID provided but doesn't exist or doesn't belong to subcategory
-      throw new Error("Sub-subcategory not found or does not belong to the selected subcategory");
+  // Start this lookup early to parallelize with field lookup
+  const subSubcategoryPromise = subcategoryPromise.then(async (subcat) => {
+    if (!subcat) return undefined;
+    
+    if (payload.subSubcategoryId) {
+      const [ss] = await db
+        .select({ id: sub_subcategories.id, name: sub_subcategories.name, is_active: sub_subcategories.is_active })
+        .from(sub_subcategories)
+        .where(and(eq(sub_subcategories.id, payload.subSubcategoryId), eq(sub_subcategories.subcategory_id, subcat.id)))
+        .limit(1);
+      if (ss && ss.is_active) {
+        return { id: ss.id, name: ss.name };
+      } else if (ss && !ss.is_active) {
+        throw new Error("Sub-subcategory is inactive and cannot be used for ticket creation");
+      } else if (!ss) {
+        throw new Error("Sub-subcategory not found or does not belong to the selected subcategory");
+      }
+    } else if (payload.subSubcategory) {
+      const [ss] = await db
+        .select({ id: sub_subcategories.id, name: sub_subcategories.name, is_active: sub_subcategories.is_active })
+        .from(sub_subcategories)
+        .where(and(eq(sub_subcategories.name, payload.subSubcategory), eq(sub_subcategories.subcategory_id, subcat.id)))
+        .limit(1);
+      if (ss && ss.is_active) {
+        return { id: ss.id, name: ss.name };
+      } else if (ss && !ss.is_active) {
+        throw new Error("Sub-subcategory is inactive and cannot be used for ticket creation");
+      } else if (!ss) {
+        throw new Error("Sub-subcategory not found or does not belong to the selected subcategory");
+      }
     }
-  } else if (payload.subSubcategory && subcategoryRecord) {
-    const [ss] = await db
-      .select({ id: sub_subcategories.id, name: sub_subcategories.name, is_active: sub_subcategories.is_active })
-      .from(sub_subcategories)
-      .where(and(eq(sub_subcategories.name, payload.subSubcategory), eq(sub_subcategories.subcategory_id, subcategoryRecord.id)))
-      .limit(1);
-    if (ss && ss.is_active) {
-      subSubcategoryRecord = { id: ss.id, name: ss.name };
-    } else if (ss && !ss.is_active) {
-      throw new Error("Sub-subcategory is inactive and cannot be used for ticket creation");
-    } else if (!ss && payload.subSubcategory) {
-      // Edge case: Sub-subcategory name provided but doesn't exist or doesn't belong to subcategory
-      throw new Error("Sub-subcategory not found or does not belong to the selected subcategory");
-    }
+    return undefined;
+  });
+  
+  // Wait for subcategory, sub-subcategory, and field lookups in parallel
+  const [finalSubcategory, finalSubSubcategory] = await Promise.all([
+    subcategoryPromise,
+    subSubcategoryPromise,
+    fieldLookupPromise, // Field lookup runs in parallel
+  ]);
+  
+  // Update records if we got them from promises
+  if (finalSubcategory) {
+    subcategoryRecord = finalSubcategory;
   }
+  const subSubcategoryRecord = finalSubSubcategory;
 
   // Build metadata object (store both ids and names)
   let metadata: Record<string, unknown> = {};
@@ -266,33 +292,40 @@ export async function createTicket(args: {
   }
 
   // NEW: Store field IDs for future lookup (snapshot-on-delete approach)
+  // Start field lookup early to parallelize with sub-subcategory lookup
   const usedFieldIds: number[] = [];
   const dynamicFields: Record<string, { field_id: number; value: unknown }> = {};
+  
+  // Start field lookup promise early (will be awaited later if needed)
+  // This can run in parallel with sub-subcategory lookup since they're independent
+  const fieldLookupPromise = (async () => {
+    // Wait for subcategory to be resolved first
+    const subcat = await subcategoryPromise;
+    if (subcat?.id && detailsObj) {
+      // Fetch current active fields to map slugs to IDs
+      const { category_fields } = await import("@/db/schema");
+      const { eq } = await import("drizzle-orm");
 
-  if (subcategoryRecord?.id && detailsObj) {
-    // Fetch current active fields to map slugs to IDs
-    const { category_fields } = await import("@/db/schema");
-    const { eq } = await import("drizzle-orm");
+      const activeFields = await db
+        .select({ id: category_fields.id, slug: category_fields.slug })
+        .from(category_fields)
+        .where(eq(category_fields.subcategory_id, subcat.id));
 
-    const activeFields = await db
-      .select({ id: category_fields.id, slug: category_fields.slug })
-      .from(category_fields)
-      .where(eq(category_fields.subcategory_id, subcategoryRecord.id));
+      const fieldMap = new Map(activeFields.map(f => [f.slug, f.id]));
 
-    const fieldMap = new Map(activeFields.map(f => [f.slug, f.id]));
-
-    // Store field IDs with their values
-    // Safety check: ensure detailsObj is an object before calling Object.entries
-    if (detailsObj && typeof detailsObj === 'object' && !Array.isArray(detailsObj)) {
-      for (const [slug, value] of Object.entries(detailsObj)) {
-        const fieldId = fieldMap.get(slug);
-        if (fieldId && value !== null && value !== undefined && value !== '') {
-          usedFieldIds.push(fieldId);
-          dynamicFields[slug] = { field_id: fieldId, value };
+      // Store field IDs with their values
+      // Safety check: ensure detailsObj is an object before calling Object.entries
+      if (detailsObj && typeof detailsObj === 'object' && !Array.isArray(detailsObj)) {
+        for (const [slug, value] of Object.entries(detailsObj)) {
+          const fieldId = fieldMap.get(slug);
+          if (fieldId && value !== null && value !== undefined && value !== '') {
+            usedFieldIds.push(fieldId);
+            dynamicFields[slug] = { field_id: fieldId, value };
+          }
         }
       }
     }
-  }
+  })();
 
   metadata = {
     ...metadata,
@@ -306,6 +339,7 @@ export async function createTicket(args: {
 
   // Edge case: Validate metadata size (PostgreSQL JSONB limit is ~1GB, but we'll enforce a reasonable limit)
   // This prevents extremely large metadata from causing performance issues
+  // Validate synchronously (fast operation, no need to parallelize)
   const METADATA_SIZE_LIMIT = 10 * 1024 * 1024; // 10MB limit
   try {
     const metadataJson = JSON.stringify(metadata);
@@ -330,6 +364,7 @@ export async function createTicket(args: {
   }
 
   // Determine assignment (SPOC or super admin) - optimized parallel lookups
+  // Run metadata size check, status lookup, and assignment logic in parallel
   let assignedUserId: string | null = null;
   const { findSuperAdminClerkId } = await import("@/lib/db-helpers");
   

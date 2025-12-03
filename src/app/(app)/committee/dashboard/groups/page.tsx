@@ -26,6 +26,8 @@ import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 
 import { getAllCommitteeTickets } from "@/lib/committee/getAllCommitteeTickets";
 
+import { AdminTicketFilters } from "@/components/admin/AdminTicketFilters";
+
 import type { Ticket } from "@/db/types-only";
 
 
@@ -36,7 +38,11 @@ export const dynamic = "force-dynamic";
 
 
 
-export default async function CommitteeGroupsPage() {
+export default async function CommitteeGroupsPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
 
   try {
 
@@ -76,9 +82,56 @@ export default async function CommitteeGroupsPage() {
 
 
 
-    // Fetch all committee-accessible tickets
+    // Parse search params
+    const resolvedSearchParams = searchParams ? await searchParams : {};
+    const params = resolvedSearchParams || {};
+    const statusFilter = (typeof params["status"] === "string" ? params["status"] : params["status"]?.[0]) || "";
+    const categoryFilter = (typeof params["category"] === "string" ? params["category"] : params["category"]?.[0]) || "";
+    const searchQuery = (typeof params["search"] === "string" ? params["search"] : params["search"]?.[0]) || "";
+    const locationFilter = (typeof params["location"] === "string" ? params["location"] : params["location"]?.[0]) || "";
 
-    const allTickets = await getAllCommitteeTickets(user.id);
+    // Fetch all committee-accessible tickets
+    const allCommitteeTickets = await getAllCommitteeTickets(user.id);
+
+    // Apply filters
+    let allTickets = allCommitteeTickets;
+
+    if (statusFilter) {
+      const normalizedStatus = statusFilter.toLowerCase();
+      if (normalizedStatus === "escalated") {
+        allTickets = allTickets.filter(t => (t.escalation_level || 0) > 0);
+      } else {
+        allTickets = allTickets.filter(t => {
+          const ticketStatus = (t.status || "").toLowerCase();
+          return ticketStatus === normalizedStatus;
+        });
+      }
+    }
+
+    if (categoryFilter) {
+      allTickets = allTickets.filter(t => {
+        const categoryName = (t.category_name || "").toLowerCase();
+        return categoryName.includes(categoryFilter.toLowerCase());
+      });
+    }
+
+    if (locationFilter) {
+      allTickets = allTickets.filter(t => {
+        const location = (t.location || "").toLowerCase();
+        return location.includes(locationFilter.toLowerCase());
+      });
+    }
+
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      allTickets = allTickets.filter(t => {
+        return (
+          t.id.toString().includes(query) ||
+          (t.description || "").toLowerCase().includes(query) ||
+          (t.title || "").toLowerCase().includes(query)
+        );
+      });
+    }
 
 
 
@@ -171,6 +224,18 @@ export default async function CommitteeGroupsPage() {
           </Button>
 
         </div>
+
+
+
+        {/* Filters */}
+        <Card className="shadow-sm">
+          <CardHeader>
+            <CardTitle>Filters</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <AdminTicketFilters />
+          </CardContent>
+        </Card>
 
 
 

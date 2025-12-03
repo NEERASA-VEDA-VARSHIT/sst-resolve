@@ -101,9 +101,9 @@ export async function PATCH(
       }
 
       const isReopening = newStatus === TICKET_STATUS.REOPENED;
-      const isClosing = newStatus === TICKET_STATUS.RESOLVED;
+      const isClosing = newStatus === TICKET_STATUS.CLOSED || newStatus === TICKET_STATUS.RESOLVED;
 
-      const canReopen = currentCanonical === TICKET_STATUS.RESOLVED;
+      const canReopen = currentCanonical === TICKET_STATUS.RESOLVED || currentCanonical === TICKET_STATUS.CLOSED;
       const canCloseFrom = new Set<string>([
         TICKET_STATUS.OPEN,
         TICKET_STATUS.IN_PROGRESS,
@@ -189,8 +189,8 @@ export async function PATCH(
     const currentStatusValue = ticket.status || "";
     const currentCanonicalStatus = getCanonicalStatus(currentStatusValue) || currentStatusValue.toLowerCase();
     
-    // Edge case: Prevent invalid transitions (e.g., resolved -> open should be reopened)
-    if (currentCanonicalStatus === TICKET_STATUS.RESOLVED && newStatus === TICKET_STATUS.OPEN) {
+    // Edge case: Prevent invalid transitions (e.g., resolved/closed -> open should be reopened)
+    if ((currentCanonicalStatus === TICKET_STATUS.RESOLVED || currentCanonicalStatus === TICKET_STATUS.CLOSED) && newStatus === TICKET_STATUS.OPEN) {
       // If trying to go from resolved to open, change to reopened instead
       const reopenedStatusId = await getStatusIdByValue(TICKET_STATUS.REOPENED);
       if (reopenedStatusId) {
@@ -263,9 +263,12 @@ export async function PATCH(
       );
     }
 
-    // SET TIMESTAMPS - Update metadata for resolved_at and reopened_at
+    // SET TIMESTAMPS - Update metadata for resolved_at, closed_at and reopened_at
     if (newStatus === TICKET_STATUS.RESOLVED) {
       metadata.resolved_at = new Date().toISOString();
+    }
+    if (newStatus === TICKET_STATUS.CLOSED) {
+      metadata.closed_at = new Date().toISOString();
     }
     if (newStatus === TICKET_STATUS.REOPENED) {
       metadata.reopened_at = new Date().toISOString();

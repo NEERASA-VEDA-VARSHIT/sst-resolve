@@ -59,11 +59,11 @@ export function StudentActions({ ticketId, currentStatus }: { ticketId: number; 
 
     setLoading(true);
     try {
-      // Use RESOLVED as the canonical status; for students this is shown as "Closed"
+      // Use CLOSED status when students close their own tickets
       const response = await fetch(`/api/tickets/${ticketId}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "RESOLVED" }),
+        body: JSON.stringify({ status: "CLOSED" }),
       });
 
       if (response.ok) {

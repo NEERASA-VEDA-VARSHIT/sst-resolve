@@ -110,20 +110,28 @@ export function NotificationSettingsManager() {
 
   // Fetch subcategories when category changes
   useEffect(() => {
-    if (formData.category_id) {
+    if (formData.category_id && formData.category_id !== "__none__") {
       const fetchSubcategories = async () => {
         try {
-          const res = await fetch(`/api/admin/subcategories?category_id=${formData.category_id}`);
+          // Validate category_id is a valid number before fetching
+          const categoryIdNum = parseInt(formData.category_id, 10);
+          if (isNaN(categoryIdNum) || categoryIdNum <= 0) {
+            return;
+          }
+          
+          const res = await fetch(`/api/admin/subcategories?category_id=${categoryIdNum}`);
           if (res.ok) {
             const data = await res.json();
-            const fetched = (data.subcategories || []).map((s: { id: number; name: string; category_id: number }) => ({
+            // API returns array directly, not wrapped in object
+            const subcatsArray = Array.isArray(data) ? data : (data.subcategories || data || []);
+            const fetched = subcatsArray.map((s: { id: number; name: string; category_id?: number }) => ({
               id: s.id,
               name: s.name,
-              category_id: s.category_id || parseInt(formData.category_id, 10),
+              category_id: s.category_id || categoryIdNum,
             }));
             setSubcategories((prev) => {
               // Merge with existing, avoiding duplicates
-              const existing = prev.filter((s) => s.category_id !== parseInt(formData.category_id, 10));
+              const existing = prev.filter((s) => s.category_id !== categoryIdNum);
               return [...existing, ...fetched];
             });
           }
@@ -132,6 +140,9 @@ export function NotificationSettingsManager() {
         }
       };
       fetchSubcategories();
+    } else {
+      // Clear subcategories when no category is selected
+      setSubcategories((prev) => prev.filter((s) => s.category_id !== parseInt(formData.category_id || "0", 10)));
     }
   }, [formData.category_id]);
 
@@ -165,11 +176,15 @@ export function NotificationSettingsManager() {
           const subcategoryPromises = categoriesList.map((cat: Category) =>
             fetch(`/api/admin/subcategories?category_id=${cat.id}`)
               .then((res) => res.json())
-              .then((data) => (data.subcategories || []).map((s: { id: number; name: string; category_id: number }) => ({
-                id: s.id,
-                name: s.name,
-                category_id: s.category_id || cat.id,
-              })))
+              .then((data) => {
+                // API returns array directly, not wrapped in object
+                const subcatsArray = Array.isArray(data) ? data : (data.subcategories || []);
+                return subcatsArray.map((s: { id: number; name: string; category_id?: number }) => ({
+                  id: s.id,
+                  name: s.name,
+                  category_id: s.category_id || cat.id,
+                }));
+              })
               .catch(() => [])
           );
           const subcategoryArrays = await Promise.all(subcategoryPromises);
@@ -315,7 +330,11 @@ export function NotificationSettingsManager() {
   };
 
   const filteredSubcategories = formData.category_id && formData.category_id !== "__none__"
-    ? subcategories.filter((s) => s.category_id === parseInt(formData.category_id, 10))
+    ? (() => {
+        const categoryIdNum = parseInt(formData.category_id, 10);
+        if (isNaN(categoryIdNum) || categoryIdNum <= 0) return [];
+        return subcategories.filter((s) => s.category_id === categoryIdNum);
+      })()
     : [];
 
   const getScopeLabel = (config: NotificationConfig) => {
@@ -601,40 +620,55 @@ export function NotificationSettingsManager() {
                       No admins with Slack user IDs configured
                     </p>
                   ) : (
-                    admins.map((admin) => (
-                      <div key={admin.id} className="flex items-center space-x-2">
-                        <Checkbox
-                          id={`slack-cc-${admin.id}`}
-                          checked={formData.slack_cc_user_ids.includes(admin.slackUserId || "")}
-                          onCheckedChange={(checked) => {
-                            if (checked && admin.slackUserId) {
-                              setFormData((prev) => ({
-                                ...prev,
-                                slack_cc_user_ids: [...prev.slack_cc_user_ids, admin.slackUserId!],
-                              }));
-                            } else {
-                              setFormData((prev) => ({
-                                ...prev,
-                                slack_cc_user_ids: prev.slack_cc_user_ids.filter(
-                                  (id) => id !== admin.slackUserId
-                                ),
-                              }));
-                            }
-                          }}
-                        />
-                        <Label
-                          htmlFor={`slack-cc-${admin.id}`}
-                          className="text-sm font-normal cursor-pointer"
-                        >
-                          {admin.fullName} ({admin.email})
-                          {admin.slackUserId && (
-                            <code className="ml-2 text-xs bg-muted px-1 rounded">
-                              {admin.slackUserId}
-                            </code>
-                          )}
-                        </Label>
-                      </div>
-                    ))
+                    admins.map((admin) => {
+                      // Use admin.id as unique key, but track by slackUserId in the array
+                      // This ensures each admin checkbox is independent
+                      const slackUserId = admin.slackUserId || "";
+                      const isChecked = slackUserId && formData.slack_cc_user_ids.includes(slackUserId);
+                      
+                      return (
+                        <div key={admin.id} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={`slack-cc-${admin.id}`}
+                            checked={isChecked}
+                            onCheckedChange={(checked) => {
+                              if (!slackUserId) return; // Skip if no slackUserId
+                              
+                              setFormData((prev) => {
+                                const currentIds = prev.slack_cc_user_ids || [];
+                                if (checked) {
+                                  // Only add if not already present
+                                  if (!currentIds.includes(slackUserId)) {
+                                    return {
+                                      ...prev,
+                                      slack_cc_user_ids: [...currentIds, slackUserId],
+                                    };
+                                  }
+                                } else {
+                                  // Remove this specific slackUserId
+                                  return {
+                                    ...prev,
+                                    slack_cc_user_ids: currentIds.filter((id) => id !== slackUserId),
+                                  };
+                                }
+                                return prev;
+                              });
+                            }}
+                          />
+                          <Label
+                            htmlFor={`slack-cc-${admin.id}`}
+                            className="text-sm font-normal cursor-pointer"
+                          >
+                            {admin.fullName} ({admin.email})
+                            {slackUserId && (
+                              <code className="ml-2 text-xs bg-muted px-1 rounded">
+                                {slackUserId}
+                              </code>
+                            )}
+                          </Label>
+                        </div>
+                      );
+                    })
                   )}
                 </div>
               </div>

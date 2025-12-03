@@ -6,29 +6,38 @@
 import { db, users, roles, admin_assignments, tickets, committees, categories, domains, scopes, admin_profiles, ticket_statuses } from "@/db";
 import { eq, and, isNotNull, lt, sql } from "drizzle-orm";
 import type { UserRole } from "@/types/auth";
+import { unstable_cache } from "next/cache";
 
 /**
  * Find a super admin user's clerk_id from database
  * Returns the first super admin found, or null if none exists
  * Uses database as single source of truth (not Clerk metadata)
+ * Cached for 5 minutes to reduce database queries
  */
-export async function findSuperAdminClerkId(): Promise<string | null> {
-  try {
-    const superAdminUsers = await db
-      .select({
-        external_id: users.external_id,
-      })
-      .from(users)
-      .innerJoin(roles, eq(users.role_id, roles.id))
-      .where(eq(roles.name, "super_admin"))
-      .limit(1);
+export const findSuperAdminClerkId = unstable_cache(
+  async (): Promise<string | null> => {
+    try {
+      const superAdminUsers = await db
+        .select({
+          external_id: users.external_id,
+        })
+        .from(users)
+        .innerJoin(roles, eq(users.role_id, roles.id))
+        .where(eq(roles.name, "super_admin"))
+        .limit(1);
 
-    return superAdminUsers[0]?.external_id || null;
-  } catch (error) {
-    console.error("[DB Helpers] Error finding super admin:", error);
-    return null;
+      return superAdminUsers[0]?.external_id || null;
+    } catch (error) {
+      console.error("[DB Helpers] Error finding super admin:", error);
+      return null;
+    }
+  },
+  ["super-admin-clerk-id"],
+  {
+    revalidate: 300, // Cache for 5 minutes
+    tags: ["super-admin"],
   }
-}
+);
 
 /**
  * Get all roles for a user (with scoping information)

@@ -87,6 +87,8 @@ export default async function SuperAdminTodayPendingPage() {
 
   const pendingStatuses = new Set(["open", "in_progress", "awaiting_student", "reopened"]);
 
+  // Filter tickets that are due today OR overdue (for the "Today Pending" page)
+  // This page shows tickets with TAT due today, but also includes overdue tickets for visibility
   const todayPending = allTickets.filter(t => {
     const status = (t.status || "").toLowerCase();
     const hasPendingStatus = pendingStatuses.has(status);
@@ -103,14 +105,25 @@ export default async function SuperAdminTodayPendingPage() {
     const tatMonth = tatDate.getMonth();
     const tatDay = tatDate.getDate();
     
+    // Check if TAT is today
     const tatIsToday = 
       tatYear === todayYear &&
       tatMonth === todayMonth &&
       tatDay === todayDate;
     
-    return tatIsToday;
+    // Also include overdue tickets (past their TAT date) for visibility
+    if (tatIsToday) return true;
+    
+    // Include overdue tickets (past their TAT date/time)
+    const now = new Date();
+    const tatDateTime = new Date(tatDate).getTime();
+    const nowTime = now.getTime();
+    
+    return tatDateTime < nowTime;
   });
 
+  // Calculate overdue tickets - includes all pending tickets with TAT date in the past
+  // This includes tickets due today that are past their time, and tickets due before today
   const overdueToday = allTickets.filter(t => {
     const status = (t.status || "").toLowerCase();
     if (!pendingStatuses.has(status)) return false;
@@ -127,21 +140,13 @@ export default async function SuperAdminTodayPendingPage() {
     
     if (!tatDate || isNaN(tatDate.getTime())) return false;
     
-    const tatYear = tatDate.getFullYear();
-    const tatMonth = tatDate.getMonth();
-    const tatDay = tatDate.getDate();
+    // Check if TAT date is in the past (before today, or today but past the time)
+    const now = new Date();
+    const tatDateTime = new Date(tatDate).getTime();
+    const nowTime = now.getTime();
     
-    const tatIsToday = 
-      tatYear === todayYear &&
-      tatMonth === todayMonth &&
-      tatDay === todayDate;
-    
-    if (tatIsToday) return false;
-    
-    const tatTime = new Date(tatYear, tatMonth, tatDay).getTime();
-    const todayTime = new Date(todayYear, todayMonth, todayDate).getTime();
-    
-    return tatTime < todayTime;
+    // Ticket is overdue if TAT date/time is in the past
+    return tatDateTime < nowTime;
   });
 
   const overdueTodayIds = new Set(overdueToday.map(t => t.id));

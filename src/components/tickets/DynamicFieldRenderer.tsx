@@ -179,7 +179,7 @@ export function DynamicFieldRenderer({
                       onCheckedChange={(checked) =>
                         toggleValue(optionValue, checked === true)
                       }
-                      className="data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+                      className="h-5 w-5 rounded-[2px] border-2 data-[state=checked]:bg-primary data-[state=checked]:border-primary flex-shrink-0 [&>svg]:h-4 [&>svg]:w-4"
                     />
                     <span className="text-sm font-medium flex-1">
                       {option.label || option.value}

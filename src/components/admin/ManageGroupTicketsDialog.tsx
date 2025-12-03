@@ -19,6 +19,7 @@ import { Loader2, Plus, X, Search, Package, Clock, MapPin, Calendar, ExternalLin
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 // Status styles matching TicketCard
 const STATUS_STYLES: Record<string, string> = {
@@ -488,145 +489,162 @@ export function ManageGroupTicketsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh]">
-        <DialogHeader>
-          <DialogTitle>Manage Tickets: {currentGroup.name}</DialogTitle>
-          <DialogDescription>
-            Add or remove tickets from this group. Currently {currentGroup.ticketCount} ticket(s) in group.
-            <span className="block mt-1 text-xs text-muted-foreground">
-              💡 Tip: Click the external link icon to view full ticket details. Use Bulk Actions from the groups page to comment or close all tickets in this group.
-            </span>
+      <DialogContent className="max-w-6xl max-h-[95vh] overflow-hidden flex flex-col">
+        <DialogHeader className="pb-4 border-b">
+          <DialogTitle className="text-2xl">Manage Tickets: {currentGroup.name}</DialogTitle>
+          <DialogDescription className="text-sm mt-2">
+            Add or remove tickets from this group. Currently <span className="font-semibold">{currentGroup.ticketCount}</span> ticket{currentGroup.ticketCount !== 1 ? "s" : ""} in group.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          {/* Group Committee Assignment */}
-          <div className="flex items-center gap-2 p-3 rounded-lg border bg-muted/50">
-            <div className="flex-1">
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                Assign Committee (committee will have access to all tickets in this group)
-              </label>
-              <Select
-                value={selectedCommitteeId || "none"}
-                onValueChange={setSelectedCommitteeId}
-                disabled={loadingCommittees}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue placeholder="Select a committee..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No Committee</SelectItem>
-                  {committees.map((committee) => (
-                    <SelectItem key={committee.id} value={String(committee.id)}>
-                      {committee.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <Button
-              onClick={handleSetCommittee}
-              disabled={loadingCommitteeUpdate || loadingCommittees}
-              size="sm"
-              className="h-9"
-            >
-              {loadingCommitteeUpdate ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <>
-                  <Users className="w-4 h-4 mr-2" />
-                  Assign
-                </>
-              )}
-            </Button>
-          </div>
-          {currentGroup?.committee && (
-            <div className="px-3 py-2 rounded-lg border bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
-              <div className="flex items-center gap-2">
-                <Users className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
-                  Assigned to: {currentGroup.committee.name}
-                </span>
-              </div>
-              {currentGroup.committee.description && (
-                <p className="text-xs text-blue-700 dark:text-blue-300 mt-1 ml-6">
-                  {currentGroup.committee.description}
-                </p>
-              )}
-            </div>
-          )}
+        <ScrollArea className="flex-1 pr-4">
+          <div className="space-y-4 py-4">
+            {/* Group Settings Section */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Group Committee Assignment */}
+              <Card className="border-2">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Users className="w-4 h-4" />
+                    Committee Assignment
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <Select
+                    value={selectedCommitteeId || "none"}
+                    onValueChange={setSelectedCommitteeId}
+                    disabled={loadingCommittees}
+                  >
+                    <SelectTrigger className="h-10">
+                      <SelectValue placeholder="Select a committee..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No Committee</SelectItem>
+                      {committees.map((committee) => (
+                        <SelectItem key={committee.id} value={String(committee.id)}>
+                          {committee.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    onClick={handleSetCommittee}
+                    disabled={loadingCommitteeUpdate || loadingCommittees}
+                    className="w-full"
+                    size="sm"
+                  >
+                    {loadingCommitteeUpdate ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <>
+                        <Users className="w-4 h-4 mr-2" />
+                        Assign Committee
+                      </>
+                    )}
+                  </Button>
+                  {currentGroup?.committee && (
+                    <div className="px-3 py-2 rounded-lg border bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
+                      <div className="flex items-center gap-2">
+                        <Users className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                        <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                          Assigned to: {currentGroup.committee.name}
+                        </span>
+                      </div>
+                      {currentGroup.committee.description && (
+                        <p className="text-xs text-blue-700 dark:text-blue-300 mt-1 ml-6">
+                          {currentGroup.committee.description}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
 
-          {/* Group TAT Management */}
-          <div className="flex items-center gap-2 p-3 rounded-lg border bg-muted/50">
-            <div className="flex-1">
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                Set Group TAT (applies to all tickets in group)
-              </label>
+              {/* Group TAT Management */}
+              <Card className="border-2">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Clock className="w-4 h-4" />
+                    Group TAT
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <Input
+                    placeholder="e.g., '2 days', '1 week', '3 hours'"
+                    value={groupTAT}
+                    onChange={(e) => setGroupTAT(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSetGroupTAT();
+                      }
+                    }}
+                    className="h-10"
+                  />
+                  <Button
+                    onClick={handleSetGroupTAT}
+                    disabled={loadingTAT || !groupTAT.trim()}
+                    className="w-full"
+                    size="sm"
+                  >
+                    {loadingTAT ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <>
+                        <Clock className="w-4 h-4 mr-2" />
+                        Set TAT for All Tickets
+                      </>
+                    )}
+                  </Button>
+                  <p className="text-xs text-muted-foreground">
+                    This will apply the TAT to all tickets currently in the group.
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Search Bar */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
               <Input
-                placeholder="e.g., '2 days', '1 week', '3 hours'"
-                value={groupTAT}
-                onChange={(e) => setGroupTAT(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSetGroupTAT();
-                  }
-                }}
-                className="h-9"
+                placeholder="Search tickets by ID, description, location, or category..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 h-10"
               />
             </div>
-            <Button
-              onClick={handleSetGroupTAT}
-              disabled={loadingTAT || !groupTAT.trim()}
-              size="sm"
-              className="h-9"
-            >
-              {loadingTAT ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <>
-                  <Clock className="w-4 h-4 mr-2" />
-                  Set TAT
-                </>
-              )}
-            </Button>
-          </div>
-
-          {/* Search Bar */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-            <Input
-              placeholder="Search tickets by ID, description, location, or category..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9"
-            />
-          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Current Tickets in Group */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <h4 className="text-sm font-semibold">
-                  Tickets in Group ({filteredGroupTickets.length}{currentGroup.ticketCount !== filteredGroupTickets.length ? ` of ${currentGroup.ticketCount}` : ''})
-                </h4>
-                {selectedTicketsToRemove.length > 0 && (
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={handleRemoveTickets}
-                    disabled={loading}
-                  >
-                    {loading ? (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    ) : (
-                      <X className="w-4 h-4 mr-2" />
-                    )}
-                    Remove ({selectedTicketsToRemove.length})
-                  </Button>
-                )}
-              </div>
-              <ScrollArea className="h-[400px] border rounded-md p-2">
+            <Card className="border-2">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Package className="w-4 h-4" />
+                    Tickets in Group
+                    <Badge variant="secondary" className="ml-2">
+                      {filteredGroupTickets.length}{currentGroup.ticketCount !== filteredGroupTickets.length ? ` of ${currentGroup.ticketCount}` : ''}
+                    </Badge>
+                  </CardTitle>
+                  {selectedTicketsToRemove.length > 0 && (
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={handleRemoveTickets}
+                      disabled={loading}
+                    >
+                      {loading ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      ) : (
+                        <X className="w-4 h-4 mr-2" />
+                      )}
+                      Remove ({selectedTicketsToRemove.length})
+                    </Button>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[450px] -mx-4 px-4">
                 {filteredGroupTickets.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full py-8 text-center">
                     <Package className="w-8 h-8 text-muted-foreground mb-2 opacity-50" />
@@ -639,7 +657,12 @@ export function ManageGroupTicketsDialog({
                     {filteredGroupTickets.map((ticket) => (
                       <div
                         key={ticket.id}
-                        className="flex items-start gap-2 p-3 rounded-lg border hover:bg-accent/50 hover:border-destructive/50 transition-all cursor-pointer"
+                        className={cn(
+                          "flex items-start gap-3 p-4 rounded-lg border-2 transition-all cursor-pointer mb-2",
+                          selectedTicketsToRemove.includes(ticket.id)
+                            ? "bg-destructive/5 border-destructive/50 shadow-sm"
+                            : "bg-card hover:bg-accent/50 hover:border-destructive/30"
+                        )}
                         onClick={() => toggleTicketToRemove(ticket.id)}
                       >
                         <Checkbox
@@ -728,32 +751,40 @@ export function ManageGroupTicketsDialog({
                     ))}
                   </div>
                 )}
-              </ScrollArea>
-            </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
 
             {/* Available Tickets to Add */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <h4 className="text-sm font-semibold">
-                  Available Tickets ({filteredAvailableTickets.length}{availableTickets.length !== filteredAvailableTickets.length ? ` of ${availableTickets.length}` : ''})
-                </h4>
-                {selectedTicketsToAdd.length > 0 && (
-                  <Button
-                    variant="default"
-                    size="sm"
-                    onClick={handleAddTickets}
-                    disabled={loading}
-                  >
-                    {loading ? (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    ) : (
-                      <Plus className="w-4 h-4 mr-2" />
-                    )}
-                    Add ({selectedTicketsToAdd.length})
-                  </Button>
-                )}
-              </div>
-              <ScrollArea className="h-[400px] border rounded-md p-2">
+            <Card className="border-2">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Plus className="w-4 h-4" />
+                    Available Tickets
+                    <Badge variant="secondary" className="ml-2">
+                      {filteredAvailableTickets.length}{availableTickets.length !== filteredAvailableTickets.length ? ` of ${availableTickets.length}` : ''}
+                    </Badge>
+                  </CardTitle>
+                  {selectedTicketsToAdd.length > 0 && (
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={handleAddTickets}
+                      disabled={loading}
+                    >
+                      {loading ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      ) : (
+                        <Plus className="w-4 h-4 mr-2" />
+                      )}
+                      Add ({selectedTicketsToAdd.length})
+                    </Button>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[450px] -mx-4 px-4">
                 {loadingTickets ? (
                   <div className="flex flex-col items-center justify-center h-full py-8">
                     <Loader2 className="w-6 h-6 animate-spin text-muted-foreground mb-2" />
@@ -776,7 +807,12 @@ export function ManageGroupTicketsDialog({
                     {filteredAvailableTickets.map((ticket) => (
                       <div
                         key={ticket.id}
-                        className="flex items-start gap-2 p-3 rounded-lg border hover:bg-accent/50 hover:border-primary/50 transition-all cursor-pointer group"
+                        className={cn(
+                          "flex items-start gap-3 p-4 rounded-lg border-2 transition-all cursor-pointer mb-2",
+                          selectedTicketsToAdd.includes(ticket.id)
+                            ? "bg-primary/5 border-primary/50 shadow-sm"
+                            : "bg-card hover:bg-accent/50 hover:border-primary/30"
+                        )}
                         onClick={() => toggleTicketToAdd(ticket.id)}
                       >
                         <Checkbox
@@ -865,15 +901,22 @@ export function ManageGroupTicketsDialog({
                     ))}
                   </div>
                 )}
-              </ScrollArea>
-            </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
           </div>
-        </div>
+          </div>
+        </ScrollArea>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Close
-          </Button>
+        <DialogFooter className="border-t pt-4 mt-4">
+          <div className="flex items-center justify-between w-full">
+            <p className="text-xs text-muted-foreground">
+              💡 Tip: Click the external link icon to view full ticket details. Use Bulk Actions from the groups page to comment or close all tickets in this group.
+            </p>
+            <Button variant="outline" onClick={() => onOpenChange(false)}>
+              Close
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

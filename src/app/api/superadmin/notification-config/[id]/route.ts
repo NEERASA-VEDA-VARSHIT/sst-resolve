@@ -102,11 +102,12 @@ export async function PATCH(
     }
 
     // Build update object
+    // Note: scope_id column doesn't exist in the database, so we skip it
     const updateData: Record<string, unknown> = {
       updated_at: new Date(),
     };
 
-    if (scope_id !== undefined) updateData.scope_id = scope_id || null;
+    // Skip scope_id - column doesn't exist in database
     if (category_id !== undefined) updateData.category_id = category_id || null;
     if (subcategory_id !== undefined) updateData.subcategory_id = subcategory_id || null;
     if (enable_slack !== undefined) updateData.enable_slack = enable_slack;

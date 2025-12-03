@@ -14,6 +14,7 @@ export const TICKET_STATUS = {
     ESCALATED: "escalated",
     FORWARDED: "forwarded",
     RESOLVED: "resolved",
+    CLOSED: "closed",
 } as const;
 
 export type TicketStatusValue = (typeof TICKET_STATUS)[keyof typeof TICKET_STATUS];
@@ -25,7 +26,6 @@ export type TicketStatusValue = (typeof TICKET_STATUS)[keyof typeof TICKET_STATU
 
 export const STATUS_ALIASES: Record<string, TicketStatusValue> = {
     awaiting_student_response: TICKET_STATUS.AWAITING_STUDENT,
-    closed: TICKET_STATUS.RESOLVED,
 };
 
 /**

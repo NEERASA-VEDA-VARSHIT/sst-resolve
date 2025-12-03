@@ -1,7 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { db, tickets, categories, ticket_statuses, ticket_groups, users } from "@/db";
-import { desc, eq, isNotNull } from "drizzle-orm";
+import { desc, eq, isNotNull, and, sql, ilike } from "drizzle-orm";
 import { aliasedTable } from "drizzle-orm";
 import { TicketGrouping } from "@/components/admin/TicketGrouping";
 import { SelectableTicketList } from "@/components/admin/SelectableTicketList";
@@ -12,6 +12,7 @@ import Link from "next/link";
 import { ArrowLeft, Users, Package, CheckCircle2, TrendingUp } from "lucide-react";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
+import { AdminTicketFilters } from "@/components/admin/AdminTicketFilters";
 import type { Ticket } from "@/db/types-only";
 import type { TicketMetadata } from "@/db/inferred-types";
 
@@ -20,7 +21,11 @@ export const dynamic = "force-dynamic";
 // Cache response for 30 seconds to improve performance
 export const revalidate = 30;
 
-export default async function SuperAdminGroupsPage() {
+export default async function SuperAdminGroupsPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { userId } = await auth();
 
   if (!userId) {
@@ -35,6 +40,48 @@ export default async function SuperAdminGroupsPage() {
 
   if (role !== 'super_admin') {
     redirect('/student/dashboard');
+  }
+
+  // Parse search params
+  const resolvedSearchParams = searchParams ? await searchParams : {};
+  const params = resolvedSearchParams || {};
+  const statusFilter = (typeof params["status"] === "string" ? params["status"] : params["status"]?.[0]) || "";
+  const categoryFilter = (typeof params["category"] === "string" ? params["category"] : params["category"]?.[0]) || "";
+  const searchQuery = (typeof params["search"] === "string" ? params["search"] : params["search"]?.[0]) || "";
+  const locationFilter = (typeof params["location"] === "string" ? params["location"] : params["location"]?.[0]) || "";
+
+  // Build where conditions
+  const conditions = [];
+
+  // Status filter
+  if (statusFilter) {
+    const normalizedStatus = statusFilter.toLowerCase();
+    if (normalizedStatus === "escalated") {
+      conditions.push(sql`${tickets.escalation_level} > 0`);
+    } else {
+      conditions.push(sql`LOWER(${ticket_statuses.value}) = ${normalizedStatus}`);
+    }
+  }
+
+  // Category filter
+  if (categoryFilter) {
+    conditions.push(ilike(categories.name, `%${categoryFilter}%`));
+  }
+
+  // Location filter
+  if (locationFilter) {
+    conditions.push(ilike(tickets.location, `%${locationFilter}%`));
+  }
+
+  // Search query filter
+  if (searchQuery) {
+    conditions.push(
+      sql`(
+        ${tickets.id}::text ILIKE ${`%${searchQuery}%`} OR
+        ${tickets.description} ILIKE ${`%${searchQuery}%`} OR
+        ${tickets.title} ILIKE ${`%${searchQuery}%`}
+      )`
+    );
   }
 
   // Fetch all tickets for super admin with proper joins
@@ -68,6 +115,7 @@ export default async function SuperAdminGroupsPage() {
     .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
     .leftJoin(categories, eq(tickets.category_id, categories.id))
     .leftJoin(creatorUser, eq(tickets.created_by, creatorUser.id))
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(desc(tickets.created_at))
     .limit(500); // Reduced limit for better performance - can paginate if needed
 
@@ -112,6 +160,16 @@ export default async function SuperAdminGroupsPage() {
           </Link>
         </Button>
       </div>
+
+      {/* Filters */}
+      <Card className="shadow-sm">
+        <CardHeader>
+          <CardTitle>Filters</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <AdminTicketFilters />
+        </CardContent>
+      </Card>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
