@@ -110,9 +110,9 @@ export async function POST(request: NextRequest) {
         }
 
         // Use cached function for better performance (request-scoped deduplication)
-        const { role } = await getCachedAdminUser(userId);
+        const { role: userRole } = await getCachedAdminUser(userId);
 
-        if (role !== "super_admin") {
+        if (userRole !== "super_admin") {
             return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }
 
@@ -263,9 +263,9 @@ export async function PATCH(request: NextRequest) {
         }
 
         // Use cached function for better performance (request-scoped deduplication)
-        const { role } = await getCachedAdminUser(userId);
+        const { role: userRole } = await getCachedAdminUser(userId);
 
-        if (role !== "super_admin") {
+        if (userRole !== "super_admin") {
             return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }
 

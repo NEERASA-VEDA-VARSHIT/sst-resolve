@@ -451,7 +451,6 @@ export async function createTicket(args: {
       throw new Error(`No active ticket status found in database. System configuration error.`);
     }
     console.warn(`[createTicket] Using fallback status ID ${fallbackStatus.id} instead of "${TICKET_STATUS.OPEN}"`);
-    STATUS_ID_CACHE.set(TICKET_STATUS.OPEN, fallbackStatus.id);
     return fallbackStatus.id;
   })();
   
