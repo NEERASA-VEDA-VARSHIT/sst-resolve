@@ -103,7 +103,7 @@ export async function createTicket(args: {
   
   if (!dbUser) throw new Error("User not found in local DB after sync");
   if (!role) throw new Error("User role unknown");
-  
+
   // only allow student/committee per PRD
   if (role !== "student" && role !== "committee") {
     throw new Error("Only students and committee members can create tickets");
@@ -209,8 +209,8 @@ export async function createTicket(args: {
           name: categories.name,
           is_active: categories.is_active 
         })
-        .from(categories)
-        .where(eq(categories.id, payload.categoryId))
+      .from(categories)
+      .where(eq(categories.id, payload.categoryId))
         .limit(1)
         .then(([c]) => c)
     : payload.category
@@ -220,8 +220,8 @@ export async function createTicket(args: {
           name: categories.name,
           is_active: categories.is_active 
         })
-        .from(categories)
-        .where(eq(categories.name, payload.category))
+      .from(categories)
+      .where(eq(categories.name, payload.category))
         .limit(1)
         .then(([c]) => c)
     : Promise.resolve(undefined);
@@ -234,7 +234,7 @@ export async function createTicket(args: {
           .select({ id: subcategories.id, name: subcategories.name, is_active: subcategories.is_active })
           .from(subcategories)
           .where(and(eq(subcategories.id, payload.subcategoryId), eq(subcategories.category_id, cat.id)))
-          .limit(1);
+      .limit(1);
         if (s && s.is_active) {
           return { id: s.id, name: s.name };
         } else if (s && !s.is_active) {
@@ -280,35 +280,35 @@ export async function createTicket(args: {
     if (!subcat) return undefined;
     
     if (payload.subSubcategoryId) {
-      const [ss] = await db
-        .select({ id: sub_subcategories.id, name: sub_subcategories.name, is_active: sub_subcategories.is_active })
-        .from(sub_subcategories)
+    const [ss] = await db
+      .select({ id: sub_subcategories.id, name: sub_subcategories.name, is_active: sub_subcategories.is_active })
+      .from(sub_subcategories)
         .where(and(eq(sub_subcategories.id, payload.subSubcategoryId), eq(sub_subcategories.subcategory_id, subcat.id)))
-        .limit(1);
-      if (ss && ss.is_active) {
+      .limit(1);
+    if (ss && ss.is_active) {
         return { id: ss.id, name: ss.name };
-      } else if (ss && !ss.is_active) {
-        throw new Error("Sub-subcategory is inactive and cannot be used for ticket creation");
+    } else if (ss && !ss.is_active) {
+      throw new Error("Sub-subcategory is inactive and cannot be used for ticket creation");
       } else if (!ss) {
-        throw new Error("Sub-subcategory not found or does not belong to the selected subcategory");
-      }
-    } else if (payload.subSubcategory) {
-      const [ss] = await db
-        .select({ id: sub_subcategories.id, name: sub_subcategories.name, is_active: sub_subcategories.is_active })
-        .from(sub_subcategories)
-        .where(and(eq(sub_subcategories.name, payload.subSubcategory), eq(sub_subcategories.subcategory_id, subcat.id)))
-        .limit(1);
-      if (ss && ss.is_active) {
-        return { id: ss.id, name: ss.name };
-      } else if (ss && !ss.is_active) {
-        throw new Error("Sub-subcategory is inactive and cannot be used for ticket creation");
-      } else if (!ss) {
-        throw new Error("Sub-subcategory not found or does not belong to the selected subcategory");
-      }
+      throw new Error("Sub-subcategory not found or does not belong to the selected subcategory");
     }
+    } else if (payload.subSubcategory) {
+    const [ss] = await db
+      .select({ id: sub_subcategories.id, name: sub_subcategories.name, is_active: sub_subcategories.is_active })
+      .from(sub_subcategories)
+        .where(and(eq(sub_subcategories.name, payload.subSubcategory), eq(sub_subcategories.subcategory_id, subcat.id)))
+      .limit(1);
+    if (ss && ss.is_active) {
+        return { id: ss.id, name: ss.name };
+    } else if (ss && !ss.is_active) {
+      throw new Error("Sub-subcategory is inactive and cannot be used for ticket creation");
+      } else if (!ss) {
+      throw new Error("Sub-subcategory not found or does not belong to the selected subcategory");
+    }
+  }
     return undefined;
   });
-  
+
   // Merge details (payload.details may be stringified JSON from client)
   // Parse this early so fieldLookupPromise can use it
   type DetailsObject = {
@@ -331,36 +331,36 @@ export async function createTicket(args: {
   // Start field lookup early to parallelize with sub-subcategory lookup
   const usedFieldIds: number[] = [];
   const dynamicFields: Record<string, { field_id: number; value: unknown }> = {};
-  
+
   // Start field lookup promise early (will be awaited later if needed)
   // This can run in parallel with sub-subcategory lookup since they're independent
   const fieldLookupPromise = (async () => {
     // Wait for subcategory to be resolved first
     const subcat = await subcategoryPromise;
     if (subcat?.id && detailsObj) {
-      // Fetch current active fields to map slugs to IDs
-      const { category_fields } = await import("@/db/schema");
-      const { eq } = await import("drizzle-orm");
+    // Fetch current active fields to map slugs to IDs
+    const { category_fields } = await import("@/db/schema");
+    const { eq } = await import("drizzle-orm");
 
-      const activeFields = await db
-        .select({ id: category_fields.id, slug: category_fields.slug })
-        .from(category_fields)
+    const activeFields = await db
+      .select({ id: category_fields.id, slug: category_fields.slug })
+      .from(category_fields)
         .where(eq(category_fields.subcategory_id, subcat.id));
 
-      const fieldMap = new Map(activeFields.map(f => [f.slug, f.id]));
+    const fieldMap = new Map(activeFields.map(f => [f.slug, f.id]));
 
-      // Store field IDs with their values
-      // Safety check: ensure detailsObj is an object before calling Object.entries
-      if (detailsObj && typeof detailsObj === 'object' && !Array.isArray(detailsObj)) {
-        for (const [slug, value] of Object.entries(detailsObj)) {
-          const fieldId = fieldMap.get(slug);
-          if (fieldId && value !== null && value !== undefined && value !== '') {
-            usedFieldIds.push(fieldId);
-            dynamicFields[slug] = { field_id: fieldId, value };
-          }
+    // Store field IDs with their values
+    // Safety check: ensure detailsObj is an object before calling Object.entries
+    if (detailsObj && typeof detailsObj === 'object' && !Array.isArray(detailsObj)) {
+      for (const [slug, value] of Object.entries(detailsObj)) {
+        const fieldId = fieldMap.get(slug);
+        if (fieldId && value !== null && value !== undefined && value !== '') {
+          usedFieldIds.push(fieldId);
+          dynamicFields[slug] = { field_id: fieldId, value };
         }
       }
     }
+  }
   })();
   
   // Wait for subcategory, sub-subcategory, and field lookups in parallel
@@ -472,62 +472,62 @@ export async function createTicket(args: {
   const [statusId, assignmentResult] = await Promise.all([
     statusIdPromise,
     (async () => {
-      if (categoryRecord.name === "Committee" || categoryRecord.name === "Others") {
-        // Use super admin directly
+  if (categoryRecord.name === "Committee" || categoryRecord.name === "Others") {
+    // Use super admin directly
         return await superAdminPromise;
-      } else {
-        // find SPOC via helper (uses the full assignment hierarchy)
-        const { findSPOCForTicket } = await import("@/lib/assignment/spoc-assignment");
-        // Safety check: ensure detailsObj is valid before calling Object.keys
-        const fieldSlugs = detailsObj && typeof detailsObj === 'object' && !Array.isArray(detailsObj)
-          ? Object.keys(detailsObj)
-          : [];
-        
-        // Run SPOC lookup and super admin lookup in parallel
-        const [clerkAssigned, superAdminId] = await Promise.all([
-          findSPOCForTicket(
-            categoryRecord.name,
-            payload.location || null,
-            categoryRecord.id,
-            (typeof metadata.subcategoryId === 'number' ? metadata.subcategoryId : null),
-            fieldSlugs
-          ),
-          superAdminPromise,
-        ]);
-        
-        if (clerkAssigned) {
-          // map clerkId to local users.id
-          const [u] = await db.select({ id: users.id }).from(users).where(eq(users.external_id, clerkAssigned)).limit(1);
-          if (u) {
+  } else {
+    // find SPOC via helper (uses the full assignment hierarchy)
+    const { findSPOCForTicket } = await import("@/lib/assignment/spoc-assignment");
+    // Safety check: ensure detailsObj is valid before calling Object.keys
+    const fieldSlugs = detailsObj && typeof detailsObj === 'object' && !Array.isArray(detailsObj)
+      ? Object.keys(detailsObj)
+      : [];
+    
+    // Run SPOC lookup and super admin lookup in parallel
+    const [clerkAssigned, superAdminId] = await Promise.all([
+      findSPOCForTicket(
+        categoryRecord.name,
+        payload.location || null,
+        categoryRecord.id,
+        (typeof metadata.subcategoryId === 'number' ? metadata.subcategoryId : null),
+        fieldSlugs
+      ),
+      superAdminPromise,
+    ]);
+    
+    if (clerkAssigned) {
+      // map clerkId to local users.id
+      const [u] = await db.select({ id: users.id }).from(users).where(eq(users.external_id, clerkAssigned)).limit(1);
+      if (u) {
             return u.id;
-          }
-        }
-        
-        // Fallback: If no assignment found, assign to superadmin
-        if (superAdminId) {
-          console.log(`[createTicket] No assignment found, defaulting to superadmin for ticket in category: ${categoryRecord.name}`);
-          return superAdminId;
-        }
-        return null;
       }
+    }
+    
+    // Fallback: If no assignment found, assign to superadmin
+        if (superAdminId) {
+      console.log(`[createTicket] No assignment found, defaulting to superadmin for ticket in category: ${categoryRecord.name}`);
+          return superAdminId;
+    }
+        return null;
+  }
     })()
   ]);
 
   assignedUserId = assignmentResult;
 
   // Final fallback if still no assignment
-  if (!assignedUserId) {
-    assignedUserId = await superAdminPromise;
     if (!assignedUserId) {
-      const { logCriticalError } = await import("@/lib/monitoring/alerts");
-      logCriticalError(
-        "No super admin found during ticket creation",
-        new Error("System has no super admin - tickets cannot be assigned"),
-        { category: categoryRecord.name, categoryId: categoryRecord.id }
-      );
-      // Ticket will be created without assignment - this should be monitored and alerted
+      assignedUserId = await superAdminPromise;
+      if (!assignedUserId) {
+        const { logCriticalError } = await import("@/lib/monitoring/alerts");
+        logCriticalError(
+          "No super admin found during ticket creation",
+          new Error("System has no super admin - tickets cannot be assigned"),
+          { category: categoryRecord.name, categoryId: categoryRecord.id }
+        );
+        // Ticket will be created without assignment - this should be monitored and alerted
+      }
     }
-  }
 
   // Sanitize description
   const safeDescription = sanitizeText(payload.description || null);
@@ -536,7 +536,7 @@ export async function createTicket(args: {
   const DESCRIPTION_MAX_LENGTH = 20000; // Match validation schema
   if (safeDescription && safeDescription.length > DESCRIPTION_MAX_LENGTH) {
     throw new Error(`Description exceeds maximum length of ${DESCRIPTION_MAX_LENGTH} characters. Please shorten your description.`);
-  }
+    }
 
   // Process attachments from images array
   // Edge case: Validate image URLs are valid before storing
@@ -578,9 +578,9 @@ export async function createTicket(args: {
     // This prevents race condition where category is deleted between form submission and ticket creation
     const validationPromises: Promise<unknown>[] = [
       tx
-        .select({ id: categories.id, name: categories.name, is_active: categories.is_active })
-        .from(categories)
-        .where(eq(categories.id, categoryRecord.id))
+      .select({ id: categories.id, name: categories.name, is_active: categories.is_active })
+      .from(categories)
+      .where(eq(categories.id, categoryRecord.id))
         .limit(1)
         .then(([c]) => {
           if (!c) throw new Error("Category was deleted. Please refresh the page and select a different category.");
@@ -592,12 +592,12 @@ export async function createTicket(args: {
     if (subcategoryRecord) {
       validationPromises.push(
         tx
-          .select({ id: subcategories.id, is_active: subcategories.is_active })
-          .from(subcategories)
-          .where(and(
-            eq(subcategories.id, subcategoryRecord.id),
-            eq(subcategories.category_id, categoryRecord.id)
-          ))
+        .select({ id: subcategories.id, is_active: subcategories.is_active })
+        .from(subcategories)
+        .where(and(
+          eq(subcategories.id, subcategoryRecord.id),
+          eq(subcategories.category_id, categoryRecord.id)
+        ))
           .limit(1)
           .then(([s]) => {
             if (!s) throw new Error("Subcategory was deleted. Please refresh the page and select a different subcategory.");
@@ -610,12 +610,12 @@ export async function createTicket(args: {
     if (subSubcategoryRecord && subcategoryRecord) {
       validationPromises.push(
         tx
-          .select({ id: sub_subcategories.id, is_active: sub_subcategories.is_active })
-          .from(sub_subcategories)
-          .where(and(
-            eq(sub_subcategories.id, subSubcategoryRecord.id),
-            eq(sub_subcategories.subcategory_id, subcategoryRecord.id)
-          ))
+        .select({ id: sub_subcategories.id, is_active: sub_subcategories.is_active })
+        .from(sub_subcategories)
+        .where(and(
+          eq(sub_subcategories.id, subSubcategoryRecord.id),
+          eq(sub_subcategories.subcategory_id, subcategoryRecord.id)
+        ))
           .limit(1)
           .then(([ss]) => {
             if (!ss) throw new Error("Sub-subcategory was deleted. Please refresh the page and select a different sub-subcategory.");

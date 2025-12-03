@@ -5,6 +5,7 @@ import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
 import { SuperAdminNav } from "@/components/nav/SuperAdminNav";
 import { NavLoadingShimmer } from "@/components/nav/NavLoadingShimmer";
+import { SuperAdminSideNav } from "@/components/nav/SuperAdminSideNav";
 
 /**
  * Super Admin Role Root Layout
@@ -44,7 +45,10 @@ export default async function SuperAdminLayout({
       <Suspense fallback={<NavLoadingShimmer />}>
         <SuperAdminNav />
       </Suspense>
-      {children}
+      <div className="lg:flex">
+        <SuperAdminSideNav />
+        <main className="flex-1 lg:ml-56">{children}</main>
+      </div>
     </>
   );
 }

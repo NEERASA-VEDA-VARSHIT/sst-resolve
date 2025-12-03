@@ -48,6 +48,7 @@ export default async function AdminGroupsPage({
     const params = resolvedSearchParams || {};
     const statusFilter = (typeof params["status"] === "string" ? params["status"] : params["status"]?.[0]) || "";
     const categoryFilter = (typeof params["category"] === "string" ? params["category"] : params["category"]?.[0]) || "";
+    const subcategoryFilter = (typeof params["subcategory"] === "string" ? params["subcategory"] : params["subcategory"]?.[0]) || "";
     const searchQuery = (typeof params["search"] === "string" ? params["search"] : params["search"]?.[0]) || "";
     const locationFilter = (typeof params["location"] === "string" ? params["location"] : params["location"]?.[0]) || "";
 
@@ -74,6 +75,13 @@ export default async function AdminGroupsPage({
       conditions.push(ilike(tickets.location, `%${locationFilter}%`));
     }
 
+    // Subcategory filter - uses JSONB metadata->>'subcategory' (same as admin dashboard)
+    if (subcategoryFilter) {
+      conditions.push(
+        sql`( ${tickets.metadata} ->> 'subcategory') ILIKE ${`%${subcategoryFilter}%`}`
+      );
+    }
+
     // Search query filter
     if (searchQuery) {
       conditions.push(
@@ -82,6 +90,11 @@ export default async function AdminGroupsPage({
           ${tickets.description} ILIKE ${`%${searchQuery}%`}
         )`
       );
+    }
+
+    // For admin role, only see tickets explicitly assigned to this admin
+    if (role === "admin") {
+      conditions.push(eq(tickets.assigned_to, dbUser.id));
     }
 
     // Fetch tickets with proper joins for better data
@@ -248,7 +261,7 @@ export default async function AdminGroupsPage({
               <AdminTicketFilters />
             </CardContent>
           </Card>
-          
+
           {/* Select Tickets to Group */}
           <Card className="shadow-sm">
             <CardHeader>

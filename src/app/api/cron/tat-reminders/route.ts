@@ -48,6 +48,16 @@ export async function GET(request: NextRequest) {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
+    // Skip weekends (Saturday = 6, Sunday = 0)
+    const dayOfWeek = today.getDay();
+    if (dayOfWeek === 0 || dayOfWeek === 6) {
+      logger.info("[TAT Cron] Today is weekend (Sat/Sun). Skipping TAT reminders.");
+      return NextResponse.json({
+        success: true,
+        message: "Weekend - TAT reminders skipped",
+      });
+    }
+
 
     // Use regular joins instead of relational query API
     const assignedUser = aliasedTable(users, "assigned_user");
