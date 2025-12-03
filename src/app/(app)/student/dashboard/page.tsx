@@ -166,7 +166,9 @@ export default async function StudentDashboardPage({
       break;
 
     default:
-      orderBy = desc(tickets.created_at);
+      // Sort by updated_at desc to show recently updated tickets (including reopened) at the top
+      // Fallback to created_at if updated_at is null
+      orderBy = sql`COALESCE(${tickets.updated_at}, ${tickets.created_at}) DESC`;
   }
 
   // -----------------------------

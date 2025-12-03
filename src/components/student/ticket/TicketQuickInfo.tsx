@@ -11,6 +11,7 @@ interface TicketQuickInfoProps {
   tatInfo: TATInfo;
   ticket: {
     resolved_at?: Date | string | null;
+    closed_at?: Date | string | null;
     updated_at?: Date | string | null;
   };
 }
@@ -22,7 +23,8 @@ export function TicketQuickInfo({
   tatInfo,
   ticket,
 }: TicketQuickInfoProps) {
-  const isResolved = normalizedStatus === "resolved" || normalizedStatus === "closed" || ticketProgress === 100;
+  const isResolved = normalizedStatus === "resolved" || ticketProgress === 100;
+  const isClosed = normalizedStatus === "closed";
   const isReopened = normalizedStatus === "reopened" || normalizedStatus.includes("reopened");
 
   return (
@@ -92,6 +94,25 @@ export function TicketQuickInfo({
               <div className="mt-2 pt-2 border-t border-emerald-200 dark:border-emerald-800">
                 <p className="text-xs text-muted-foreground">
                   Resolved on {format(new Date(ticket.resolved_at), 'MMM d, yyyy')}
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ) : isClosed ? (
+        <Card className="border-2 bg-gradient-to-br from-gray-50/50 to-gray-100/30 dark:from-gray-950/20 dark:to-gray-900/10 sm:col-span-2 md:col-span-1">
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Clock className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+              <span className="text-sm font-medium text-muted-foreground">Status</span>
+            </div>
+            <p className="text-sm font-semibold break-words text-gray-700 dark:text-gray-400">
+              Closed
+            </p>
+            {ticket.closed_at && (
+              <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-800">
+                <p className="text-xs text-muted-foreground">
+                  Closed on {format(new Date(ticket.closed_at), 'MMM d, yyyy')}
                 </p>
               </div>
             )}

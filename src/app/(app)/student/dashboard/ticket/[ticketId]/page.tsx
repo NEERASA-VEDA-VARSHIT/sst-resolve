@@ -112,6 +112,9 @@ export default async function StudentTicketPage({ params }: { params: Promise<{ 
   const resolved_at = metadata.resolved_at 
     ? (typeof metadata.resolved_at === 'string' ? new Date(metadata.resolved_at) : metadata.resolved_at instanceof Date ? metadata.resolved_at : null)
     : ticket.resolved_at;
+  const closed_at = metadata.closed_at 
+    ? (typeof metadata.closed_at === 'string' ? new Date(metadata.closed_at) : metadata.closed_at instanceof Date ? metadata.closed_at : null)
+    : null;
   const reopened_at = metadata.reopened_at 
     ? (typeof metadata.reopened_at === 'string' ? new Date(metadata.reopened_at) : metadata.reopened_at instanceof Date ? metadata.reopened_at : null)
     : ticket.reopened_at;
@@ -177,7 +180,10 @@ export default async function StudentTicketPage({ params }: { params: Promise<{ 
               normalizedStatus={normalizedStatus}
               assignedStaff={assignedStaff || null}
               tatInfo={tatInfo}
-              ticket={ticket}
+              ticket={{
+                ...ticket,
+                closed_at,
+              }}
             />
 
                         <TicketSubmittedInfo
