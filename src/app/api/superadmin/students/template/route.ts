@@ -7,8 +7,7 @@
 
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { getUserRoleFromDB } from "@/lib/auth/db-roles";
-import { getOrCreateUser } from "@/lib/auth/user-sync";
+import { getCachedAdminUser } from "@/lib/cache/cached-queries";
 
 export async function GET() {
 	try {
@@ -17,9 +16,8 @@ export async function GET() {
 			return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 		}
 
-		// Ensure user is super_admin
-		await getOrCreateUser(userId);
-		const role = await getUserRoleFromDB(userId);
+		// Use cached function for better performance (request-scoped deduplication)
+		const { role } = await getCachedAdminUser(userId);
 		if (role !== "super_admin") {
 			return NextResponse.json({ error: "Forbidden: Super admin only" }, { status: 403 });
 		}

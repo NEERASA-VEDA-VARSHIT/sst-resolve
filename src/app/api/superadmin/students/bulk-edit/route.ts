@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { students } from "@/db/schema";
 import type { StudentInsert } from "@/db/inferred-types";
 import { inArray } from "drizzle-orm";
-import { getUserRoleFromDB } from "@/lib/auth/db-roles";
+import { getCachedAdminUser } from "@/lib/cache/cached-queries";
 import { BulkEditStudentsSchema } from "@/schemas/business/student";
 
 /**
@@ -21,8 +21,8 @@ export async function PATCH(request: NextRequest) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        // Role check - only super admin
-        const role = await getUserRoleFromDB(userId);
+        // Use cached function for better performance (request-scoped deduplication)
+        const { role } = await getCachedAdminUser(userId);
         if (role !== "super_admin") {
             return NextResponse.json(
                 { error: "Only super admins can bulk edit students" },

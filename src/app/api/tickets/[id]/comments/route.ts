@@ -4,12 +4,10 @@ import { tickets, users, outbox, ticket_statuses } from "@/db/schema";
 import type { TicketInsert } from "@/db/inferred-types";
 import { eq } from "drizzle-orm";
 import { AddCommentSchema } from "@/schemas/business/ticket";
-import { getUserRoleFromDB } from "@/lib/auth/db-roles";
-import { getOrCreateUser } from "@/lib/auth/user-sync";
+import { getCachedAdminUser, getCachedUser, getCachedTicketStatuses } from "@/lib/cache/cached-queries";
 import { auth } from "@clerk/nextjs/server";
 import type { TicketMetadata } from "@/db/inferred-types";
 import { TICKET_STATUS, getCanonicalStatus } from "@/conf/constants";
-import { getStatusIdByValue } from "@/lib/status/getTicketStatuses";
 
 /**
  * ============================================
@@ -72,7 +70,21 @@ export async function GET(
     if (isNaN(ticketId))
       return NextResponse.json({ error: "Invalid ticket ID" }, { status: 400 });
 
-    const role = await getUserRoleFromDB(userId);
+    // Use cached function for better performance (request-scoped deduplication)
+    // Try admin cache first, fallback to generic user cache
+    let role, localId;
+    try {
+      const adminResult = await getCachedAdminUser(userId);
+      role = adminResult.role;
+      localId = adminResult.dbUser.id;
+    } catch {
+      // Fallback for non-admin users
+      const user = await getCachedUser(userId);
+      localId = user.id;
+      const { getUserRoleFromDB } = await import("@/lib/auth/db-roles");
+      role = await getUserRoleFromDB(userId);
+    }
+    
     const ticket = await loadTicket(ticketId);
 
     if (!ticket)
@@ -80,7 +92,6 @@ export async function GET(
 
     // Student → only if they own the ticket
     if (role === "student") {
-      const localId = await getLocalUserId(userId);
       if (!localId || ticket.created_by !== localId)
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
@@ -140,11 +151,20 @@ export async function POST(
       return NextResponse.json({ error: "Invalid ticket ID" }, { status: 400 });
     }
 
-    // Ensure local user exists
-    const localUser = await getOrCreateUser(userId);
+    // Use cached function for better performance (request-scoped deduplication)
+    // Try admin cache first, fallback to generic user cache
+    let localUser, role;
+    try {
+      const adminResult = await getCachedAdminUser(userId);
+      localUser = adminResult.dbUser;
+      role = adminResult.role;
+    } catch {
+      // Fallback for non-admin users
+      localUser = await getCachedUser(userId);
+      const { getUserRoleFromDB } = await import("@/lib/auth/db-roles");
+      role = await getUserRoleFromDB(userId);
+    }
     if (!localUser) return NextResponse.json({ error: "User not found" }, { status: 404 });
-
-    const role = await getUserRoleFromDB(userId);
     const isAdminUser = role === "admin" || role === "super_admin";
     const isCommittee = role === "committee";
     const isStudent = role === "student";
@@ -307,7 +327,10 @@ export async function POST(
         }
 
         // 2. Automatically change status to IN_PROGRESS
-        const inProgressStatusId = await getStatusIdByValue(TICKET_STATUS.IN_PROGRESS);
+        // Use cached statuses for better performance
+        const ticketStatuses = await getCachedTicketStatuses();
+        const inProgressStatus = ticketStatuses.find(s => s.value.toLowerCase() === TICKET_STATUS.IN_PROGRESS.toLowerCase());
+        const inProgressStatusId = inProgressStatus?.id || null;
         if (inProgressStatusId) {
           updateData.status_id = inProgressStatusId;
         } else {

@@ -175,28 +175,21 @@ export function NotificationSettingsManager() {
         setCategories(categoriesList);
       }
 
-      // Fetch all subcategories by fetching from each category
-      if (categoriesList.length > 0) {
-        try {
-          const subcategoryPromises = categoriesList.map((cat: Category) =>
-            fetch(`/api/admin/subcategories?category_id=${cat.id}`)
-              .then((res) => res.json())
-              .then((data) => {
-                // API returns array directly, not wrapped in object
-                const subcatsArray = Array.isArray(data) ? data : (data.subcategories || []);
-                return subcatsArray.map((s: { id: number; name: string; category_id?: number }) => ({
-                  id: s.id,
-                  name: s.name,
-                  category_id: s.category_id || cat.id,
-                }));
-              })
-              .catch(() => [])
-          );
-          const subcategoryArrays = await Promise.all(subcategoryPromises);
-          setSubcategories(subcategoryArrays.flat());
-        } catch (error) {
-          console.error("Error fetching subcategories:", error);
+      // Fetch all subcategories in a single API call (optimized)
+      try {
+        const subcategoriesRes = await fetch("/api/admin/subcategories?all=true");
+        if (subcategoriesRes.ok) {
+          const subcatsArray = await subcategoriesRes.json();
+          // API returns array directly
+          const subcats = Array.isArray(subcatsArray) ? subcatsArray : [];
+          setSubcategories(subcats.map((s: { id: number; name: string; category_id?: number }) => ({
+            id: s.id,
+            name: s.name,
+            category_id: s.category_id || 0,
+          })));
         }
+      } catch (error) {
+        console.error("Error fetching subcategories:", error);
       }
 
       if (adminsRes.ok) {

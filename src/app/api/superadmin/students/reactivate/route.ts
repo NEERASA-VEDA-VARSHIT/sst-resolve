@@ -11,8 +11,7 @@ import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { students } from "@/db/schema";
 import { inArray } from "drizzle-orm";
-import { getUserRoleFromDB } from "@/lib/auth/db-roles";
-import { getOrCreateUser } from "@/lib/auth/user-sync";
+import { getCachedAdminUser } from "@/lib/cache/cached-queries";
 
 interface ReactivateRequest {
 	student_ids: number[]; // Array of student IDs to reactivate
@@ -32,9 +31,8 @@ export async function PATCH(request: NextRequest) {
 			return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 		}
 
-		// Ensure user is super_admin
-		await getOrCreateUser(userId);
-		const role = await getUserRoleFromDB(userId);
+		// Use cached function for better performance (request-scoped deduplication)
+		const { role } = await getCachedAdminUser(userId);
 		if (role !== "super_admin") {
 			return NextResponse.json({ error: "Forbidden: Super admin only" }, { status: 403 });
 		}

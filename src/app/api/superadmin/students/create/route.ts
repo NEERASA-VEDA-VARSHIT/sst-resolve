@@ -11,7 +11,7 @@ import { db } from "@/db";
 import { users, students, hostels, batches, class_sections, roles } from "@/db/schema";
 import type { UserInsert, StudentInsert } from "@/db/inferred-types";
 import { eq } from "drizzle-orm";
-import { getUserRoleFromDB } from "@/lib/auth/db-roles";
+import { getCachedAdminUser } from "@/lib/cache/cached-queries";
 
 function cleanFullName(name: string): string {
 	if (!name) return name;
@@ -37,7 +37,8 @@ export async function POST(request: NextRequest) {
 			return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 		}
 
-		const role = await getUserRoleFromDB(userId);
+		// Use cached function for better performance (request-scoped deduplication)
+		const { role } = await getCachedAdminUser(userId);
 		if (role !== "super_admin") {
 			return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 		}

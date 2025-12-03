@@ -3,8 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { subcategories, sub_subcategories, category_fields, field_options } from "@/db/schema";
 import { eq, and, desc, asc } from "drizzle-orm";
-import { getUserRoleFromDB } from "@/lib/auth/db-roles";
-import { getOrCreateUser } from "@/lib/auth/user-sync";
+import { getCachedAdminUser } from "@/lib/cache/cached-queries";
 
 // GET: Fetch subcategories for a category
 export async function GET(request: NextRequest) {
@@ -14,8 +13,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    await getOrCreateUser(userId);
-    const role = await getUserRoleFromDB(userId);
+    // Use cached function for better performance (request-scoped deduplication)
+    const { role } = await getCachedAdminUser(userId);
     
     if (role !== "admin" && role !== "super_admin") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -24,9 +23,36 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const categoryId = searchParams.get("category_id");
     const includeFields = searchParams.get("include_fields") === "true";
+    const fetchAll = searchParams.get("all") === "true"; // New parameter to fetch all subcategories
+
+    // If "all=true", fetch all subcategories without category_id requirement
+    if (fetchAll) {
+      const allSubcats = await db
+        .select({
+          id: subcategories.id,
+          category_id: subcategories.category_id,
+          name: subcategories.name,
+          slug: subcategories.slug,
+          description: subcategories.description,
+          is_active: subcategories.is_active,
+          display_order: subcategories.display_order,
+          created_at: subcategories.created_at,
+          updated_at: subcategories.updated_at,
+        })
+        .from(subcategories)
+        .where(eq(subcategories.is_active, true))
+        .orderBy(asc(subcategories.display_order), desc(subcategories.created_at));
+
+      const transformedSubcats = allSubcats.map(subcat => {
+        const { is_active, ...rest } = subcat;
+        return { ...rest, active: is_active };
+      });
+
+      return NextResponse.json(transformedSubcats);
+    }
 
     if (!categoryId) {
-      return NextResponse.json({ error: "category_id is required" }, { status: 400 });
+      return NextResponse.json({ error: "category_id is required (or use all=true)" }, { status: 400 });
     }
 
     // Validate categoryId is a valid number
@@ -174,8 +200,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    await getOrCreateUser(userId);
-    const role = await getUserRoleFromDB(userId);
+    // Use cached function for better performance (request-scoped deduplication)
+    const { role } = await getCachedAdminUser(userId);
     
     if (role !== "super_admin") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });

@@ -3,12 +3,10 @@ import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { tickets, outbox, users, committees, ticket_statuses } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { getUserRoleFromDB } from "@/lib/auth/db-roles";
-import { getOrCreateUser } from "@/lib/auth/user-sync";
+import { getCachedAdminUser, getCachedTicketStatuses } from "@/lib/cache/cached-queries";
 import { TICKET_STATUS, getCanonicalStatus, isAdminLevel } from "@/conf/constants";
 import { ForwardTicketSchema } from "@/schemas/business/ticket";
 import type { TicketMetadata } from "@/db/inferred-types";
-import { getStatusIdByValue } from "@/lib/status/getTicketStatuses";
 
 /**
  * ============================================
@@ -40,11 +38,10 @@ export async function POST(
         if (!userId)
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-        const localUser = await getOrCreateUser(userId);
+        // Use cached function for better performance (request-scoped deduplication)
+        const { dbUser: localUser, role } = await getCachedAdminUser(userId);
         if (!localUser)
             return NextResponse.json({ error: "User not found" }, { status: 404 });
-
-        const role = await getUserRoleFromDB(userId);
 
         // Only admin-level roles can forward tickets (admin, committee, super_admin)
         if (!isAdminLevel(role)) {
@@ -101,50 +98,48 @@ export async function POST(
         }
 
         // --------------------------------------------------
-        // GET COMMITTEE AND HEAD
+        // GET COMMITTEE AND HEAD (optimized single query with join)
         // --------------------------------------------------
-        const [committee] = await db
+        const [committeeWithHead] = await db
             .select({
-                id: committees.id,
-                name: committees.name,
+                committee_id: committees.id,
+                committee_name: committees.name,
                 head_id: committees.head_id,
+                head_user_id: users.id,
+                head_full_name: users.full_name,
+                head_email: users.email,
             })
             .from(committees)
+            .leftJoin(users, eq(committees.head_id, users.id))
             .where(eq(committees.id, committee_id))
             .limit(1);
 
-        if (!committee) {
+        if (!committeeWithHead) {
             return NextResponse.json(
                 { error: "Committee not found" },
                 { status: 404 }
             );
         }
 
-        if (!committee.head_id) {
+        if (!committeeWithHead.head_id) {
             return NextResponse.json(
                 { error: "Committee has no head assigned" },
                 { status: 400 }
             );
         }
 
-        // Get committee head details
-        const [targetAdmin] = await db
-            .select({
-                id: users.id,
-                full_name: users.full_name,
-                email: users.email,
-            })
-            .from(users)
-            .where(eq(users.id, committee.head_id))
-            .limit(1);
-
-        if (!targetAdmin) {
+        if (!committeeWithHead.head_user_id) {
             return NextResponse.json(
                 { error: "Committee head not found" },
                 { status: 404 }
             );
         }
 
+        const targetAdmin = {
+            id: committeeWithHead.head_user_id,
+            full_name: committeeWithHead.head_full_name,
+            email: committeeWithHead.head_email,
+        };
         const targetAdminName = targetAdmin.full_name?.trim() || targetAdmin.email || "Unknown";
 
         // --------------------------------------------------
@@ -167,11 +162,13 @@ export async function POST(
             const currentForwardCount = (metadata.forwardCount as number) || 0;
             metadata.forwardCount = currentForwardCount + 1;
             
-            // Get status ID for FORWARDED status
-            const forwardedStatusId = await getStatusIdByValue(TICKET_STATUS.FORWARDED);
-            if (!forwardedStatusId) {
+            // Get status ID for FORWARDED status using cached statuses
+            const ticketStatuses = await getCachedTicketStatuses();
+            const forwardedStatus = ticketStatuses.find(s => s.value.toLowerCase() === TICKET_STATUS.FORWARDED.toLowerCase());
+            if (!forwardedStatus?.id) {
                 throw new Error("FORWARDED status not found in database");
             }
+            const forwardedStatusId = forwardedStatus.id;
             
             // Update ticket - reassign to committee head and set status to FORWARDED
             const [t] = await tx

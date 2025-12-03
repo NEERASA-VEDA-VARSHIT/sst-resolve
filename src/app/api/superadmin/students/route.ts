@@ -12,8 +12,7 @@ import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { users, students, hostels, batches, class_sections } from "@/db/schema";
 import { eq, ilike, or, and, sql, desc } from "drizzle-orm";
-import { getUserRoleFromDB } from "@/lib/auth/db-roles";
-import { getOrCreateUser } from "@/lib/auth/user-sync";
+import { getCachedAdminUser } from "@/lib/cache/cached-queries";
 
 export async function GET(request: NextRequest) {
 	try {
@@ -22,9 +21,8 @@ export async function GET(request: NextRequest) {
 			return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 		}
 
-		// Ensure user is super_admin
-		await getOrCreateUser(userId);
-		const role = await getUserRoleFromDB(userId);
+		// Use cached function for better performance (request-scoped deduplication)
+		const { role } = await getCachedAdminUser(userId);
 		if (role !== "super_admin") {
 			return NextResponse.json({ error: "Forbidden: Super admin only" }, { status: 403 });
 		}

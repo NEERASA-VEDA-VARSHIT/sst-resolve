@@ -8,10 +8,9 @@ import { sendEmail, getTATSetEmail } from "@/lib/integration/email";
 import { SetTATSchema } from "@/schemas/business/ticket";
 import { TICKET_STATUS } from "@/conf/constants";
 import { calculateTATDate } from "@/utils";
-import { getUserRoleFromDB } from "@/lib/auth/db-roles";
-import { getOrCreateUser } from "@/lib/auth/user-sync";
+import { getCachedAdminUser } from "@/lib/cache/cached-queries";
 import type { TicketMetadata } from "@/db/inferred-types";
-import { getStatusIdByValue } from "@/lib/status/getTicketStatuses";
+import { getCachedTicketStatuses } from "@/lib/cache/cached-queries";
 
 /**
  * ============================================
@@ -39,11 +38,8 @@ export async function POST(
 			return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 		}
 
-		// Ensure user exists in database
-		await getOrCreateUser(userId);
-
-		// Get role from database (single source of truth)
-		const role = await getUserRoleFromDB(userId);
+		// Use cached function for better performance (request-scoped deduplication)
+		const { dbUser, role } = await getCachedAdminUser(userId);
 
 		if (role !== "admin" && role !== "super_admin") {
 			return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -69,16 +65,20 @@ export async function POST(
 			return NextResponse.json({ error: "Invalid ticket ID" }, { status: 400 });
 		}
 
-		// Get current ticket with category and creator info
+		// Get current ticket with category and creator email in a single query (optimized)
 		const [ticket] = await db
 			.select({
 				id: tickets.id,
 				created_by: tickets.created_by,
 				category_id: tickets.category_id,
+				category_name: categories.name,
 				metadata: tickets.metadata,
 				group_id: tickets.group_id,
+				creator_email: users.email,
 			})
 			.from(tickets)
+			.leftJoin(categories, eq(tickets.category_id, categories.id))
+			.leftJoin(users, eq(tickets.created_by, users.id))
 			.where(eq(tickets.id, ticketId))
 			.limit(1);
 
@@ -86,16 +86,7 @@ export async function POST(
 			return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
 		}
 
-		// Get category name
-		let categoryName = "Ticket";
-		if (ticket.category_id) {
-			const [category] = await db
-				.select({ name: categories.name })
-				.from(categories)
-				.where(eq(categories.id, ticket.category_id))
-				.limit(1);
-			categoryName = category?.name || "Ticket";
-		}
+		const categoryName = ticket.category_name || "Ticket";
 
 		// Parse existing metadata and get original email Message-ID and subject BEFORE updating
 		const metadata: TicketMetadata = (ticket.metadata as TicketMetadata) || {};
@@ -138,7 +129,7 @@ export async function POST(
 
 		// Update ticket with TAT and optionally mark as in_progress
 		// Also assign ticket to the admin taking action
-		const dbUser = await getOrCreateUser(userId);
+		// Use cached statuses for better performance
 		const updateData: Partial<TicketInsert> = {
 			metadata: metadata as unknown,
 			updated_at: new Date(),
@@ -146,10 +137,11 @@ export async function POST(
 		};
 
 		if (markInProgress) {
-			// Get the status_id for "in_progress" status
-			const statusId = await getStatusIdByValue(TICKET_STATUS.IN_PROGRESS);
-			if (statusId) {
-				updateData.status_id = statusId;
+			// Get the status_id for "in_progress" status using cached statuses
+			const ticketStatuses = await getCachedTicketStatuses();
+			const inProgressStatus = ticketStatuses.find(s => s.value.toLowerCase() === TICKET_STATUS.IN_PROGRESS.toLowerCase());
+			if (inProgressStatus?.id) {
+				updateData.status_id = inProgressStatus.id;
 			} else {
 				console.error(`[TAT API] Failed to find status_id for "${TICKET_STATUS.IN_PROGRESS}"`);
 				// Continue without status update if status_id lookup fails
@@ -228,40 +220,31 @@ export async function POST(
 			}
 		}
 
-		// Send email notification to student
-		if (ticket.created_by) {
+		// Send email notification to student (email already fetched in initial query)
+		if (ticket.created_by && ticket.creator_email) {
 			try {
-				// Get student email from users table using created_by
-				const [creator] = await db
-					.select({ email: users.email })
-					.from(users)
-					.where(eq(users.id, ticket.created_by))
-					.limit(1);
+				// Use the originalMessageId we retrieved before the update
+				const emailTemplate = getTATSetEmail(
+					ticket.id,
+					tatText,
+					tatDate.toISOString(),
+					categoryName,
+					isExtension,
+					markInProgress // Include markInProgress flag in email
+				);
+				const emailResult = await sendEmail({
+					to: ticket.creator_email,
+					subject: emailTemplate.subject,
+					html: emailTemplate.html,
+					ticketId: ticket.id,
+					threadMessageId: originalMessageId,
+					originalSubject: originalSubject,
+				});
 
-				if (creator?.email) {
-					// Use the originalMessageId we retrieved before the update
-					const emailTemplate = getTATSetEmail(
-						ticket.id,
-						tatText,
-						tatDate.toISOString(),
-						categoryName,
-						isExtension,
-						markInProgress // Include markInProgress flag in email
-					);
-					const emailResult = await sendEmail({
-						to: creator.email,
-						subject: emailTemplate.subject,
-						html: emailTemplate.html,
-						ticketId: ticket.id,
-						threadMessageId: originalMessageId,
-						originalSubject: originalSubject,
-					});
-
-					if (!emailResult) {
-						console.error(`❌ Failed to send TAT email to ${creator.email} for ticket #${ticket.id}`);
-					} else {
-						// TAT email sent successfully
-					}
+				if (!emailResult) {
+					console.error(`❌ Failed to send TAT email to ${ticket.creator_email} for ticket #${ticket.id}`);
+				} else {
+					// TAT email sent successfully
 				}
 			} catch (emailError) {
 				console.error("Error sending TAT email:", emailError);

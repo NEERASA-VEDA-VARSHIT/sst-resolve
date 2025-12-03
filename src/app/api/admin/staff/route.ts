@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db, users, domains, scopes, roles, students, admin_profiles, committees } from "@/db";
 import { eq, inArray } from "drizzle-orm";
-import { getUserRoleFromDB } from "@/lib/auth/db-roles";
-import { getOrCreateUser } from "@/lib/auth/user-sync";
+import { getCachedAdminUser } from "@/lib/cache/cached-queries";
 import type { InferSelectModel } from "drizzle-orm";
 
 export async function GET() {
@@ -14,8 +13,8 @@ export async function GET() {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        await getOrCreateUser(userId);
-        const role = await getUserRoleFromDB(userId);
+        // Use cached function for better performance (request-scoped deduplication)
+        const { role } = await getCachedAdminUser(userId);
 
         if (role !== "super_admin") {
             return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -110,10 +109,10 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        await getOrCreateUser(userId);
-        const userRole = await getUserRoleFromDB(userId);
+        // Use cached function for better performance (request-scoped deduplication)
+        const { role } = await getCachedAdminUser(userId);
 
-        if (userRole !== "super_admin") {
+        if (role !== "super_admin") {
             return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }
 
@@ -263,10 +262,10 @@ export async function PATCH(request: NextRequest) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        await getOrCreateUser(userId);
-        const userRole = await getUserRoleFromDB(userId);
+        // Use cached function for better performance (request-scoped deduplication)
+        const { role } = await getCachedAdminUser(userId);
 
-        if (userRole !== "super_admin") {
+        if (role !== "super_admin") {
             return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }
 
@@ -373,10 +372,10 @@ export async function DELETE(request: NextRequest) {
             return NextResponse.json({ error: "Missing user ID" }, { status: 400 });
         }
 
-        await getOrCreateUser(userId);
-        const userRole = await getUserRoleFromDB(userId);
+        // Use cached function for better performance (request-scoped deduplication)
+        const { role } = await getCachedAdminUser(userId);
 
-        if (userRole !== "super_admin") {
+        if (role !== "super_admin") {
             return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }
 

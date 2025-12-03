@@ -6,28 +6,18 @@ import { getOrCreateUser } from "@/lib/auth/user-sync";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 // findSPOCForTicket is imported dynamically from spoc-assignment.ts
 import { TICKET_STATUS } from "@/conf/constants";
-import { getStatusIdByValue } from "@/lib/status/getTicketStatuses";
 import { findSuperAdminClerkId } from "@/lib/db-helpers";
-
-const STATUS_ID_CACHE = new Map<string, number>();
+import { getCachedTicketStatuses } from "@/lib/cache/cached-queries";
 
 const SUPER_ADMIN_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 let cachedSuperAdmin: { value: string | null; expiresAt: number } | null = null;
 let inflightSuperAdminPromise: Promise<string | null> | null = null;
 
 async function getCachedStatusId(statusValue: string): Promise<number | null> {
-  const cached = STATUS_ID_CACHE.get(statusValue);
-  if (typeof cached === "number") {
-    return cached;
-  }
-
-  const statusId = await getStatusIdByValue(statusValue);
-  if (statusId) {
-    STATUS_ID_CACHE.set(statusValue, statusId);
-    return statusId;
-  }
-
-  return null;
+  // Use cached ticket statuses for better performance (request-scoped deduplication)
+  const ticketStatuses = await getCachedTicketStatuses();
+  const status = ticketStatuses.find(s => s.value.toLowerCase() === statusValue.toLowerCase());
+  return status?.id || null;
 }
 
 async function getCachedSuperAdminUserId(): Promise<string | null> {
@@ -95,11 +85,11 @@ export async function createTicket(args: {
 }) {
   const { clerkId, payload } = args;
 
-  // Parallelize user and role lookups for better performance
-  const [dbUser, role] = await Promise.all([
-    getOrCreateUser(clerkId),
-    getUserRoleFromDB(clerkId),
-  ]);
+  // Use cached functions for better performance (request-scoped deduplication)
+  // For students/committee, we use getCachedUser and then getUserRoleFromDB
+  const { getCachedUser } = await import("@/lib/cache/cached-queries");
+  const dbUser = await getCachedUser(clerkId);
+  const role = await getUserRoleFromDB(clerkId);
   
   if (!dbUser) throw new Error("User not found in local DB after sync");
   if (!role) throw new Error("User role unknown");

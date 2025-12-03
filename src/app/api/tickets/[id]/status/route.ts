@@ -2,11 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { tickets, outbox, ticket_committee_tags, committees, ticket_statuses, ticket_groups } from "@/db/schema";
-import { getStatusIdByValue } from "@/lib/status/getTicketStatuses";
 import type { TicketInsert } from "@/db/inferred-types";
 import { eq, and, inArray } from "drizzle-orm";
-import { getUserRoleFromDB } from "@/lib/auth/db-roles";
-import { getOrCreateUser } from "@/lib/auth/user-sync";
+import { getCachedAdminUser, getCachedUser, getCachedTicketStatuses } from "@/lib/cache/cached-queries";
 import { UpdateTicketStatusSchema } from "@/schemas/business/ticket";
 import { TICKET_STATUS, getCanonicalStatus } from "@/conf/constants";
 
@@ -57,13 +55,22 @@ export async function PATCH(
     let newStatus = parsed.data.status;
 
     // -------------------------
-    // USER + ROLE
+    // USER + ROLE (use cached functions for better performance)
     // -------------------------
-    const localUser = await getOrCreateUser(userId);
+    // Try admin cache first, fallback to generic user cache for students/committee
+    let localUser, role;
+    try {
+      const adminResult = await getCachedAdminUser(userId);
+      localUser = adminResult.dbUser;
+      role = adminResult.role;
+    } catch {
+      // Fallback for non-admin users
+      localUser = await getCachedUser(userId);
+      const { getUserRoleFromDB } = await import("@/lib/auth/db-roles");
+      role = await getUserRoleFromDB(userId);
+    }
     if (!localUser)
       return NextResponse.json({ error: "User not found" }, { status: 404 });
-
-    const role = await getUserRoleFromDB(userId);
     const isAdmin = role === "admin" || role === "super_admin";
     const isStudent = role === "student";
     const isCommittee = role === "committee";
@@ -192,8 +199,10 @@ export async function PATCH(
     // Edge case: Prevent invalid transitions (e.g., resolved/closed -> open should be reopened)
     if ((currentCanonicalStatus === TICKET_STATUS.RESOLVED || currentCanonicalStatus === TICKET_STATUS.CLOSED) && newStatus === TICKET_STATUS.OPEN) {
       // If trying to go from resolved to open, change to reopened instead
-      const reopenedStatusId = await getStatusIdByValue(TICKET_STATUS.REOPENED);
-      if (reopenedStatusId) {
+      // Use cached statuses for better performance
+      const ticketStatuses = await getCachedTicketStatuses();
+      const reopenedStatus = ticketStatuses.find(s => s.value.toLowerCase() === TICKET_STATUS.REOPENED.toLowerCase());
+      if (reopenedStatus?.id) {
         newStatus = TICKET_STATUS.REOPENED;
       } else {
         return NextResponse.json(
@@ -218,22 +227,20 @@ export async function PATCH(
     }
 
     // Edge case: Validate status exists and is active before updating
-    const newStatusId = await getStatusIdByValue(newStatus);
-    if (!newStatusId) {
+    // Use cached statuses for better performance
+    const ticketStatuses = await getCachedTicketStatuses();
+    const targetStatus = ticketStatuses.find(s => s.value.toLowerCase() === newStatus.toLowerCase());
+    if (!targetStatus?.id) {
       return NextResponse.json(
         { error: `Invalid status: ${newStatus}. The status may have been deleted or is inactive.` },
         { status: 400 }
       );
     }
+    const newStatusId = targetStatus.id;
     
     // Edge case: Verify status is still active (may have been deactivated)
-    const [statusRecord] = await db
-      .select({ is_active: ticket_statuses.is_active })
-      .from(ticket_statuses)
-      .where(eq(ticket_statuses.id, newStatusId))
-      .limit(1);
-    
-    if (!statusRecord || !statusRecord.is_active) {
+    // Cached statuses are already filtered to active statuses, so this check is redundant but kept for safety
+    if (!targetStatus.is_active) {
       return NextResponse.json(
         { error: `Status "${newStatus}" is inactive and cannot be used. Please select a different status.` },
         { status: 400 }

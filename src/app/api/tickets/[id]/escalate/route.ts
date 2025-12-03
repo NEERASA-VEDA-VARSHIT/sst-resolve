@@ -3,11 +3,9 @@ import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { tickets, outbox, ticket_statuses } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { getUserRoleFromDB } from "@/lib/auth/db-roles";
-import { getOrCreateUser } from "@/lib/auth/user-sync";
+import { getCachedAdminUser, getCachedUser, getCachedTicketStatuses } from "@/lib/cache/cached-queries";
 import { TICKET_STATUS, getCanonicalStatus } from "@/conf/constants";
 import { EscalateTicketSchema } from "@/schemas/business/ticket";
-import { getStatusIdByValue } from "@/lib/status/getTicketStatuses";
 
 /**
  * ============================================
@@ -44,11 +42,10 @@ export async function POST(
     if (!userId)
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const localUser = await getOrCreateUser(userId);
+    // Use cached function for better performance (request-scoped deduplication)
+    const { dbUser: localUser, role } = await getCachedAdminUser(userId);
     if (!localUser)
       return NextResponse.json({ error: "User not found" }, { status: 404 });
-
-    const role = await getUserRoleFromDB(userId);
     const isAdmin =
       role === "admin" || role === "super_admin";
     const isStudent = role === "student";
@@ -154,14 +151,16 @@ export async function POST(
 
     const newEscalationLevel = (ticketRow.escalation_level || 0) + 1;
     
-    // Get status ID for ESCALATED status
-    const escalatedStatusId = await getStatusIdByValue(TICKET_STATUS.ESCALATED);
-    if (!escalatedStatusId) {
+    // Get status ID for ESCALATED status using cached statuses
+    const ticketStatuses = await getCachedTicketStatuses();
+    const escalatedStatus = ticketStatuses.find(s => s.value.toLowerCase() === TICKET_STATUS.ESCALATED.toLowerCase());
+    if (!escalatedStatus?.id) {
       return NextResponse.json(
         { error: "Escalated status not found in database" },
         { status: 500 }
       );
     }
+    const escalatedStatusId = escalatedStatus.id;
 
     const updatedTicket = await db.transaction(async (tx) => {
       // Update metadata to track last escalation

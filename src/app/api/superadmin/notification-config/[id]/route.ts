@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db, notification_config } from "@/db";
 import { eq } from "drizzle-orm";
-import { getUserRoleFromDB } from "@/lib/auth/db-roles";
+import { getCachedAdminUser } from "@/lib/cache/cached-queries";
 
 /**
  * GET - Get single notification configuration
@@ -22,7 +22,8 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const role = await getUserRoleFromDB(userId);
+    // Use cached function for better performance (request-scoped deduplication)
+    const { role } = await getCachedAdminUser(userId);
     if (role !== "super_admin") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
@@ -67,7 +68,8 @@ export async function PATCH(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const role = await getUserRoleFromDB(userId);
+    // Use cached function for better performance (request-scoped deduplication)
+    const { role } = await getCachedAdminUser(userId);
     if (role !== "super_admin") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
@@ -160,7 +162,8 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const role = await getUserRoleFromDB(userId);
+    // Use cached function for better performance (request-scoped deduplication)
+    const { role } = await getCachedAdminUser(userId);
     if (role !== "super_admin") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }

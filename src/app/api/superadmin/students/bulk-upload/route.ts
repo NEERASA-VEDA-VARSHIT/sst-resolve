@@ -11,8 +11,7 @@ import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { users, students, hostels, batches, class_sections, roles } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { getUserRoleFromDB } from "@/lib/auth/db-roles";
-import { getOrCreateUser } from "@/lib/auth/user-sync";
+import { getCachedAdminUser } from "@/lib/cache/cached-queries";
 
 /**
  * Data cleaning utilities
@@ -299,8 +298,8 @@ export async function POST(request: NextRequest) {
 		}
 
 		// Ensure user is super_admin
-		await getOrCreateUser(userId);
-		const role = await getUserRoleFromDB(userId);
+		// Use cached function for better performance (request-scoped deduplication)
+		const { role } = await getCachedAdminUser(userId);
 		if (role !== "super_admin") {
 			return NextResponse.json({ error: "Forbidden: Super admin only" }, { status: 403 });
 		}
