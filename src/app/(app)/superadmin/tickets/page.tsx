@@ -1,5 +1,4 @@
 import { auth } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
 import { db, tickets, categories, users, ticket_statuses } from "@/db";
 import { desc, sql, and, count, eq } from "drizzle-orm";
 import Link from "next/link";
@@ -7,25 +6,22 @@ import { TicketCard } from "@/components/layout/TicketCard";
 import { AdminTicketFilters } from "@/components/admin/AdminTicketFilters";
 import { Card, CardContent } from "@/components/ui/card";
 import { FileText } from "lucide-react";
-import { getUserRoleFromDB } from "@/lib/auth/db-roles";
-import { getOrCreateUser } from "@/lib/auth/user-sync";
-import { getAdminAssignment, ticketMatchesAdminAssignment } from "@/lib/assignment/admin-assignment";
+import { getCachedAdminAssignment } from "@/lib/cache/cached-queries";
+import { ticketMatchesAdminAssignment } from "@/lib/assignment/admin-assignment";
 import type { TicketMetadata } from "@/db/inferred-types";
 import type { Ticket } from "@/db/types-only";
 
 // Force dynamic rendering since we use auth headers
 export const dynamic = "force-dynamic";
 
+/**
+ * Super Admin All Tickets Page
+ * Note: Auth and role checks are handled by superadmin/layout.tsx
+ */
 export default async function SuperAdminAllTicketsPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
+  // Layout ensures userId exists and user is a super_admin
   const { userId } = await auth();
-  if (!userId) redirect("/");
-
-  // Ensure user exists in database
-  await getOrCreateUser(userId);
-
-  // Get role from database (single source of truth)
-  const role = await getUserRoleFromDB(userId);
-  if (role !== "super_admin") redirect("/student/dashboard");
+  if (!userId) throw new Error("Unauthorized"); // TypeScript type guard - layout ensures this never happens
 
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const params = resolvedSearchParams || {};
@@ -187,7 +183,8 @@ export default async function SuperAdminAllTicketsPage({ searchParams }: { searc
   }
 
   // Limit super admin "All Tickets" view to their domain/scope if they have an assignment
-  const adminAssignment = await getAdminAssignment(userId);
+  // Use cached function for better performance (request-scoped deduplication)
+  const adminAssignment = await getCachedAdminAssignment(userId);
   if (adminAssignment && (adminAssignment.domain || adminAssignment.scope)) {
     allTickets = allTickets.filter((t) =>
       ticketMatchesAdminAssignment(
@@ -215,6 +212,9 @@ export default async function SuperAdminAllTicketsPage({ searchParams }: { searc
       return true;
     });
   }
+
+  // After applying in-memory filters (domain/scope + TAT), update total/pagination
+  total = allTickets.length;
 
   if (sort === "oldest") allTickets = [...allTickets].reverse();
 

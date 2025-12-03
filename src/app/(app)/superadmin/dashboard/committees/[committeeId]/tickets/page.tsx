@@ -1,9 +1,6 @@
-import { auth } from "@clerk/nextjs/server";
-import { redirect, notFound } from "next/navigation";
+import { notFound } from "next/navigation";
 import { db, committees, tickets, categories, ticket_statuses } from "@/db";
 import { eq, desc } from "drizzle-orm";
-import { getOrCreateUser } from "@/lib/auth/user-sync";
-import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { TicketCard } from "@/components/layout/TicketCard";
 import TicketSearch from "@/components/student/TicketSearch";
 import { Card, CardContent } from "@/components/ui/card";
@@ -18,6 +15,10 @@ import type { Ticket } from "@/db/types-only";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Super Admin Committee Tickets Page
+ * Note: Auth and role checks are handled by superadmin/layout.tsx
+ */
 export default async function CommitteeTicketsPage({
   params,
   searchParams
@@ -25,22 +26,6 @@ export default async function CommitteeTicketsPage({
   params: Promise<{ committeeId: string }>;
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { userId } = await auth();
-
-  if (!userId) {
-    redirect("/");
-  }
-
-  const user = await getOrCreateUser(userId);
-  if (!user) {
-    console.error('[Committee Tickets] Failed to create/fetch user');
-    redirect("/");
-  }
-
-  const role = await getUserRoleFromDB(userId);
-  if (role !== "super_admin") {
-    redirect("/");
-  }
 
   const { committeeId } = await params;
   const id = Number(committeeId);

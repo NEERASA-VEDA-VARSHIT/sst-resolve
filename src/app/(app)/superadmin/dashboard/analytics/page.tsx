@@ -1,8 +1,6 @@
-import { auth } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { tickets, categories, users, roles, ticket_statuses } from "@/db/schema";
-import { eq, sql, inArray } from "drizzle-orm";
+import { sql, inArray, eq } from "drizzle-orm";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { FileText, Clock, CheckCircle2, AlertCircle, TrendingUp, Users, ArrowLeft, Zap, Target, Activity } from "lucide-react";
 import Link from "next/link";
@@ -13,25 +11,11 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { getTicketStatusByValue } from "@/lib/status/getTicketStatuses";
 
+/**
+ * Super Admin Analytics Page
+ * Note: Auth and role checks are handled by superadmin/layout.tsx
+ */
 export default async function SuperAdminAnalyticsPage() {
-  const { userId } = await auth();
-
-  if (!userId) {
-    redirect("/");
-  }
-
-  // Get user from database (already created in layout.tsx)
-  const dbUser = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(eq(users.external_id, userId))
-    .limit(1)
-    .then(([user]) => user);
-
-  if (!dbUser) {
-    console.error('[Super Admin Analytics] User not found after layout sync');
-    redirect('/error?message=user_not_found');
-  }
 
   // Fetch ALL tickets for overall analytics with more details
   type TicketAnalytics = {

@@ -1,27 +1,12 @@
-import { auth } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
-import { getUserRoleFromDB } from "@/lib/auth/db-roles";
-import { getOrCreateUser } from "@/lib/auth/user-sync";
 import { NotificationSettingsManager } from "@/components/superadmin/NotificationSettingsManager";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Super Admin Notification Settings Page
+ * Note: Auth and role checks are handled by superadmin/layout.tsx
+ */
 export default async function NotificationSettingsPage() {
-  const { userId } = await auth();
-
-  if (!userId) {
-    redirect("/");
-  }
-
-  const user = await getOrCreateUser(userId);
-  if (!user) {
-    redirect("/");
-  }
-
-  const role = await getUserRoleFromDB(userId);
-  if (role !== "super_admin") {
-    redirect("/superadmin/dashboard");
-  }
 
   return (
     <div className="space-y-8 p-6">

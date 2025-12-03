@@ -1,5 +1,4 @@
 import { auth } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
 import type { TicketMetadata } from "@/db/inferred-types";
 import { TicketCard } from "@/components/layout/TicketCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,33 +6,26 @@ import { AlertTriangle, TrendingUp, Calendar, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { getOrCreateUser } from "@/lib/auth/user-sync";
-import { getUserRoleFromDB } from "@/lib/auth/db-roles";
-import { getAllCommitteeTickets } from "@/lib/committee/getAllCommitteeTickets";
-import { getTicketStatuses } from "@/lib/status/getTicketStatuses";
+import { getCachedUser, getCachedTicketStatuses, getCachedCommitteeTickets } from "@/lib/cache/cached-queries";
 import type { Ticket } from "@/db/types-only";
 
 // Force dynamic rendering since we use auth headers
 export const dynamic = "force-dynamic";
 
+/**
+ * Committee Escalated Page
+ * Note: Auth and role checks are handled by committee/layout.tsx
+ */
 export default async function CommitteeEscalatedPage() {
+  // Layout ensures userId exists and user is a committee member
   const { userId } = await auth();
-  if (!userId) redirect("/");
+  if (!userId) throw new Error("Unauthorized"); // TypeScript type guard - layout ensures this never happens
 
-  const user = await getOrCreateUser(userId);
-  if (!user) {
-    console.error("[CommitteeEscalatedPage] Failed to create/fetch user");
-    redirect("/");
-  }
+  // Use cached function for better performance (request-scoped deduplication)
+  const user = await getCachedUser(userId);
 
-  // Get role from database (single source of truth)
-  const role = await getUserRoleFromDB(userId);
-  if (role !== "committee") {
-    redirect("/committee/dashboard");
-  }
-
-  // Fetch all committee-accessible tickets
-  const allTickets = await getAllCommitteeTickets(user.id);
+  // Use cached function for better performance (request-scoped deduplication)
+  const allTickets = await getCachedCommitteeTickets(user.id);
 
   // Transform to extract metadata fields
   const transformedTickets = allTickets.map(t => {
@@ -68,8 +60,8 @@ export default async function CommitteeEscalatedPage() {
   const endOfToday = new Date(now);
   endOfToday.setHours(23, 59, 59, 999);
 
-  // Fetch dynamic ticket statuses
-  const ticketStatuses = await getTicketStatuses();
+  // Use cached function for better performance (request-scoped deduplication)
+  const ticketStatuses = await getCachedTicketStatuses();
   const finalStatuses = new Set(ticketStatuses.filter(s => s.is_final).map(s => s.value));
 
   const isOpen = (s: string | null) => !finalStatuses.has(s || "");

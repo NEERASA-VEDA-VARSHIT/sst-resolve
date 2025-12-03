@@ -1,12 +1,9 @@
-import { auth } from "@clerk/nextjs/server";
-import { redirect, notFound } from "next/navigation";
+import { notFound } from "next/navigation";
 import { db } from "@/db";
 import { tickets, categories, users, ticket_statuses } from "@/db/schema";
 import type { TicketMetadata } from "@/db/inferred-types";
 import { eq, desc, isNull, inArray } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { getOrCreateUser } from "@/lib/auth/user-sync";
-import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { normalizeStatusForComparison } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { getTicketStatusByValue } from "@/lib/status/getTicketStatuses";
@@ -27,23 +24,15 @@ import { TicketCard } from "@/components/layout/TicketCard";
 
 const assignedUsers = alias(users, "category_assigned_users");
 
+/**
+ * Super Admin Category Analytics Detail Page
+ * Note: Auth and role checks are handled by superadmin/layout.tsx
+ */
 export default async function CategoryAnalyticsDetailPage({
   params,
 }: {
   params: Promise<{ categoryId: string }>;
 }) {
-  const { userId } = await auth();
-
-  if (!userId) {
-    redirect("/");
-  }
-
-  await getOrCreateUser(userId);
-  const role = await getUserRoleFromDB(userId);
-
-  if (role !== "super_admin") {
-    redirect("/student/dashboard");
-  }
 
   const { categoryId } = await params;
   const isUncategorized = categoryId === "uncategorized";

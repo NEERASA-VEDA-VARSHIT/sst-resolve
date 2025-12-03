@@ -1,7 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
 import type { Ticket } from "@/db/types-only";
-import { getOrCreateUser } from "@/lib/auth/user-sync";
+import { getCachedUser } from "@/lib/cache/cached-queries";
 import { TicketCard } from "@/components/layout/TicketCard";
 import TicketSearch from "@/components/student/TicketSearch";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,22 +12,21 @@ import { calculateTicketStats } from "@/lib/committee/calculateStats";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Committee Tagged Tickets Page
+ * Note: Auth is handled by committee/layout.tsx
+ */
 export default async function CommitteeTaggedTicketsPage({
   searchParams
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>
 }) {
+  // Layout ensures userId exists and user is created via getOrCreateUser
   const { userId } = await auth();
+  if (!userId) throw new Error("Unauthorized"); // TypeScript type guard - layout ensures this never happens
 
-  if (!userId) {
-    redirect("/");
-  }
-
-  const user = await getOrCreateUser(userId);
-  if (!user) {
-    console.error('[Committee Tagged Tickets] Failed to create/fetch user');
-    throw new Error('Failed to load user profile');
-  }
+  // Use cached function for better performance (request-scoped deduplication)
+  const user = await getCachedUser(userId);
 
   // Await searchParams (Next.js 15)
   const resolvedSearchParams = searchParams ? await searchParams : {};

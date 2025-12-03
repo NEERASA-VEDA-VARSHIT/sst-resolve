@@ -1,7 +1,4 @@
 import { auth } from "@clerk/nextjs/server";
-
-import { redirect } from "next/navigation";
-
 import { db, tickets, categories, users, ticket_statuses } from "@/db";
 
 import { desc, eq, isNull, or, sql, count, inArray } from "drizzle-orm";
@@ -14,13 +11,9 @@ import { TicketCard } from "@/components/layout/TicketCard";
 
 import { Card, CardContent } from "@/components/ui/card";
 
-import Link from "next/link";
-
 import { AdminTicketFilters } from "@/components/admin/AdminTicketFilters";
 
-import { Button } from "@/components/ui/button";
-
-import { FileText, Shield, Settings, Users, Calendar, AlertCircle, BarChart3 } from "lucide-react";
+import { FileText } from "lucide-react";
 
 import { StatsCards } from "@/components/dashboard/StatsCards";
 
@@ -37,41 +30,18 @@ export const revalidate = 30;
 
 
 
+/**
+ * Super Admin Dashboard Page
+ * Note: Auth and role checks are handled by superadmin/layout.tsx
+ */
 export default async function SuperAdminDashboardPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
-
+  // Layout ensures userId exists and user is a super_admin
   const { userId } = await auth();
-
-
-
-  if (!userId) {
-
-    redirect("/");
-
-  }
-
-
+  if (!userId) throw new Error("Unauthorized"); // TypeScript type guard - layout ensures this never happens
 
   // Use cached functions for better performance
-
-  const { dbUser, role } = await getCachedAdminUser(userId);
-
-
-
-  if (!dbUser) {
-
-    console.error('[SuperAdmin Dashboard] Failed to create/fetch user');
-
-    redirect("/");
-
-  }
-
-
-
-  if (role !== 'super_admin') {
-
-    redirect('/student/dashboard');
-
-  }
+  // Layout already ensures user exists via getOrCreateUser, so dbUser will exist
+  const { dbUser } = await getCachedAdminUser(userId);
 
 
 
@@ -747,24 +717,6 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
 
   endOfToday.setHours(23, 59, 59, 999);
 
-  const todayPending = allTickets.filter((t) => {
-
-    const normalized = normalizeStatusForComparison(t.status);
-
-    if (!["open", "in_progress", "awaiting_student_response", "reopened"].includes(normalized)) return false;
-
-    const metadata = (t.metadata as TicketMetadata) || {};
-
-    const tatDate = t.resolution_due_at || (metadata?.tatDate && typeof metadata.tatDate === "string" ? new Date(metadata.tatDate) : null);
-
-    if (!tatDate) return false;
-
-    return tatDate.getTime() >= startOfToday.getTime() && tatDate.getTime() <= endOfToday.getTime();
-
-  }).length;
-
-
-
   // Count unassigned tickets
 
   const unassignedCount = ticketRows.filter((t) => !t.assigned_to).length;
@@ -777,169 +729,14 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
 
       <div>
 
-        <div className="flex items-center justify-between mb-6">
-
-          <div>
-
-            <h1 className="text-4xl font-bold tracking-tight mb-2 bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
-
-              Super Admin Dashboard
-
-            </h1>
-
-            <p className="text-muted-foreground">
-
-              Manage unassigned tickets, escalations, and system-wide operations
-
-            </p>
-
-          </div>
-
-          <div className="flex gap-2 flex-wrap">
-
-            {unassignedCount > 0 && (
-
-              <Button variant="default" asChild className="bg-amber-500 hover:bg-amber-600">
-
-                <Link href="/superadmin/dashboard?status=open&assigned=unassigned">
-
-                  <Shield className="w-4 h-4 mr-2" />
-
-                  Unassigned Tickets
-
-                  <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-white/20 text-white">
-
-                    {unassignedCount}
-
-                  </span>
-
-                </Link>
-
-              </Button>
-
-            )}
-
-            <Button variant="outline" asChild>
-
-              <Link href="/superadmin/dashboard/groups">
-
-                <Users className="w-4 h-4 mr-2" />
-
-                Groups
-
-              </Link>
-
-            </Button>
-
-            <Button variant="outline" asChild>
-
-              <Link href="/superadmin/dashboard/today">
-
-                <Calendar className="w-4 h-4 mr-2" />
-
-                Today Pending
-
-                {todayPending > 0 && (
-
-                  <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-amber-500 text-white">
-
-                    {todayPending}
-
-                  </span>
-
-                )}
-
-              </Link>
-
-            </Button>
-
-            <Button variant="outline" asChild>
-
-              <Link href="/superadmin/dashboard/escalated">
-
-                <AlertCircle className="w-4 h-4 mr-2" />
-
-                Escalated
-
-                {stats.escalated > 0 && (
-
-                  <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-red-500 text-white">
-
-                    {stats.escalated}
-
-                  </span>
-
-                )}
-
-              </Link>
-
-            </Button>
-
-            <Button variant="outline" asChild>
-
-              <Link href="/superadmin/dashboard/analytics">
-
-                <BarChart3 className="w-4 h-4 mr-2" />
-
-                Analytics
-
-              </Link>
-
-            </Button>
-
-            <Button variant="outline" asChild>
-
-              <Link href="/superadmin/tickets">
-
-                <FileText className="w-4 h-4 mr-2" />
-
-                All Tickets View
-
-              </Link>
-
-            </Button>
-
-            <Button variant="outline" asChild>
-
-              <Link href="/superadmin/dashboard/staff">
-
-                <Shield className="w-4 h-4 mr-2" />
-
-                Staff Management
-
-              </Link>
-
-            </Button>
-
-            <Button variant="outline" asChild>
-
-              <Link href="/superadmin/dashboard/forms">
-
-                <FileText className="w-4 h-4 mr-2" />
-
-                Form Management
-
-              </Link>
-
-            </Button>
-
-            <Button variant="outline" asChild>
-
-              <Link href="/superadmin/dashboard/categories">
-
-                <Settings className="w-4 h-4 mr-2" />
-
-                Category Builder
-
-              </Link>
-
-            </Button>
-
-          </div>
-
+        <div className="mb-6">
+          <h1 className="text-4xl font-bold tracking-tight mb-2 bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
+            Super Admin Dashboard
+          </h1>
+          <p className="text-muted-foreground">
+            Manage unassigned tickets, escalations, and system-wide operations
+          </p>
         </div>
-
-
 
         <div className="space-y-6">
 

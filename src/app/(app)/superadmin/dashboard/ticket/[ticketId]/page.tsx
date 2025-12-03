@@ -1,5 +1,4 @@
-import { auth } from "@clerk/nextjs/server";
-import { redirect, notFound } from "next/navigation";
+import { notFound } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
@@ -14,13 +13,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { getUserRoleFromDB } from "@/lib/auth/db-roles";
-import { getOrCreateUser } from "@/lib/auth/user-sync";
 import { TicketStatusBadge } from "@/components/tickets/TicketStatusBadge";
 import type { TicketMetadata } from "@/db/inferred-types";
 import { buildTimeline } from "@/lib/ticket/buildTimeline";
 import { normalizeStatusForComparison } from "@/lib/utils";
-import { getTicketStatuses, buildProgressMap } from "@/lib/status/getTicketStatuses";
+import { getCachedTicketStatuses } from "@/lib/cache/cached-queries";
+import { buildProgressMap } from "@/lib/status/getTicketStatuses";
 import { getCategoryProfileFields, getCategorySchema } from "@/lib/category/categories";
 import { resolveProfileFields } from "@/lib/ticket/profileFieldResolver";
 import { extractDynamicFields } from "@/lib/ticket/formatDynamicFields";
@@ -32,16 +30,11 @@ import { format } from "date-fns";
 // Revalidate every 10 seconds for ticket detail page (more frequent for real-time updates)
 export const revalidate = 10;
 
+/**
+ * Super Admin Ticket Detail Page
+ * Note: Auth and role checks are handled by superadmin/layout.tsx
+ */
 export default async function SuperAdminTicketPage({ params }: { params: Promise<{ ticketId: string }> }) {
-  const { userId } = await auth();
-  if (!userId) redirect("/");
-
-  // Ensure user exists in database
-  await getOrCreateUser(userId);
-
-  // Get role from database (single source of truth)
-  const role = await getUserRoleFromDB(userId);
-  if (role !== "super_admin") redirect("/student/dashboard");
 
   const { ticketId } = await params;
   const id = Number(ticketId);
@@ -111,8 +104,8 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
     slack_thread_id: slackThreadId,
   };
 
-  // Fetch student data, profile fields, and category schema after we have ticket data
-  const [studentDataResult, profileFieldsConfig, categorySchema] = await Promise.all([
+  // Fetch student data, profile fields, category schema, and statuses in parallel
+  const [studentDataResult, profileFieldsConfig, categorySchema, ticketStatuses] = await Promise.all([
     // Fetch student data for profile fields
     db
       .select({
@@ -135,6 +128,7 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
     ticket.category_id
       ? getCategorySchema(ticket.category_id)
       : Promise.resolve(null),
+    getCachedTicketStatuses().catch(() => []),
   ]);
 
   const forwardTargetsRaw = await db
@@ -184,8 +178,7 @@ export default async function SuperAdminTicketPage({ params }: { params: Promise
     : (ticket.status && typeof ticket.status === 'object' && 'value' in ticket.status ? ticket.status.value : null);
   const normalizedStatus = normalizeStatusForComparison(statusValueStr);
 
-  // Get ticket statuses and build progress map
-  const ticketStatuses = await getTicketStatuses().catch(() => []);
+  // Build progress map from statuses (already fetched above)
   const progressMap = Array.isArray(ticketStatuses) && ticketStatuses.length > 0 
     ? buildProgressMap(ticketStatuses) 
     : {};

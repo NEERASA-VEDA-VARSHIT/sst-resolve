@@ -4,8 +4,7 @@ import { redirect, notFound } from "next/navigation";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-import { getOrCreateUser } from "@/lib/auth/user-sync";
-
+import { getCachedUser } from "@/lib/cache/cached-queries";
 import { canCommitteeAccessTicket } from "@/lib/ticket/committeeAccess";
 
 import { getCommitteeTicketData } from "@/lib/ticket/getCommitteeTicketData";
@@ -22,7 +21,8 @@ import { calculateTATInfo } from "@/lib/ticket/calculateTAT";
 
 import { normalizeStatusForComparison } from "@/lib/utils";
 
-import { getTicketStatuses, buildProgressMap } from "@/lib/status/getTicketStatuses";
+import { getCachedTicketStatuses } from "@/lib/cache/cached-queries";
+import { buildProgressMap } from "@/lib/status/getTicketStatuses";
 
 import { CommitteeTicketHeader } from "@/components/committee/ticket/CommitteeTicketHeader";
 
@@ -62,11 +62,13 @@ export const revalidate = 30;
 
 
 
+/**
+ * Committee Ticket Detail Page
+ * Note: Auth is handled by committee/layout.tsx
+ */
 export default async function CommitteeTicketPage({ params }: { params: Promise<{ ticketId: string }> }) {
-
   const { userId } = await auth();
-
-  if (!userId) redirect("/");
+  if (!userId) throw new Error("Unauthorized"); // Should never happen due to layout protection
 
 
 
@@ -78,15 +80,8 @@ export default async function CommitteeTicketPage({ params }: { params: Promise<
 
 
 
-  const dbUser = await getOrCreateUser(userId);
-
-  if (!dbUser) {
-
-    console.error('[Committee Ticket Page] Failed to create/fetch user');
-
-    notFound();
-
-  }
+  // Use cached function for better performance (request-scoped deduplication)
+  const dbUser = await getCachedUser(userId);
 
 
 
@@ -108,7 +103,7 @@ export default async function CommitteeTicketPage({ params }: { params: Promise<
 
     getCommitteeTicketData(id),
 
-    getTicketStatuses(),
+    getCachedTicketStatuses(),
 
   ]);
 

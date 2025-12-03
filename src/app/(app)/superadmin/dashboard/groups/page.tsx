@@ -1,5 +1,3 @@
-import { auth } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
 import { db, tickets, categories, ticket_statuses, ticket_groups, users } from "@/db";
 import { desc, eq, isNotNull, and, sql, ilike } from "drizzle-orm";
 import { aliasedTable } from "drizzle-orm";
@@ -10,8 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import { ArrowLeft, Users, Package, CheckCircle2, TrendingUp } from "lucide-react";
-import { getUserRoleFromDB } from "@/lib/auth/db-roles";
-import { getOrCreateUser } from "@/lib/auth/user-sync";
 import { AdminTicketFilters } from "@/components/admin/AdminTicketFilters";
 import type { Ticket } from "@/db/types-only";
 import type { TicketMetadata } from "@/db/inferred-types";
@@ -21,26 +17,15 @@ export const dynamic = "force-dynamic";
 // Cache response for 30 seconds to improve performance
 export const revalidate = 30;
 
+/**
+ * Super Admin Groups Page
+ * Note: Auth and role checks are handled by superadmin/layout.tsx
+ */
 export default async function SuperAdminGroupsPage({
   searchParams,
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { userId } = await auth();
-
-  if (!userId) {
-    redirect("/");
-  }
-
-  // Ensure user exists in database
-  await getOrCreateUser(userId);
-
-  // Get role from database (single source of truth)
-  const role = await getUserRoleFromDB(userId);
-
-  if (role !== 'super_admin') {
-    redirect('/student/dashboard');
-  }
 
   // Parse search params
   const resolvedSearchParams = searchParams ? await searchParams : {};

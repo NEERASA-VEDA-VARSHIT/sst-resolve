@@ -69,34 +69,26 @@ export function ticketMatchesAdminAssignment(
   const assignmentDomain = (assignment.domain || "").toLowerCase();
   const assignmentScope = (assignment.scope || "").toLowerCase();
 
-  // Handle "Global" as a special case - admins with Global domain can access all tickets
+  // Handle "Global" domain as a special case - admins with Global domain can access all tickets
   if (assignmentDomain === "global") {
     return true;
   }
 
-  // Match domain (category)
+  // Match domain (category/domain name)
   if (!ticketCategory || ticketCategory !== assignmentDomain) {
     return false;
   }
 
-  // For Hostel domain, also check scope (location)
-  if (assignmentDomain === "hostel") {
-    if (assignment.scope) {
-      // Admin assigned to specific hostel, must match location
-      if (!ticketLocation) return false;
-      return ticketLocation === assignmentScope;
-    } else {
-      // Admin assigned to Hostel but no specific scope, can see all hostel tickets
-      return true;
-    }
-  }
-
-  // For College domain, no scope needed
-  if (assignmentDomain === "college") {
+  // Scope handling is generic and NOT hard-coded to any specific domain name:
+  // - If scope is empty or "global" → all scopes within this domain are allowed
+  // - Otherwise, scope is compared to ticket "location"
+  if (!assignmentScope || assignmentScope === "global") {
     return true;
   }
 
-  return false;
+  // When a concrete scope is set, require location match
+  if (!ticketLocation) return false;
+  return ticketLocation === assignmentScope;
 }
 
 /**

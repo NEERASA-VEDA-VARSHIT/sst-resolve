@@ -1,7 +1,4 @@
 import { auth } from "@clerk/nextjs/server";
-
-import { redirect } from "next/navigation";
-
 import { db, tickets, ticket_groups } from "@/db";
 
 import { eq, isNotNull } from "drizzle-orm";
@@ -20,11 +17,7 @@ import Link from "next/link";
 
 import { ArrowLeft, Users, Package, CheckCircle2, TrendingUp } from "lucide-react";
 
-import { getOrCreateUser } from "@/lib/auth/user-sync";
-
-import { getUserRoleFromDB } from "@/lib/auth/db-roles";
-
-import { getAllCommitteeTickets } from "@/lib/committee/getAllCommitteeTickets";
+import { getCachedUser, getCachedCommitteeTickets } from "@/lib/cache/cached-queries";
 
 import { AdminTicketFilters } from "@/components/admin/AdminTicketFilters";
 
@@ -45,40 +38,16 @@ export default async function CommitteeGroupsPage({
 }) {
 
   try {
-
+    // Layout ensures userId exists and user is a committee member
     const { userId } = await auth();
+    if (!userId) throw new Error("Unauthorized"); // TypeScript type guard - layout ensures this never happens
+
+    // Use cached function for better performance (request-scoped deduplication)
+    const user = await getCachedUser(userId);
 
 
 
-    if (!userId) {
-
-      redirect("/");
-
-    }
-
-
-
-    const user = await getOrCreateUser(userId);
-
-    if (!user) {
-
-      console.error("[CommitteeGroupsPage] Failed to create/fetch user");
-
-      redirect("/");
-
-    }
-
-
-
-    // Get role from database (single source of truth)
-
-    const role = await getUserRoleFromDB(userId);
-
-    if (role !== "committee") {
-
-      redirect("/committee/dashboard");
-
-    }
+    // Note: Role check is handled by committee/layout.tsx
 
 
 
@@ -91,7 +60,8 @@ export default async function CommitteeGroupsPage({
     const locationFilter = (typeof params["location"] === "string" ? params["location"] : params["location"]?.[0]) || "";
 
     // Fetch all committee-accessible tickets
-    const allCommitteeTickets = await getAllCommitteeTickets(user.id);
+    // Use cached function for better performance (request-scoped deduplication)
+    const allCommitteeTickets = await getCachedCommitteeTickets(user.id);
 
     // Apply filters
     let allTickets = allCommitteeTickets;

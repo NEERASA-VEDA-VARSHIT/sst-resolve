@@ -1,5 +1,4 @@
-import { auth } from "@clerk/nextjs/server";
-import { redirect, notFound } from "next/navigation";
+import { notFound } from "next/navigation";
 import { db } from "@/db";
 import { tickets, categories, users, domains, scopes, admin_profiles, ticket_statuses } from "@/db/schema";
 import type { TicketMetadata } from "@/db/inferred-types";
@@ -9,14 +8,16 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { FileText, Clock, CheckCircle2, AlertCircle, TrendingUp, Users, ArrowLeft, Zap, Target, Activity, Mail, Phone } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { getOrCreateUser } from "@/lib/auth/user-sync";
-import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { normalizeStatusForComparison } from "@/lib/utils";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { TicketCard } from "@/components/layout/TicketCard";
 import { getTicketStatusByValue } from "@/lib/status/getTicketStatuses";
 
+/**
+ * Super Admin Admin Detail Analytics Page
+ * Note: Auth and role checks are handled by superadmin/layout.tsx
+ */
 export default async function AdminDetailPage({
   params,
   searchParams
@@ -24,21 +25,6 @@ export default async function AdminDetailPage({
   params: Promise<{ adminId: string }>;
   searchParams: Promise<{ period?: string }>;
 }) {
-  const { userId } = await auth();
-
-  if (!userId) {
-    redirect("/");
-  }
-
-  // Ensure user exists in database
-  await getOrCreateUser(userId);
-
-  // Get role from database (single source of truth)
-  const role = await getUserRoleFromDB(userId);
-
-  if (role !== 'super_admin') {
-    redirect('/student/dashboard');
-  }
 
   const { adminId } = await params;
   const { period: periodParam } = await searchParams;

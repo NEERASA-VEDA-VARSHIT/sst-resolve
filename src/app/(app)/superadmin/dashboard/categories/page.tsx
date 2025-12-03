@@ -1,10 +1,6 @@
-import { auth } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { categories } from "@/db/schema";
 import { eq, asc, desc } from "drizzle-orm";
-import { getOrCreateUser } from "@/lib/auth/user-sync";
-import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Settings, ArrowLeft } from "lucide-react";
@@ -16,22 +12,11 @@ export const dynamic = "force-dynamic";
 // Cache response for 30 seconds to improve performance
 export const revalidate = 30;
 
+/**
+ * Super Admin Categories Page
+ * Note: Auth and role checks are handled by superadmin/layout.tsx
+ */
 export default async function CategoriesPage() {
-  const { userId } = await auth();
-
-  if (!userId) {
-    redirect("/");
-  }
-
-  // Ensure user exists in database
-  await getOrCreateUser(userId);
-
-  // Get role from database (single source of truth)
-  const role = await getUserRoleFromDB(userId);
-
-  if (role !== "super_admin") {
-    redirect("/student/dashboard");
-  }
 
   // Fetch all categories - explicitly select columns to avoid Drizzle issues
   let allCategories: Array<{

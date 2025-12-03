@@ -1,5 +1,3 @@
-import { auth } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
 import { db, tickets, ticket_statuses, categories, users } from "@/db";
 import { desc, eq } from "drizzle-orm";
 import { aliasedTable } from "drizzle-orm";
@@ -10,24 +8,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Calendar, AlertTriangle, CheckCircle2, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { getUserRoleFromDB } from "@/lib/auth/db-roles";
-import { getOrCreateUser } from "@/lib/auth/user-sync";
 
 // Force dynamic rendering since we use auth headers
 export const dynamic = "force-dynamic";
 // Cache response for 30 seconds to improve performance
 export const revalidate = 30;
 
+/**
+ * Super Admin Today Pending Page
+ * Note: Auth and role checks are handled by superadmin/layout.tsx
+ */
 export default async function SuperAdminTodayPendingPage() {
-  const { userId } = await auth();
-  if (!userId) redirect("/");
-
-  // Ensure user exists in database
-  await getOrCreateUser(userId);
-
-  // Get role from database (single source of truth)
-  const role = await getUserRoleFromDB(userId);
-  if (role !== "super_admin") redirect("/student/dashboard");
 
   const creatorUser = aliasedTable(users, "creator");
   

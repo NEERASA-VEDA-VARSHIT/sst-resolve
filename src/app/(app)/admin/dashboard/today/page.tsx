@@ -1,5 +1,4 @@
 import { auth } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
 import type { TicketMetadata } from "@/db/inferred-types";
 import { TicketCard } from "@/components/layout/TicketCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,26 +12,22 @@ import type { Ticket } from "@/db/types-only";
 // Revalidate every 30 seconds for fresh data
 export const revalidate = 30;
 
+/**
+ * Admin Today Pending Page
+ * Note: Auth and role checks are handled by admin/layout.tsx
+ */
 export default async function AdminTodayPendingPage() {
   const { userId } = await auth();
-  if (!userId) redirect("/");
+  if (!userId) throw new Error("Unauthorized"); // Should never happen due to layout protection
 
   // Use cached functions for better performance - parallelize queries
-  const [{ dbUser, role }, adminAssignment, ticketStatuses] = await Promise.all([
+  // Note: Role checks are handled by admin/layout.tsx
+  // Layout already ensures user exists via getOrCreateUser, so dbUser will exist
+  const [{ dbUser }, adminAssignment, ticketStatuses] = await Promise.all([
     getCachedAdminUser(userId),
     getCachedAdminAssignment(userId),
     getCachedTicketStatuses(),
   ]);
-
-  const isSuperAdmin = role === "super_admin";
-  
-  if (role === "student") redirect("/student/dashboard");
-  if (isSuperAdmin) redirect("/superadmin/dashboard");
-
-  if (!dbUser) {
-    console.error("[AdminTodayPendingPage] Failed to create/fetch user");
-    redirect("/");
-  }
 
   const adminUserDbId = dbUser.id;
 

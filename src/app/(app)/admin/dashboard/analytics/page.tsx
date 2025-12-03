@@ -25,8 +25,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { getOrCreateUser } from "@/lib/auth/user-sync";
-import { getUserRoleFromDB } from "@/lib/auth/db-roles";
+import { getCachedAdminUser } from "@/lib/cache/cached-queries";
 
 export default async function AdminAnalyticsPage({
   searchParams,
@@ -37,16 +36,12 @@ export default async function AdminAnalyticsPage({
   const page = Number(resolvedSearch?.page) || 1;
   const period = resolvedSearch?.period || "all";
 
+  // Layout ensures userId exists and user is an admin
   const { userId } = await auth();
-  if (!userId) redirect("/");
+  if (!userId) throw new Error("Unauthorized"); // TypeScript type guard - layout ensures this never happens
 
-  const dbUser = await getOrCreateUser(userId);
-  if (!dbUser) redirect("/");
-
-  const role = await getUserRoleFromDB(userId);
-  if (role !== "admin" && role !== "super_admin") {
-    redirect("/");
-  }
+  // Use cached function for better performance (request-scoped deduplication)
+  const { dbUser } = await getCachedAdminUser(userId);
 
   const [currentStaff] = await db
     .select({

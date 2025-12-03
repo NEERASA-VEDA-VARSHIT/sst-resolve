@@ -33,29 +33,18 @@ import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 import { TicketStatusBadge } from "@/components/tickets/TicketStatusBadge";
-
 import { ticketMatchesAdminAssignment } from "@/lib/assignment/admin-assignment";
-
 import { getCachedAdminUser, getCachedAdminAssignment } from "@/lib/cache/cached-queries";
-
 import { buildTimeline } from "@/lib/ticket/buildTimeline";
-
 import { normalizeStatusForComparison } from "@/lib/utils";
-
-import { getTicketStatuses, buildProgressMap } from "@/lib/status/getTicketStatuses";
-
+import { getCachedTicketStatuses } from "@/lib/cache/cached-queries";
+import { buildProgressMap } from "@/lib/status/getTicketStatuses";
 import { getCategoryProfileFields, getCategorySchema } from "@/lib/category/categories";
-
 import { resolveProfileFields } from "@/lib/ticket/profileFieldResolver";
-
 import { extractDynamicFields } from "@/lib/ticket/formatDynamicFields";
-
 import { DynamicFieldDisplay } from "@/components/tickets/DynamicFieldDisplay";
-
 import { CardDescription } from "@/components/ui/card";
-
 import { Info } from "lucide-react";
-
 import { format } from "date-fns";
 
 
@@ -66,11 +55,14 @@ export const revalidate = 10;
 
 
 
+/**
+ * Admin Ticket Detail Page
+ * Note: Auth and role checks are handled by admin/layout.tsx
+ */
 export default async function AdminTicketPage({ params }: { params: Promise<{ ticketId: string }> }) {
-
+  // Layout ensures userId exists and user is an admin
   const { userId } = await auth();
-
-  if (!userId) redirect("/");
+  if (!userId) throw new Error("Unauthorized"); // TypeScript type guard - layout ensures this never happens
 
 
 
@@ -230,7 +222,7 @@ export default async function AdminTicketPage({ params }: { params: Promise<{ ti
 
   if (ticketRows.length === 0) notFound();
 
-  if (!dbUser) redirect("/");
+  // Layout already ensures user exists, so dbUser will exist
 
 
 
@@ -284,9 +276,8 @@ export default async function AdminTicketPage({ params }: { params: Promise<{ ti
 
   
 
-  // Role check
-
-  if (role !== "admin" && role !== "super_admin") redirect("/student/dashboard");
+  // Note: Role check is handled by admin/layout.tsx
+  // Role is still needed for security check below (admin vs super_admin access control)
 
   
 
@@ -491,7 +482,8 @@ export default async function AdminTicketPage({ params }: { params: Promise<{ ti
 
   // Get ticket statuses and build progress map
 
-  const ticketStatuses = await getTicketStatuses().catch(() => []);
+  // Use cached function for better performance (request-scoped deduplication)
+  const ticketStatuses = await getCachedTicketStatuses().catch(() => []);
 
   const progressMap = Array.isArray(ticketStatuses) && ticketStatuses.length > 0 
 

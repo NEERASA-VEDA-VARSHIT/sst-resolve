@@ -2,16 +2,21 @@ import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { db, students, hostels, class_sections, batches } from "@/db";
 import { eq, asc } from "drizzle-orm";
-import { getOrCreateUser } from "@/lib/auth/user-sync";
+import { getCachedUser } from "@/lib/cache/cached-queries";
 import { getCategoriesHierarchy } from "@/lib/category/getCategoriesHierarchy";
 import TicketForm from "@/components/student/ticket-form/TicketForm";
 
+/**
+ * Student New Ticket Page
+ * Note: Auth is handled by student/layout.tsx
+ */
 export default async function NewTicketPage() {
+  // Layout ensures userId exists and user is created via getOrCreateUser
   const { userId } = await auth();
-  if (!userId) redirect("/");
+  if (!userId) throw new Error("Unauthorized"); // TypeScript type guard - layout ensures this never happens
 
-  const dbUser = await getOrCreateUser(userId);
-  if (!dbUser) redirect("/");
+  // Use cached function for better performance (request-scoped deduplication)
+  const dbUser = await getCachedUser(userId);
 
   // Parallelize all database queries for better performance
   const [

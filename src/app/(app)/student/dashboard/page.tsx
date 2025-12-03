@@ -9,10 +9,10 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { StatsCards } from "@/components/dashboard/StatsCards";
-import { getOrCreateUser } from "@/lib/auth/user-sync";
+import { getCachedUser } from "@/lib/cache/cached-queries";
 import { TicketSearchWrapper } from "@/components/student/TicketSearchWrapper";
 import { getCategoriesHierarchy } from "@/lib/category/getCategoriesHierarchy";
-import { getTicketStatuses } from "@/lib/status/getTicketStatuses";
+import { getCachedTicketStatuses } from "@/lib/cache/cached-queries";
 import { getCanonicalStatus } from "@/conf/constants";
 import { PaginationControls } from "@/components/dashboard/PaginationControls";
 import type { Ticket } from "@/db/types-only";
@@ -29,23 +29,14 @@ export default async function StudentDashboardPage({
 }) {
   try {
     // -----------------------------
-    // 1. Auth + Get DB User
+    // 1. Get DB User
+    // Note: Auth is handled by student/layout.tsx
+    // Layout ensures userId exists and user is created via getOrCreateUser
     // -----------------------------
     const { userId } = await auth();
-    const dbUser = await getOrCreateUser(userId!);
-
-  if (!dbUser) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-center space-y-4">
-          <h2 className="text-2xl font-bold text-destructive">Account Error</h2>
-          <p className="text-muted-foreground">
-            Your account could not be found. Please contact support.
-          </p>
-        </div>
-      </div>
-    );
-  }
+    if (!userId) throw new Error("Unauthorized"); // TypeScript type guard - layout ensures this never happens
+    // Use cached function for better performance (request-scoped deduplication)
+    const dbUser = await getCachedUser(userId);
 
   // -----------------------------
   // 2. Parse URL params
@@ -251,7 +242,7 @@ export default async function StudentDashboardPage({
     
     // Fetch categories hierarchy and statuses for search UI
     getCategoriesHierarchy().catch(() => []),
-    getTicketStatuses().catch(() => []),
+    getCachedTicketStatuses().catch(() => []),
   ]);
   
   // Helper function to recursively sanitize objects for serialization

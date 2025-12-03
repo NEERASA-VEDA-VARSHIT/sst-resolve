@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
-import { Loader2, Plus, X, Search, Package, Clock, MapPin, Calendar, ExternalLink, FileText, Users } from "lucide-react";
+import { Loader2, X, Search, Package, Clock, MapPin, Calendar, ExternalLink, FileText, Users } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -47,10 +47,6 @@ interface Ticket {
   updated_at?: Date | string | null;
 }
 
-type ApiTicketResponse = Ticket & {
-  category?: { name?: string | null } | null;
-};
-
 interface Committee {
   id: number;
   name: string;
@@ -81,11 +77,8 @@ export function ManageGroupTicketsDialog({
   onSuccess,
 }: ManageGroupTicketsDialogProps) {
   const [loading, setLoading] = useState(false);
-  const [availableTickets, setAvailableTickets] = useState<Ticket[]>([]);
-  const [selectedTicketsToAdd, setSelectedTicketsToAdd] = useState<number[]>([]);
   const [selectedTicketsToRemove, setSelectedTicketsToRemove] = useState<number[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [loadingTickets, setLoadingTickets] = useState(false);
   const [currentGroup, setCurrentGroup] = useState<TicketGroup | null>(group);
   const currentGroupRef = useRef<TicketGroup | null>(group);
   const [groupTAT, setGroupTAT] = useState("");
@@ -155,61 +148,6 @@ export function ManageGroupTicketsDialog({
     }
   }, [currentGroup?.id]);
 
-  const fetchAvailableTickets = useCallback(async () => {
-    if (!currentGroup?.id) return;
-
-    try {
-      setLoadingTickets(true);
-      const response = await fetch("/api/tickets/admin?limit=1000", {
-        cache: "no-store",
-      });
-
-      if (response.ok) {
-        const contentType = response.headers.get("content-type");
-        if (contentType && contentType.includes("application/json")) {
-          const data = await response.json();
-          const tickets = data.tickets || [];
-        
-          // Filter out tickets that are already in this group
-          // Use ref to get latest currentGroup without causing re-renders
-          const latestGroup = currentGroupRef.current;
-          if (!latestGroup) {
-            setAvailableTickets([]);
-            return;
-          }
-          
-          const groupTicketIds = new Set((latestGroup.tickets || []).map(t => t.id));
-          const available = tickets
-            .filter((t: Ticket) => !groupTicketIds.has(t.id))
-            .map((t: ApiTicketResponse) => ({
-              id: t.id,
-              status: t.status,
-              description: t.description,
-              location: t.location,
-              created_at: t.created_at,
-              due_at: t.due_at,
-              resolution_due_at: t.due_at || t.resolution_due_at,
-              metadata: t.metadata,
-              category_name: t.category_name || (t.category?.name) || null,
-            }));
-          
-          setAvailableTickets(available);
-        } else {
-          console.error("Server returned non-JSON response when fetching available tickets");
-          toast.error("Failed to load available tickets");
-        }
-      } else {
-        const errorText = await response.text();
-        console.error("Failed to fetch tickets:", response.status, errorText);
-        toast.error("Failed to load available tickets");
-      }
-    } catch (error) {
-      console.error("Error fetching available tickets:", error);
-      toast.error("An error occurred while loading tickets");
-    } finally {
-      setLoadingTickets(false);
-    }
-  }, [currentGroup?.id]);
 
   // Fetch committees when dialog opens
   useEffect(() => {
@@ -218,60 +156,16 @@ export function ManageGroupTicketsDialog({
     }
   }, [open, fetchCommittees]);
 
-  // Fetch available tickets when dialog opens
+  // Fetch group data when dialog opens
   useEffect(() => {
     if (open && currentGroup?.id) {
-      fetchAvailableTickets();
       fetchGroupData();
     } else {
       // Reset state when dialog closes
-      setSelectedTicketsToAdd([]);
       setSelectedTicketsToRemove([]);
       setSearchQuery("");
-      setAvailableTickets([]);
     }
-     
-  }, [open, currentGroup, fetchAvailableTickets, fetchGroupData]);
-
-  const handleAddTickets = useCallback(async () => {
-    if (!currentGroup || selectedTicketsToAdd.length === 0) {
-      toast.error("Please select tickets to add");
-      return;
-    }
-
-    try {
-      setLoading(true);
-      const response = await fetch(`/api/tickets/groups/${currentGroup.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          addTicketIds: selectedTicketsToAdd,
-        }),
-      });
-
-      if (response.ok) {
-        toast.success(`Added ${selectedTicketsToAdd.length} ticket(s) to group`);
-        setSelectedTicketsToAdd([]);
-        // Refresh group data and available tickets to reflect changes
-        await Promise.all([fetchGroupData(), fetchAvailableTickets()]);
-        onSuccess?.();
-        // Don't close dialog automatically - let user continue managing
-      } else {
-        const contentType = response.headers.get("content-type");
-        if (contentType && contentType.includes("application/json")) {
-          const error = await response.json();
-          toast.error(error.error || "Failed to add tickets to group");
-        } else {
-          toast.error(`Failed to add tickets to group (${response.status} ${response.statusText})`);
-        }
-      }
-    } catch (error) {
-      console.error("Error adding tickets to group:", error);
-      toast.error("Failed to add tickets to group");
-    } finally {
-      setLoading(false);
-    }
-  }, [currentGroup, selectedTicketsToAdd, onSuccess, fetchAvailableTickets, fetchGroupData]);
+  }, [open, currentGroup, fetchGroupData]);
 
   const handleRemoveTickets = useCallback(async () => {
     if (!currentGroup || selectedTicketsToRemove.length === 0) {
@@ -296,8 +190,8 @@ export function ManageGroupTicketsDialog({
       if (response.ok) {
         toast.success(`Removed ${selectedTicketsToRemove.length} ticket(s) from group`);
         setSelectedTicketsToRemove([]);
-        // Refresh group data and available tickets to reflect changes
-        await Promise.all([fetchGroupData(), fetchAvailableTickets()]);
+        // Refresh group data to reflect changes
+        await fetchGroupData();
         onSuccess?.();
         // Don't close dialog automatically - let user continue managing
       } else {
@@ -315,15 +209,7 @@ export function ManageGroupTicketsDialog({
     } finally {
       setLoading(false);
     }
-  }, [currentGroup, selectedTicketsToRemove, onSuccess, fetchAvailableTickets, fetchGroupData]);
-
-  const toggleTicketToAdd = (ticketId: number) => {
-    setSelectedTicketsToAdd(prev =>
-      prev.includes(ticketId)
-        ? prev.filter(id => id !== ticketId)
-        : [...prev, ticketId]
-    );
-  };
+  }, [currentGroup, selectedTicketsToRemove, onSuccess, fetchGroupData]);
 
   const toggleTicketToRemove = (ticketId: number) => {
     setSelectedTicketsToRemove(prev =>
@@ -415,17 +301,6 @@ export function ManageGroupTicketsDialog({
     }
   }, [currentGroup, selectedCommitteeId, fetchGroupData, onSuccess]);
 
-  const filteredAvailableTickets = availableTickets.filter(ticket => {
-    if (!searchQuery.trim()) return true;
-    const query = searchQuery.toLowerCase();
-    return (
-      ticket.id.toString().includes(query) ||
-      ticket.description?.toLowerCase().includes(query) ||
-      ticket.location?.toLowerCase().includes(query) ||
-      ticket.category_name?.toLowerCase().includes(query)
-    );
-  });
-
   const filteredGroupTickets = currentGroup?.tickets.filter(ticket => {
     if (!searchQuery.trim()) return true;
     const query = searchQuery.toLowerCase();
@@ -493,7 +368,7 @@ export function ManageGroupTicketsDialog({
         <DialogHeader className="pb-4 border-b">
           <DialogTitle className="text-2xl">Manage Tickets: {currentGroup.name}</DialogTitle>
           <DialogDescription className="text-sm mt-2">
-            Add or remove tickets from this group. Currently <span className="font-semibold">{currentGroup.ticketCount}</span> ticket{currentGroup.ticketCount !== 1 ? "s" : ""} in group.
+            Remove tickets from this group and manage its committee assignment and TAT. Currently <span className="font-semibold">{currentGroup.ticketCount}</span> ticket{currentGroup.ticketCount !== 1 ? "s" : ""} in group.
           </DialogDescription>
         </DialogHeader>
 
@@ -614,9 +489,8 @@ export function ManageGroupTicketsDialog({
               />
             </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Current Tickets in Group */}
-            <Card className="border-2">
+          {/* Current Tickets in Group */}
+          <Card className="border-2">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-base flex items-center gap-2">
@@ -754,157 +628,6 @@ export function ManageGroupTicketsDialog({
                 </ScrollArea>
               </CardContent>
             </Card>
-
-            {/* Available Tickets to Add */}
-            <Card className="border-2">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Plus className="w-4 h-4" />
-                    Available Tickets
-                    <Badge variant="secondary" className="ml-2">
-                      {filteredAvailableTickets.length}{availableTickets.length !== filteredAvailableTickets.length ? ` of ${availableTickets.length}` : ''}
-                    </Badge>
-                  </CardTitle>
-                  {selectedTicketsToAdd.length > 0 && (
-                    <Button
-                      variant="default"
-                      size="sm"
-                      onClick={handleAddTickets}
-                      disabled={loading}
-                    >
-                      {loading ? (
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      ) : (
-                        <Plus className="w-4 h-4 mr-2" />
-                      )}
-                      Add ({selectedTicketsToAdd.length})
-                    </Button>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent>
-                <ScrollArea className="h-[450px] -mx-4 px-4">
-                {loadingTickets ? (
-                  <div className="flex flex-col items-center justify-center h-full py-8">
-                    <Loader2 className="w-6 h-6 animate-spin text-muted-foreground mb-2" />
-                    <p className="text-sm text-muted-foreground">Loading tickets...</p>
-                  </div>
-                ) : filteredAvailableTickets.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-full py-8 text-center">
-                    <Package className="w-8 h-8 text-muted-foreground mb-2 opacity-50" />
-                    <p className="text-sm font-medium text-muted-foreground mb-1">
-                      {searchQuery ? "No tickets found" : "No available tickets"}
-                    </p>
-                    {!searchQuery && availableTickets.length === 0 && (
-                      <p className="text-xs text-muted-foreground">
-                        All tickets are already in this group or you don&rsquo;t have access
-                      </p>
-                    )}
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {filteredAvailableTickets.map((ticket) => (
-                      <div
-                        key={ticket.id}
-                        className={cn(
-                          "flex items-start gap-3 p-4 rounded-lg border-2 transition-all cursor-pointer mb-2",
-                          selectedTicketsToAdd.includes(ticket.id)
-                            ? "bg-primary/5 border-primary/50 shadow-sm"
-                            : "bg-card hover:bg-accent/50 hover:border-primary/30"
-                        )}
-                        onClick={() => toggleTicketToAdd(ticket.id)}
-                      >
-                        <Checkbox
-                          checked={selectedTicketsToAdd.includes(ticket.id)}
-                          onCheckedChange={() => toggleTicketToAdd(ticket.id)}
-                          className="mt-1"
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-start justify-between gap-2 mb-2">
-                            <div className="flex items-center gap-2 flex-wrap flex-1">
-                              <span className="text-sm font-mono font-semibold text-primary">#{ticket.id}</span>
-                              {ticket.status && (
-                                <Badge 
-                                  variant="outline" 
-                                  className={cn(
-                                    "text-xs font-semibold border",
-                                    STATUS_STYLES[ticket.status.toUpperCase()] || "bg-muted text-foreground"
-                                  )}
-                                >
-                                  {ticket.status.replaceAll("_", " ").replace(/\b\w/g, (l) => l.toUpperCase())}
-                                </Badge>
-                              )}
-                              {ticket.category_name && (
-                                <Badge variant="secondary" className="text-xs">
-                                  📁 {ticket.category_name}
-                                </Badge>
-                              )}
-                              {(() => {
-                                const tatDate = getTatDate(ticket);
-                                const tatInfo = computeTatInfo(tatDate);
-                                if (!tatDate || !tatInfo.label) return null;
-                                return (
-                                  <div
-                                    className={cn(
-                                      "flex items-center gap-1.5 font-semibold px-2 py-1 rounded-md text-xs flex-shrink-0",
-                                      tatInfo.overdue
-                                        ? "bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400 border border-red-200 dark:border-red-800"
-                                        : "bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400 border border-amber-200 dark:border-amber-800"
-                                    )}
-                                  >
-                                    <Clock className="w-3.5 h-3.5" />
-                                    <span className="whitespace-nowrap">{tatInfo.label}</span>
-                                  </div>
-                                );
-                              })()}
-                            </div>
-                            <a
-                              href={`/admin/dashboard/ticket/${ticket.id}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              className="text-muted-foreground hover:text-primary transition-colors"
-                            >
-                              <ExternalLink className="w-4 h-4" />
-                            </a>
-                          </div>
-                          {ticket.description && (
-                            <div className="mb-2">
-                              <div className="flex items-start gap-1.5">
-                                <FileText className="w-3.5 h-3.5 text-muted-foreground mt-0.5 flex-shrink-0" />
-                                <p className="text-xs text-muted-foreground line-clamp-3 leading-relaxed">
-                                  {ticket.description}
-                                </p>
-                              </div>
-                            </div>
-                          )}
-                          <div className="flex items-center gap-3 flex-wrap text-xs text-muted-foreground mt-1.5">
-                            {ticket.location && (
-                              <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted/30">
-                                <MapPin className="w-3 h-3" />
-                                <span className="font-medium">{ticket.location}</span>
-                              </div>
-                            )}
-                            {ticket.created_at && (
-                              <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted/30">
-                                <Calendar className="w-3 h-3" />
-                                <span>
-                                  {format(new Date(ticket.created_at), "MMM d, yyyy")}
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                </ScrollArea>
-              </CardContent>
-            </Card>
-          </div>
           </div>
         </ScrollArea>
 

@@ -1,5 +1,4 @@
 import { auth } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
 import { db, categories, domains } from "@/db";
 import { eq, inArray } from "drizzle-orm";
 import { TicketCard } from "@/components/layout/TicketCard";
@@ -35,21 +34,18 @@ export const dynamic = 'force-dynamic';
 // Revalidate every 30 seconds for fresh data
 export const revalidate = 30;
 
+/**
+ * Admin Dashboard Page
+ * Note: Auth and role checks are handled by admin/layout.tsx
+ */
 export default async function AdminDashboardPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
+  // Layout ensures userId exists and user is an admin
   const { userId } = await auth();
-
-  if (!userId) {
-    redirect("/");
-  }
+  if (!userId) throw new Error("Unauthorized"); // TypeScript type guard - layout ensures this never happens
 
   // Use cached functions for better performance (request-scoped deduplication)
-  // Note: Role-based redirects are handled in admin/layout.tsx and admin/dashboard/layout.tsx
+  // Layout already ensures user exists via getOrCreateUser, so adminDbUser will exist
   const { dbUser: adminDbUser } = await getCachedAdminUser(userId);
-
-  if (!adminDbUser) {
-    console.error('[Admin Dashboard] Failed to create/fetch user');
-    redirect("/");
-  }
 
   const adminUserId = adminDbUser.id;
 

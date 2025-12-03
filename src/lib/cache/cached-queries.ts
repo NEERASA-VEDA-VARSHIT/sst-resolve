@@ -42,6 +42,17 @@ export const getCachedCategories = cache(async () => {
     .where(eq(categories.is_active, true));
 });
 
+// Cache user lookup (request-scoped) - generic version for student/committee
+export const getCachedUser = cache(async (userId: string) => {
+  return await getOrCreateUser(userId);
+});
+
+// Cache committee tickets (request-scoped) - user-specific
+export const getCachedCommitteeTickets = cache(async (userId: string) => {
+  const { getAllCommitteeTickets } = await import("@/lib/committee/getAllCommitteeTickets");
+  return await getAllCommitteeTickets(userId);
+});
+
 /**
  * Cached function to get admin's tickets with optimized query
  * This is request-scoped cached to prevent duplicate queries

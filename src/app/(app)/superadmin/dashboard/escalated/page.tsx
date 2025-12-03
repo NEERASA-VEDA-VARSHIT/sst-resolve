@@ -1,5 +1,3 @@
-import { auth } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
 import { db, tickets, ticket_statuses } from "@/db";
 import { desc, eq } from "drizzle-orm";
 import type { Ticket } from "@/db/types-only";
@@ -10,19 +8,12 @@ import { AlertTriangle, TrendingUp, Calendar, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { getUserRoleFromDB } from "@/lib/auth/db-roles";
-import { getOrCreateUser } from "@/lib/auth/user-sync";
 
+/**
+ * Super Admin Escalated Page
+ * Note: Auth and role checks are handled by superadmin/layout.tsx
+ */
 export default async function SuperAdminEscalatedPage() {
-  const { userId } = await auth();
-  if (!userId) redirect("/");
-
-  // Ensure user exists in database
-  await getOrCreateUser(userId);
-
-  // Get role from database (single source of truth)
-  const role = await getUserRoleFromDB(userId);
-  if (role !== "super_admin") redirect("/student/dashboard");
 
   const allTicketRows = await db
     .select({

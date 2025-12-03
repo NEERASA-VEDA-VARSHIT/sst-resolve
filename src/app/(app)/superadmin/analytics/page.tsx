@@ -1,5 +1,3 @@
-import { auth } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
 import { db, tickets, categories, users, roles, domains, scopes, admin_profiles, ticket_statuses } from "@/db";
 import { eq, sql } from "drizzle-orm";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -9,8 +7,6 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { getOrCreateUser } from "@/lib/auth/user-sync";
-import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { Progress } from "@/components/ui/progress";
 import { getAllTicketStatuses } from "@/lib/status/getTicketStatuses";
 import { Badge } from "@/components/ui/badge";
@@ -19,18 +15,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 // Force dynamic rendering since we use auth headers
 export const dynamic = "force-dynamic";
 
+/**
+ * Super Admin Analytics Page
+ * Note: Auth and role checks are handled by superadmin/layout.tsx
+ */
 export default async function SuperAdminAnalyticsPage() {
     try {
-        const { userId } = await auth();
-        if (!userId) redirect("/");
-
-        const dbUser = await getOrCreateUser(userId);
-        if (!dbUser) redirect("/");
-
-        const role = await getUserRoleFromDB(userId);
-        if (role !== 'super_admin') {
-            redirect('/admin/dashboard/analytics');
-        }
 
         // === SYSTEM-WIDE DATA COLLECTION ===
 

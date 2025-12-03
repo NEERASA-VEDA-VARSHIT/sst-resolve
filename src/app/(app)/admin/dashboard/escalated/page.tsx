@@ -1,5 +1,4 @@
 import { auth } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
 import { db, tickets, categories, ticket_statuses } from "@/db";
 import type { TicketMetadata } from "@/db/inferred-types";
 import type { Ticket } from "@/db/types-only";
@@ -10,38 +9,26 @@ import { AlertTriangle, TrendingUp, Calendar, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { getUserRoleFromDB } from "@/lib/auth/db-roles";
-import { getOrCreateUser } from "@/lib/auth/user-sync";
-import { getTicketStatuses } from "@/lib/status/getTicketStatuses";
+import { getCachedAdminUser, getCachedAdminAssignment, getCachedTicketStatuses } from "@/lib/cache/cached-queries";
 
 // Force dynamic rendering since we use auth headers
 export const dynamic = "force-dynamic";
 
+/**
+ * Admin Escalated Page
+ * Note: Auth and role checks are handled by admin/layout.tsx
+ */
 export default async function AdminEscalatedAnalyticsPage() {
   const { userId } = await auth();
-  if (!userId) redirect("/");
+  if (!userId) throw new Error("Unauthorized"); // TypeScript type guard - layout ensures this never happens
 
-  // Ensure user exists in database
-  await getOrCreateUser(userId);
+  // Use cached functions for better performance (request-scoped deduplication)
+  const [{ dbUser }, adminAssignment] = await Promise.all([
+    getCachedAdminUser(userId),
+    getCachedAdminAssignment(userId),
+  ]);
 
-  // Get role from database (single source of truth)
-  const role = await getUserRoleFromDB(userId);
-  const isSuperAdmin = role === "super_admin";
-  if (role === "student") redirect("/student/dashboard");
-  if (isSuperAdmin) redirect("/superadmin/dashboard");
-
-  const adminUserId = userId;
-
-  // Get admin's domain/scope assignment
-  const { getAdminAssignment, ticketMatchesAdminAssignment } = await import("@/lib/assignment/admin-assignment");
-  const adminAssignment = await getAdminAssignment(adminUserId);
-
-  // Get admin's user record
-  const dbUser = await getOrCreateUser(adminUserId);
-  if (!dbUser) {
-    console.error("[AdminEscalatedAnalyticsPage] Failed to create/fetch user");
-    redirect("/");
-  }
+  const { ticketMatchesAdminAssignment } = await import("@/lib/assignment/admin-assignment");
 
   const adminUserDbId = dbUser.id;
 
@@ -143,8 +130,8 @@ export default async function AdminEscalatedAnalyticsPage() {
   const endOfToday = new Date(now);
   endOfToday.setHours(23, 59, 59, 999);
 
-  // Fetch dynamic ticket statuses
-  const ticketStatuses = await getTicketStatuses();
+  // Use cached function for better performance (request-scoped deduplication)
+  const ticketStatuses = await getCachedTicketStatuses();
   const finalStatuses = new Set(ticketStatuses.filter(s => s.is_final).map(s => s.value));
 
   const isOpen = (s: string | null) => !finalStatuses.has(s || "");

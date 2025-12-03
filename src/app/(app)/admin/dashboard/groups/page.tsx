@@ -1,5 +1,4 @@
 import { auth } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
 import { db, tickets, categories, ticket_statuses, ticket_groups } from "@/db";
 import { desc, eq, isNotNull, and, sql, ilike } from "drizzle-orm";
 import { TicketGrouping } from "@/components/admin/TicketGrouping";
@@ -25,22 +24,14 @@ export default async function AdminGroupsPage({
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   try {
+    // Note: Auth and role checks are handled by admin/layout.tsx
+    // Layout ensures userId exists and user is an admin, so we can safely use non-null assertion
     const { userId } = await auth();
-
-    if (!userId) {
-      redirect("/");
-    }
+    if (!userId) throw new Error("Unauthorized"); // TypeScript type guard - layout ensures this never happens
 
     // Use cached functions for better performance
-    const { dbUser, role } = await getCachedAdminUser(userId);
-    
-    if (!dbUser) {
-      console.error("[AdminGroupsPage] Failed to create/fetch user");
-      redirect("/");
-    }
-
-    if (role === "student") redirect("/student/dashboard");
-    // Super admin should use superadmin groups page
+    // Layout already ensures user exists via getOrCreateUser, so dbUser will exist
+    const { dbUser } = await getCachedAdminUser(userId);
 
     // Get admin's domain/scope assignment (cached)
     const adminAssignment = await getCachedAdminAssignment(userId);
@@ -97,10 +88,8 @@ export default async function AdminGroupsPage({
       );
     }
 
-    // For admin role, only see tickets explicitly assigned to this admin
-    if (role === "admin") {
-      conditions.push(eq(tickets.assigned_to, dbUser.id));
-    }
+    // Layout ensures user is an admin (not super_admin), so filter by assignment
+    conditions.push(eq(tickets.assigned_to, dbUser.id));
 
     // Fetch tickets with proper joins for better data
     const allTicketRows = await db
@@ -133,16 +122,12 @@ export default async function AdminGroupsPage({
       .limit(1000); // Reasonable limit for grouping operations
 
     // Filter tickets based on admin assignment
+    // Layout ensures user is an admin (not super_admin), so filter by assignment
     let allTickets: AdminTicketRow[] = allTicketRows.filter(ticket => {
-      // For admin role, filter by assignment
-      if (role === "admin") {
-        return ticketMatchesAdminAssignment({
-          category: ticket.category_name,
-          location: ticket.location,
-        }, adminAssignment);
-      }
-      // For other roles, show all tickets
-      return true;
+      return ticketMatchesAdminAssignment({
+        category: ticket.category_name,
+        location: ticket.location,
+      }, adminAssignment);
     }) as AdminTicketRow[];
 
     // Apply additional in-memory filters that rely on metadata (subcategory, TAT)

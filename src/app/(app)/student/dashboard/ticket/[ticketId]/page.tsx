@@ -1,7 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
-import { redirect, notFound } from "next/navigation";
+import { notFound } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
-import { getOrCreateUser } from "@/lib/auth/user-sync";
+import { getCachedUser } from "@/lib/cache/cached-queries";
 import { getFullTicketData } from "@/lib/ticket/getFullTicketData";
 import { resolveProfileFields } from "@/lib/ticket/profileFieldResolver";
 import { buildTimeline } from "@/lib/ticket/buildTimeline";
@@ -9,7 +9,8 @@ import { enrichTimelineWithTAT } from "@/lib/ticket/enrichTimeline";
 import { parseTicketMetadata, extractImagesFromMetadata } from "@/lib/ticket/parseTicketMetadata";
 import { calculateTATInfo } from "@/lib/ticket/calculateTAT";
 import { normalizeStatusForComparison } from "@/lib/utils";
-import { getTicketStatuses, buildProgressMap } from "@/lib/status/getTicketStatuses";
+import { getCachedTicketStatuses } from "@/lib/cache/cached-queries";
+import { buildProgressMap } from "@/lib/status/getTicketStatuses";
 import { TicketHeader } from "@/components/student/ticket/TicketHeader";
 import { TicketQuickInfo } from "@/components/student/ticket/TicketQuickInfo";
 import { TicketSubmittedInfo } from "@/components/student/ticket/TicketSubmittedInfo";
@@ -52,23 +53,24 @@ const TicketStudentInfo = nextDynamic(() =>
 export const dynamic = "force-dynamic";
 export const revalidate = 30;
 
+/**
+ * Student Ticket Detail Page
+ * Note: Auth is handled by student/layout.tsx
+ */
 export default async function StudentTicketPage({ params }: { params: Promise<{ ticketId: string }> }) {
   const { userId } = await auth();
-  if (!userId) redirect("/");
+  if (!userId) throw new Error("Unauthorized"); // Should never happen due to layout protection
 
   const { ticketId } = await params;
   const id = Number(ticketId);
   if (!Number.isFinite(id)) notFound();
 
-  const dbUser = await getOrCreateUser(userId);
-  if (!dbUser) {
-    console.error('[Student Ticket Page] Failed to create/fetch user');
-    notFound();
-  }
+  // Use cached function for better performance (request-scoped deduplication)
+  const dbUser = await getCachedUser(userId);
 
   const [data, ticketStatuses] = await Promise.all([
     getFullTicketData(id, dbUser.id),
-    getTicketStatuses(),
+    getCachedTicketStatuses(),
   ]);
 
   if (!data || data.ticket.created_by !== dbUser.id) {
