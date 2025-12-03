@@ -624,7 +624,7 @@ export function NotificationSettingsManager() {
                       // Use admin.id as unique key, but track by slackUserId in the array
                       // This ensures each admin checkbox is independent
                       const slackUserId = admin.slackUserId || "";
-                      const isChecked = slackUserId && formData.slack_cc_user_ids.includes(slackUserId);
+                      const isChecked = Boolean(slackUserId && formData.slack_cc_user_ids.includes(slackUserId));
                       
                       return (
                         <div key={admin.id} className="flex items-center space-x-2">

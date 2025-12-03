@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const {
-      scope_id, // Not used - column doesn't exist in DB
+      // scope_id not used - column doesn't exist in DB
       category_id,
       subcategory_id,
       enable_slack = true,

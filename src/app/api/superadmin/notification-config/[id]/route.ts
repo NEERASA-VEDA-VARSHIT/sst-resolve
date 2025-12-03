@@ -81,7 +81,7 @@ export async function PATCH(
 
     const body = await request.json();
     const {
-      scope_id,
+      // scope_id not used - column doesn't exist in DB
       category_id,
       subcategory_id,
       enable_slack,

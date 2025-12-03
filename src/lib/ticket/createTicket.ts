@@ -133,8 +133,6 @@ export async function createTicket(args: {
 
   // Resolve category with active check in single query (optimized)
   // If subcategoryId is provided, we can fetch both category and subcategory in parallel
-  let categoryRecord: { id: number; name: string; is_active: boolean } | undefined;
-  let subcategoryRecord: { id: number; name: string } | undefined;
   
   // Start category lookup
   const categoryPromise = payload.categoryId
@@ -164,7 +162,7 @@ export async function createTicket(args: {
   // Start subcategory lookup early if we have subcategoryId (can run in parallel with category)
   const subcategoryPromise = payload.subcategoryId
     ? categoryPromise.then(async (cat) => {
-        if (!cat) return undefined;
+        if (!cat || !payload.subcategoryId) return undefined;
         const [s] = await db
           .select({ id: subcategories.id, name: subcategories.name, is_active: subcategories.is_active })
           .from(subcategories)
@@ -182,7 +180,7 @@ export async function createTicket(args: {
     : Promise.resolve(undefined);
 
   // Wait for category lookup
-  categoryRecord = await categoryPromise;
+  const categoryRecord = await categoryPromise;
   if (!categoryRecord) {
     throw new Error("Category not found");
   }
@@ -191,6 +189,7 @@ export async function createTicket(args: {
   }
 
   // Wait for subcategory if it was started early, otherwise do sequential lookup
+  let subcategoryRecord: { id: number; name: string } | undefined;
   if (payload.subcategoryId) {
     subcategoryRecord = await subcategoryPromise;
   } else if (payload.subcategory) {
@@ -210,6 +209,7 @@ export async function createTicket(args: {
 
   // Sub-subcategory resolution (optional) - depends on subcategoryRecord
   // Start this lookup early to parallelize with field lookup
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const subSubcategoryPromise = subcategoryPromise.then(async (subcat) => {
     if (!subcat) return undefined;
     
@@ -243,6 +243,61 @@ export async function createTicket(args: {
     return undefined;
   });
   
+  // Merge details (payload.details may be stringified JSON from client)
+  // Parse this early so fieldLookupPromise can use it
+  type DetailsObject = {
+    [key: string]: unknown;
+  };
+  let detailsObj: DetailsObject = {};
+  if (payload.details) {
+    if (typeof payload.details === "string") {
+      try {
+        detailsObj = JSON.parse(payload.details);
+      } catch {
+        detailsObj = { raw: payload.details };
+      }
+    } else {
+      detailsObj = payload.details;
+    }
+  }
+
+  // NEW: Store field IDs for future lookup (snapshot-on-delete approach)
+  // Start field lookup early to parallelize with sub-subcategory lookup
+  const usedFieldIds: number[] = [];
+  const dynamicFields: Record<string, { field_id: number; value: unknown }> = {};
+  
+  // Start field lookup promise early (will be awaited later if needed)
+  // This can run in parallel with sub-subcategory lookup since they're independent
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const fieldLookupPromise = (async () => {
+    // Wait for subcategory to be resolved first
+    const subcat = await subcategoryPromise;
+    if (subcat?.id && detailsObj) {
+      // Fetch current active fields to map slugs to IDs
+      const { category_fields } = await import("@/db/schema");
+      const { eq } = await import("drizzle-orm");
+
+      const activeFields = await db
+        .select({ id: category_fields.id, slug: category_fields.slug })
+        .from(category_fields)
+        .where(eq(category_fields.subcategory_id, subcat.id));
+
+      const fieldMap = new Map(activeFields.map(f => [f.slug, f.id]));
+
+      // Store field IDs with their values
+      // Safety check: ensure detailsObj is an object before calling Object.entries
+      if (detailsObj && typeof detailsObj === 'object' && !Array.isArray(detailsObj)) {
+        for (const [slug, value] of Object.entries(detailsObj)) {
+          const fieldId = fieldMap.get(slug);
+          if (fieldId && value !== null && value !== undefined && value !== '') {
+            usedFieldIds.push(fieldId);
+            dynamicFields[slug] = { field_id: fieldId, value };
+          }
+        }
+      }
+    }
+  })();
+  
   // Wait for subcategory, sub-subcategory, and field lookups in parallel
   const [finalSubcategory, finalSubSubcategory] = await Promise.all([
     subcategoryPromise,
@@ -274,59 +329,7 @@ export async function createTicket(args: {
     metadata.subSubcategoryId = payload.subSubcategoryId || null;
   }
 
-  // Merge details (payload.details may be stringified JSON from client)
-  type DetailsObject = {
-    [key: string]: unknown;
-  };
-  let detailsObj: DetailsObject = {};
-  if (payload.details) {
-    if (typeof payload.details === "string") {
-      try {
-        detailsObj = JSON.parse(payload.details);
-      } catch {
-        detailsObj = { raw: payload.details };
-      }
-    } else {
-      detailsObj = payload.details;
-    }
-  }
-
-  // NEW: Store field IDs for future lookup (snapshot-on-delete approach)
-  // Start field lookup early to parallelize with sub-subcategory lookup
-  const usedFieldIds: number[] = [];
-  const dynamicFields: Record<string, { field_id: number; value: unknown }> = {};
-  
-  // Start field lookup promise early (will be awaited later if needed)
-  // This can run in parallel with sub-subcategory lookup since they're independent
-  const fieldLookupPromise = (async () => {
-    // Wait for subcategory to be resolved first
-    const subcat = await subcategoryPromise;
-    if (subcat?.id && detailsObj) {
-      // Fetch current active fields to map slugs to IDs
-      const { category_fields } = await import("@/db/schema");
-      const { eq } = await import("drizzle-orm");
-
-      const activeFields = await db
-        .select({ id: category_fields.id, slug: category_fields.slug })
-        .from(category_fields)
-        .where(eq(category_fields.subcategory_id, subcat.id));
-
-      const fieldMap = new Map(activeFields.map(f => [f.slug, f.id]));
-
-      // Store field IDs with their values
-      // Safety check: ensure detailsObj is an object before calling Object.entries
-      if (detailsObj && typeof detailsObj === 'object' && !Array.isArray(detailsObj)) {
-        for (const [slug, value] of Object.entries(detailsObj)) {
-          const fieldId = fieldMap.get(slug);
-          if (fieldId && value !== null && value !== undefined && value !== '') {
-            usedFieldIds.push(fieldId);
-            dynamicFields[slug] = { field_id: fieldId, value };
-          }
-        }
-      }
-    }
-  })();
-
+  // Merge with detailsObj and add dynamic fields
   metadata = {
     ...metadata,
     // Keep backward compatibility - only spread if detailsObj is a valid object
