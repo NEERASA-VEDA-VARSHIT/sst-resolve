@@ -212,7 +212,17 @@ export async function POST(request: NextRequest) {
       console.error("[Ticket API] Unhandled error in async notification block:", error);
     });
 
-    return NextResponse.json(ticket, { 
+    // Return minimal ticket data for faster response
+    // Full ticket details can be fetched from /api/tickets/[id] if needed
+    return NextResponse.json({ 
+      id: ticket.id,
+      ticket: {
+        id: ticket.id,
+        status_id: ticket.status_id,
+        category_id: ticket.category_id,
+        created_at: ticket.created_at,
+      }
+    }, { 
       status: 201,
       headers: {
         'Content-Type': 'application/json',

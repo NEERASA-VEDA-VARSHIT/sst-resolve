@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { db, notification_config, categories, subcategories } from "@/db";
+import { db, notification_config, categories, subcategories, scopes } from "@/db";
 import { eq, desc } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 
@@ -24,14 +24,14 @@ export async function GET() {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // Fetch all notification configs with category/subcategory names
-    // Note: scope_id column doesn't exist in the database (migration 0003 didn't include it)
-    // Using Drizzle select but excluding scope_id from the query
+    // Fetch all notification configs with category/subcategory/scope names
     const configs = await db
       .select({
         id: notification_config.id,
+        scope_id: notification_config.scope_id,
         category_id: notification_config.category_id,
         subcategory_id: notification_config.subcategory_id,
+        scope_name: scopes.name,
         category_name: categories.name,
         subcategory_name: subcategories.name,
         enable_slack: notification_config.enable_slack,
@@ -45,18 +45,19 @@ export async function GET() {
         updated_at: notification_config.updated_at,
       })
       .from(notification_config)
+      .leftJoin(scopes, eq(notification_config.scope_id, scopes.id))
       .leftJoin(categories, eq(notification_config.category_id, categories.id))
       .leftJoin(subcategories, eq(notification_config.subcategory_id, subcategories.id))
       .orderBy(desc(notification_config.priority), desc(notification_config.created_at));
 
-    // Transform the results to match the expected format (add scope_id as null for compatibility)
+    // Transform the results to match the expected format
     const transformedConfigs = configs.map((row) => ({
       id: row.id,
-      scope_id: null, // Column doesn't exist in DB
+      scope_id: row.scope_id,
       category_id: row.category_id,
       subcategory_id: row.subcategory_id,
-      scope_name: null,
-      domain_name: null,
+      scope_name: row.scope_name,
+      domain_name: null, // Not fetched for now
       category_name: row.category_name,
       subcategory_name: row.subcategory_name,
       enable_slack: row.enable_slack,
@@ -97,7 +98,7 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const {
-      // scope_id not used - column doesn't exist in DB
+      scope_id,
       category_id,
       subcategory_id,
       enable_slack = true,
@@ -130,14 +131,17 @@ export async function POST(request: NextRequest) {
       calculatedPriority = 20; // Category + Subcategory
     } else if (category_id) {
       calculatedPriority = 10; // Category only
+    } else if (scope_id) {
+      calculatedPriority = 5; // Scope level
     } else {
-      calculatedPriority = 0; // Global default (scope_id not supported - column doesn't exist)
+      calculatedPriority = 0; // Global default
     }
 
-    // Insert without scope_id since the column doesn't exist in the database
+    // Insert notification config
     const [newConfig] = await db
       .insert(notification_config)
       .values({
+        scope_id: scope_id || null,
         category_id: category_id || null,
         subcategory_id: subcategory_id || null,
         enable_slack: enable_slack ?? true,

@@ -274,19 +274,29 @@ export function DynamicFieldRenderer({
           />
         );
 
-      case "boolean":
+      case "boolean": {
+        // Convert value to boolean for comparison
+        const boolValue = value === true || value === "true" || value === "yes" || String(value).toLowerCase() === "yes";
+        const selectValue = boolValue ? "yes" : "no";
+        
         return (
-          <div className="flex items-center space-x-2">
-            <Checkbox
-              id={field.slug}
-              checked={value === true}
-              onCheckedChange={(checked) => onChange(checked === true)}
-            />
-            <Label htmlFor={field.slug} className="cursor-pointer">
-              {placeholder || field.name}
-            </Label>
-          </div>
+          <Select
+            value={selectValue}
+            onValueChange={(newValue) => {
+              // Store as boolean true/false
+              onChange(newValue === "yes");
+            }}
+          >
+            <SelectTrigger className={cn(error && "border-destructive")}>
+              <SelectValue placeholder={placeholder || "Select Yes or No"} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="yes">Yes</SelectItem>
+              <SelectItem value="no">No</SelectItem>
+            </SelectContent>
+          </Select>
         );
+      }
 
       case "upload": {
         const images: string[] = Array.isArray(value) ? value : (value ? [String(value)] : []);

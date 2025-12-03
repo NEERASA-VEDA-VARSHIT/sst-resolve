@@ -29,6 +29,13 @@
       "when": 1764522178822,
       "tag": "0003_neat_darkhawk",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1733148000000,
+      "tag": "0005_add_scope_id_to_notification_config",
+      "breakpoints": true
     }
   ]
 }

@@ -7,6 +7,73 @@ import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 // findSPOCForTicket is imported dynamically from spoc-assignment.ts
 import { TICKET_STATUS } from "@/conf/constants";
 import { getStatusIdByValue } from "@/lib/status/getTicketStatuses";
+import { findSuperAdminClerkId } from "@/lib/db-helpers";
+
+const STATUS_ID_CACHE = new Map<string, number>();
+
+const SUPER_ADMIN_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+let cachedSuperAdmin: { value: string | null; expiresAt: number } | null = null;
+let inflightSuperAdminPromise: Promise<string | null> | null = null;
+
+async function getCachedStatusId(statusValue: string): Promise<number | null> {
+  const cached = STATUS_ID_CACHE.get(statusValue);
+  if (typeof cached === "number") {
+    return cached;
+  }
+
+  const statusId = await getStatusIdByValue(statusValue);
+  if (statusId) {
+    STATUS_ID_CACHE.set(statusValue, statusId);
+    return statusId;
+  }
+
+  return null;
+}
+
+async function getCachedSuperAdminUserId(): Promise<string | null> {
+  const now = Date.now();
+  if (cachedSuperAdmin && cachedSuperAdmin.expiresAt > now) {
+    return cachedSuperAdmin.value;
+  }
+
+  if (inflightSuperAdminPromise) {
+    return inflightSuperAdminPromise;
+  }
+
+  inflightSuperAdminPromise = (async () => {
+    try {
+      const superClerkId = await findSuperAdminClerkId();
+      let localUserId: string | null = null;
+
+      if (superClerkId) {
+        const [u] = await db
+          .select({ id: users.id })
+          .from(users)
+          .where(eq(users.external_id, superClerkId))
+          .limit(1);
+        localUserId = u?.id ?? null;
+      }
+
+      cachedSuperAdmin = {
+        value: localUserId,
+        expiresAt: Date.now() + SUPER_ADMIN_CACHE_TTL,
+      };
+
+      return localUserId;
+    } catch (error) {
+      console.error("[createTicket] Failed to resolve super admin user id:", error);
+      cachedSuperAdmin = {
+        value: null,
+        expiresAt: Date.now() + 30_000, // retry soon if there was an error
+      };
+      return null;
+    } finally {
+      inflightSuperAdminPromise = null;
+    }
+  })();
+
+  return inflightSuperAdminPromise;
+}
 
 /**
  * createTicket - core domain function
@@ -209,7 +276,6 @@ export async function createTicket(args: {
 
   // Sub-subcategory resolution (optional) - depends on subcategoryRecord
   // Start this lookup early to parallelize with field lookup
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const subSubcategoryPromise = subcategoryPromise.then(async (subcat) => {
     if (!subcat) return undefined;
     
@@ -268,7 +334,6 @@ export async function createTicket(args: {
   
   // Start field lookup promise early (will be awaited later if needed)
   // This can run in parallel with sub-subcategory lookup since they're independent
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const fieldLookupPromise = (async () => {
     // Wait for subcategory to be resolved first
     const subcat = await subcategoryPromise;
@@ -369,43 +434,39 @@ export async function createTicket(args: {
   // Determine assignment (SPOC or super admin) - optimized parallel lookups
   // Run metadata size check, status lookup, and assignment logic in parallel
   let assignedUserId: string | null = null;
-  const { findSuperAdminClerkId } = await import("@/lib/db-helpers");
   
   // Get status_id for OPEN status (start early to parallelize with other operations)
-  const statusIdPromise = getStatusIdByValue(TICKET_STATUS.OPEN).then(async (id) => {
-    if (!id) {
-      // CRITICAL: Status not found - this should never happen in production
-      const { logCriticalError } = await import("@/lib/monitoring/alerts");
-      logCriticalError(
-        "OPEN status not found in database",
-        new Error(`Status "${TICKET_STATUS.OPEN}" not found in ticket_statuses table`),
-        { category: categoryRecord.name, categoryId: categoryRecord.id }
-      );
-      
-      const { ticket_statuses } = await import("@/db/schema");
-      const [fallbackStatus] = await db
-        .select({ id: ticket_statuses.id })
-        .from(ticket_statuses)
-        .where(eq(ticket_statuses.is_active, true))
-        .limit(1);
-      
-      if (!fallbackStatus) {
-        throw new Error(`No active ticket status found in database. System configuration error.`);
-      }
-      console.warn(`[createTicket] Using fallback status ID ${fallbackStatus.id} instead of "${TICKET_STATUS.OPEN}"`);
-      return fallbackStatus.id;
+  const statusIdPromise = (async () => {
+    const cachedStatusId = await getCachedStatusId(TICKET_STATUS.OPEN);
+    if (typeof cachedStatusId === "number") {
+      return cachedStatusId;
     }
-    return id;
-  });
+
+    // CRITICAL: Status not found - this should never happen in production
+    const { logCriticalError } = await import("@/lib/monitoring/alerts");
+    logCriticalError(
+      "OPEN status not found in database",
+      new Error(`Status "${TICKET_STATUS.OPEN}" not found in ticket_statuses table`),
+      { category: categoryRecord.name, categoryId: categoryRecord.id }
+    );
+    
+    const { ticket_statuses } = await import("@/db/schema");
+    const [fallbackStatus] = await db
+      .select({ id: ticket_statuses.id })
+      .from(ticket_statuses)
+      .where(eq(ticket_statuses.is_active, true))
+      .limit(1);
+    
+    if (!fallbackStatus) {
+      throw new Error(`No active ticket status found in database. System configuration error.`);
+    }
+    console.warn(`[createTicket] Using fallback status ID ${fallbackStatus.id} instead of "${TICKET_STATUS.OPEN}"`);
+    STATUS_ID_CACHE.set(TICKET_STATUS.OPEN, fallbackStatus.id);
+    return fallbackStatus.id;
+  })();
   
   // Start fetching super admin early (we'll need it either way)
-  const superAdminPromise = findSuperAdminClerkId().then(async (superClerk) => {
-    if (superClerk) {
-      const [u] = await db.select({ id: users.id }).from(users).where(eq(users.external_id, superClerk)).limit(1);
-      return u?.id || null;
-    }
-    return null;
-  });
+  const superAdminPromise = getCachedSuperAdminUserId();
 
   // Run assignment logic in parallel with status lookup
   const [statusId, assignmentResult] = await Promise.all([

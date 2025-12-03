@@ -122,12 +122,9 @@ export default async function SuperAdminTodayPendingPage() {
     return tatDateTime < nowTime;
   });
 
-  // Calculate overdue tickets - includes all pending tickets with TAT date in the past
-  // This includes tickets due today that are past their time, and tickets due before today
-  const overdueToday = allTickets.filter(t => {
-    const status = (t.status || "").toLowerCase();
-    if (!pendingStatuses.has(status)) return false;
-    
+  // Calculate overdue tickets from todayPending tickets
+  // These are tickets that are past their TAT date/time
+  const overdueToday = todayPending.filter(t => {
     // Exclude tickets awaiting student response from overdue
     const normalizedStatus = (t.status || "").toLowerCase();
     if (normalizedStatus === "awaiting_student") {

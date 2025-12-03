@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
@@ -780,7 +780,13 @@ export default function TicketForm(props: TicketFormProps) {
       toast.error("Please fix the highlighted errors");
       return;
     }
+    
+    // Show immediate feedback to user
     setLoading(true);
+    const loadingToastId = toast.loading("Creating your ticket...", {
+      description: "Please wait while we process your request",
+    });
+    
     try {
       // Clean up profile data - remove undefined keys
       // Safety check: ensure form.profile is a valid object before calling Object.entries
@@ -842,12 +848,32 @@ export default function TicketForm(props: TicketFormProps) {
       }
 
       const ticket = await res.json();
-      toast.success("Ticket created successfully");
-      router.push(`/student/dashboard/ticket/${ticket.id}`);
+      const ticketId = ticket?.id || ticket?.ticket?.id;
+      
+      if (!ticketId) {
+        throw new Error("Ticket created but no ID returned");
+      }
+      
+      // Dismiss loading toast and show success
+      toast.dismiss(loadingToastId);
+      toast.success("Ticket created successfully!", {
+        description: `Ticket #${ticketId} has been created and assigned`,
+        duration: 3000,
+      });
+      
+      // Small delay to let user see success message before redirect
+      await new Promise(resolve => setTimeout(resolve, 500));
+      router.push(`/student/dashboard/ticket/${ticketId}`);
     } catch (err: unknown) {
       console.error("Ticket create error:", err);
       const errorMessage = err instanceof Error ? err.message : "Failed to create ticket";
-      toast.error(errorMessage);
+      
+      // Dismiss loading toast and show error
+      toast.dismiss(loadingToastId);
+      toast.error("Failed to create ticket", {
+        description: errorMessage,
+        duration: 5000,
+      });
     } finally {
       setLoading(false);
     }
@@ -1260,7 +1286,30 @@ export default function TicketForm(props: TicketFormProps) {
               </Alert>
             </div>
           ) : (
-            <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="space-y-4 sm:space-y-6">
+            <>
+              {loading && (
+                <Alert role="status" aria-live="polite" className="mb-4 sm:mb-6 flex items-start gap-3">
+                  <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 mt-0.5 animate-spin text-primary" />
+                  <div className="space-y-1">
+                    <AlertTitle className="text-sm sm:text-base">Creating your ticket…</AlertTitle>
+                    <AlertDescription className="text-xs sm:text-sm">
+                      Hang tight while we save your details and notify the right team.
+                    </AlertDescription>
+                  </div>
+                </Alert>
+              )}
+              <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="space-y-4 sm:space-y-6 relative">
+              {/* Loading overlay */}
+              {loading && (
+                <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center rounded-lg">
+                  <div className="flex flex-col items-center gap-3">
+                    <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                    <p className="text-sm font-medium">Creating your ticket...</p>
+                    <p className="text-xs text-muted-foreground">Please wait</p>
+                  </div>
+                </div>
+              )}
+              
               <div className="grid grid-cols-1 gap-4 sm:gap-6">
                 <CategorySelector />
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
@@ -1281,6 +1330,7 @@ export default function TicketForm(props: TicketFormProps) {
                 <SubmitBar />
               </div>
             </form>
+            </>
           )}
         </CardContent>
       </Card>

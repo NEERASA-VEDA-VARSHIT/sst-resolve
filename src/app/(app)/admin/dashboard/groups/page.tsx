@@ -164,15 +164,6 @@ export default async function AdminGroupsPage({
             </Button>
           </div>
 
-          {/* Filters */}
-          <Card className="shadow-sm">
-            <CardHeader>
-              <CardTitle>Filters</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <AdminTicketFilters />
-            </CardContent>
-          </Card>
 
           {/* Stats Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -248,6 +239,16 @@ export default async function AdminGroupsPage({
             </CardContent>
           </Card>
 
+          {/* Filters */}
+          <Card className="shadow-sm">
+            <CardHeader>
+              <CardTitle>Filters</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <AdminTicketFilters />
+            </CardContent>
+          </Card>
+          
           {/* Select Tickets to Group */}
           <Card className="shadow-sm">
             <CardHeader>
