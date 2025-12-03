@@ -637,6 +637,7 @@ export function ManageGroupTicketsDialog({
               </CardContent>
             </Card>
           </div>
+          </ScrollArea>
         </div>
 
         <DialogFooter className="border-t pt-4 px-6 pb-6 flex-shrink-0">

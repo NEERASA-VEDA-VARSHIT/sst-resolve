@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { tickets, users, outbox, ticket_statuses } from "@/db/schema";
+import { tickets, outbox, ticket_statuses } from "@/db/schema";
 import type { TicketInsert } from "@/db/inferred-types";
 import { eq } from "drizzle-orm";
 import { AddCommentSchema } from "@/schemas/business/ticket";
