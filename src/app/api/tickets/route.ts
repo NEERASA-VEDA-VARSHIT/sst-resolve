@@ -133,10 +133,39 @@ export async function POST(request: NextRequest) {
           console.log(`[Ticket API] 🔍 Query completed. Found ${results.length} outbox event(s) for ticket #${ticket.id}`);
         } catch (queryError) {
           console.error(`[Ticket API] ❌ Error querying outbox for ticket #${ticket.id}:`, queryError);
-          throw queryError;
+          // Try fallback query method
+          try {
+            console.log(`[Ticket API] 🔄 Trying fallback query for ticket #${ticket.id}`);
+            const allUnprocessed = await dbInstance
+              .select()
+              .from(outboxTable)
+              .where(
+                and(
+                  eq(outboxTable.event_type, "ticket.created"),
+                  isNull(outboxTable.processed_at)
+                )
+              )
+              .orderBy(desc(outboxTable.created_at))
+              .limit(50); // Get recent 50 events
+            
+            // Filter in memory
+            outboxEvent = allUnprocessed.find(event => {
+              if (!event.payload || typeof event.payload !== 'object') return false;
+              const payload = event.payload as Record<string, unknown>;
+              const eventTicketId = typeof payload.ticket_id === 'number' ? payload.ticket_id : 
+                                   typeof payload.ticketId === 'number' ? payload.ticketId : null;
+              return eventTicketId === ticket.id;
+            });
+            
+            if (outboxEvent) {
+              console.log(`[Ticket API] ✅ Found outbox event ${outboxEvent.id} using fallback query for ticket #${ticket.id}`);
+            } else {
+              console.log(`[Ticket API] ⚠️ No matching outbox event found in recent 50 events for ticket #${ticket.id}`);
+            }
+          } catch (fallbackError) {
+            console.error(`[Ticket API] ❌ Fallback query also failed for ticket #${ticket.id}:`, fallbackError);
+          }
         }
-        
-        let eventToProcess = outboxEvent;
         
         if (!outboxEvent) {
           console.log(`[Ticket API] ⏳ Outbox event not found immediately for ticket #${ticket.id}, retrying...`);
