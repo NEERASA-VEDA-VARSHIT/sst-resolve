@@ -114,27 +114,10 @@ export async function POST(request: NextRequest) {
         
         // Find the outbox event for this specific ticket using JSONB query
         // Only look for unprocessed events
-        const [outboxEvent] = await dbInstance
-          .select()
-          .from(outboxTable)
-          .where(
-            and(
-              eq(outboxTable.event_type, "ticket.created"),
-              isNull(outboxTable.processed_at),
-              sql`${outboxTable.payload}->>'ticket_id' = ${ticket.id.toString()}`
-            )
-          )
-          .orderBy(desc(outboxTable.created_at))
-          .limit(1);
-        
-        let eventToProcess = outboxEvent;
-        
-        if (!eventToProcess) {
-          console.log(`[Ticket API] ⏳ Outbox event not found immediately for ticket #${ticket.id}, retrying...`);
-          // No outbox event found, retrying...
-          // Wait a bit and retry once (race condition handling)
-          await new Promise(resolve => setTimeout(resolve, 500));
-          const [retryEvent] = await dbInstance
+        console.log(`[Ticket API] 🔍 Searching for outbox event for ticket #${ticket.id}`);
+        let outboxEvent;
+        try {
+          const results = await dbInstance
             .select()
             .from(outboxTable)
             .where(
@@ -146,6 +129,67 @@ export async function POST(request: NextRequest) {
             )
             .orderBy(desc(outboxTable.created_at))
             .limit(1);
+          outboxEvent = results[0];
+          console.log(`[Ticket API] 🔍 Query completed. Found ${results.length} outbox event(s) for ticket #${ticket.id}`);
+        } catch (queryError) {
+          console.error(`[Ticket API] ❌ Error querying outbox for ticket #${ticket.id}:`, queryError);
+          throw queryError;
+        }
+        
+        let eventToProcess = outboxEvent;
+        
+        if (!outboxEvent) {
+          console.log(`[Ticket API] ⏳ Outbox event not found immediately for ticket #${ticket.id}, retrying...`);
+          // No outbox event found, retrying...
+          // Wait a bit and retry once (race condition handling)
+          await new Promise(resolve => setTimeout(resolve, 500));
+          let retryEvent;
+          try {
+            const retryResults = await dbInstance
+              .select()
+              .from(outboxTable)
+              .where(
+                and(
+                  eq(outboxTable.event_type, "ticket.created"),
+                  isNull(outboxTable.processed_at),
+                  sql`CAST(${outboxTable.payload}->>'ticket_id' AS INTEGER) = ${ticket.id}`
+                )
+              )
+              .orderBy(desc(outboxTable.created_at))
+              .limit(1);
+            retryEvent = retryResults[0];
+            console.log(`[Ticket API] 🔍 Retry query completed. Found ${retryResults.length} outbox event(s) for ticket #${ticket.id}`);
+          } catch (retryError) {
+            console.error(`[Ticket API] ❌ Error in retry query for ticket #${ticket.id}:`, retryError);
+            // Try fallback for retry too
+            try {
+              const allUnprocessed = await dbInstance
+                .select()
+                .from(outboxTable)
+                .where(
+                  and(
+                    eq(outboxTable.event_type, "ticket.created"),
+                    isNull(outboxTable.processed_at)
+                  )
+                )
+                .orderBy(desc(outboxTable.created_at))
+                .limit(50);
+              
+              retryEvent = allUnprocessed.find(event => {
+                if (!event.payload || typeof event.payload !== 'object') return false;
+                const payload = event.payload as Record<string, unknown>;
+                const eventTicketId = typeof payload.ticket_id === 'number' ? payload.ticket_id : 
+                                     typeof payload.ticketId === 'number' ? payload.ticketId : null;
+                return eventTicketId === ticket.id;
+              });
+              
+              if (retryEvent) {
+                console.log(`[Ticket API] ✅ Found outbox event ${retryEvent.id} using fallback retry query for ticket #${ticket.id}`);
+              }
+            } catch (fallbackRetryError) {
+              console.error(`[Ticket API] ❌ Fallback retry query also failed for ticket #${ticket.id}:`, fallbackRetryError);
+            }
+          }
           
           if (!retryEvent) {
             // Still no outbox event after retry, cron job will handle it
@@ -153,10 +197,12 @@ export async function POST(request: NextRequest) {
             return;
           }
           console.log(`[Ticket API] ✅ Found outbox event ${retryEvent.id} on retry for ticket #${ticket.id}`);
-          eventToProcess = retryEvent;
+          outboxEvent = retryEvent;
         } else {
-          console.log(`[Ticket API] ✅ Found outbox event ${eventToProcess.id} for ticket #${ticket.id}`);
+          console.log(`[Ticket API] ✅ Found outbox event ${outboxEvent.id} for ticket #${ticket.id}`);
         }
+        
+        const eventToProcess = outboxEvent;
         
         if (eventToProcess && eventToProcess.payload) {
           // Ensure payload is a valid object
@@ -195,16 +241,23 @@ export async function POST(request: NextRequest) {
           }
           
           // Process immediately (non-blocking)
+          // Use void to explicitly mark as fire-and-forget, but ensure promise chain continues
           console.log(`[Ticket API] 🚀 Starting notification processing for ticket #${payload.ticket_id}`);
-          processTicketCreated(eventToProcess.id, payload)
+          void processTicketCreated(eventToProcess.id, payload)
             .then(() => {
               console.log(`[Ticket API] ✅ Notification processing completed for ticket #${payload.ticket_id}`);
               return markOutboxSuccess(eventToProcess.id);
             })
+            .then(() => {
+              console.log(`[Ticket API] ✅ Outbox event ${eventToProcess.id} marked as processed for ticket #${payload.ticket_id}`);
+            })
             .catch((error) => {
               console.error(`[Ticket API] ❌ Failed to process outbox event ${eventToProcess.id} for ticket #${payload.ticket_id}:`, error);
               console.error("[Ticket API] Error stack:", error instanceof Error ? error.stack : "No stack trace");
-              return markOutboxFailure(eventToProcess.id, error instanceof Error ? error.message : "Unknown error");
+              return markOutboxFailure(eventToProcess.id, error instanceof Error ? error.message : "Unknown error")
+                .catch((markError) => {
+                  console.error(`[Ticket API] ❌ Failed to mark outbox failure for event ${eventToProcess.id}:`, markError);
+                });
             });
         } else {
           console.warn(`[Ticket API] ⚠️ Outbox event has no payload for ticket #${ticket.id}`);
