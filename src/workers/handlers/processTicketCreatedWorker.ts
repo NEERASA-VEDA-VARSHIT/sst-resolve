@@ -471,6 +471,7 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
       try {
         const { getNotificationConfig } = await import("@/lib/notification/notification-config");
         // Pass scope_id and location for scope-based notification config lookup
+        console.log(`[processTicketCreated] Calling getNotificationConfig for ticket #${ticketId}: categoryId=${ticket.categoryId}, scopeId=${ticketRow.scopeId}, location=${ticket.location}, categoryName=${categoryName}`);
         const notifConfig = await getNotificationConfig(
           ticket.categoryId, 
           null, // subcategoryId - would need to be extracted from metadata if needed

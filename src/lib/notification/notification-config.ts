@@ -168,8 +168,8 @@ export async function getNotificationConfig(
         ? config.email_recipients.filter((email): email is string => typeof email === 'string')
         : [];
       
-      // Debug logging
-      console.log(`[getNotificationConfig] Found config: categoryId=${categoryId}, scopeId=${resolvedScopeId}, enableSlack=${config.enable_slack}, enableEmail=${config.enable_email}, slackChannel=${config.slack_channel}`);
+      // Debug logging - show both input params and matched config values
+      console.log(`[getNotificationConfig] Found config: input(categoryId=${categoryId}, scopeId=${resolvedScopeId}) -> matched(config.category_id=${config.category_id}, config.scope_id=${config.scope_id}, config.subcategory_id=${config.subcategory_id}), enableSlack=${config.enable_slack}, enableEmail=${config.enable_email}, slackChannel=${config.slack_channel}`);
       
       return {
         enableSlack: config.enable_slack ?? true,
