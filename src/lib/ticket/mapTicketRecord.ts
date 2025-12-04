@@ -7,6 +7,8 @@ type TicketRow = {
   title: string | null;
   description: string | null;
   location: string | null;
+  scope_id?: number | null;
+  scope_name?: string | null;
   status_id: number | null;
   status_value: string | null;
   category_id: number | null;
@@ -22,6 +24,8 @@ type TicketRow = {
   created_at: Date | null;
   updated_at: Date | null;
   category_name: string | null;
+  creator_full_name?: string | null;
+  creator_email?: string | null;
 };
 
 export function mapTicketRecord(row: TicketRow) {
@@ -42,6 +46,8 @@ export function mapTicketRecord(row: TicketRow) {
     status_id: row.status_id || null,
     scope_id: null,
     category_name: row.category_name || null,
+    creator_name: row.creator_full_name || null,
+    creator_email: row.creator_email || null,
     resolved_at: ticketMetadata.resolved_at ? new Date(ticketMetadata.resolved_at as string) : null,
     reopened_at: ticketMetadata.reopened_at ? new Date(ticketMetadata.reopened_at as string) : null,
     acknowledged_at: ticketMetadata.acknowledged_at ? new Date(ticketMetadata.acknowledged_at as string) : null,

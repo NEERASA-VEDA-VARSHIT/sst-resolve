@@ -4,7 +4,7 @@
  * Used by superadmin to view tickets for any committee
  */
 
-import { db, committees, tickets, categories, ticket_statuses, ticket_committee_tags, ticket_groups } from "@/db";
+import { db, committees, tickets, categories, ticket_statuses, ticket_committee_tags, ticket_groups, users } from "@/db";
 import { desc, eq, inArray } from "drizzle-orm";
 import { mapTicketRecord } from "@/lib/ticket/mapTicketRecord";
 
@@ -113,10 +113,13 @@ export async function getCommitteeTicketsById(committeeId: number) {
       created_at: tickets.created_at,
       updated_at: tickets.updated_at,
       category_name: categories.name,
+      creator_full_name: users.full_name,
+      creator_email: users.email,
     })
     .from(tickets)
     .leftJoin(ticket_statuses, eq(tickets.status_id, ticket_statuses.id))
     .leftJoin(categories, eq(tickets.category_id, categories.id))
+    .leftJoin(users, eq(tickets.created_by, users.id))
     .where(inArray(tickets.id, uniqueTaggedTicketIds))
     .orderBy(desc(tickets.created_at))
     .then(rows => rows
