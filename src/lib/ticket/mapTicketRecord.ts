@@ -13,7 +13,6 @@ type TicketRow = {
   status_value: string | null;
   category_id: number | null;
   subcategory_id: number | null;
-  sub_subcategory_id: number | null;
   created_by: string | null;
   assigned_to: string | null;
   group_id: number | null;

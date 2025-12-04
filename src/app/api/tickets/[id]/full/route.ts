@@ -35,7 +35,6 @@ import { getOrCreateUser } from "@/lib/auth/user-sync";
 import {
   getCategorySchema,
   getSubcategoryById,
-  getSubSubcategoryById,
   getCategoryById,
   getCategoryProfileFields
 } from "@/lib/category/categories";
@@ -122,22 +121,12 @@ export async function GET(
 
     // 4. Derive subcategory and sub-subcategory from IDs (authoritative)
     let subcategory = null;
-    let subSubcategory = null;
-
     const subcategoryId = typeof metadata?.subcategoryId === 'number' ? metadata.subcategoryId : null;
-    const subSubcategoryId = typeof metadata?.subSubcategoryId === 'number' ? metadata.subSubcategoryId : null;
     
     if (subcategoryId && ticketData.ticket_category_id) {
       subcategory = await getSubcategoryById(
         subcategoryId,
         ticketData.ticket_category_id
-      );
-    }
-
-    if (subSubcategoryId && subcategoryId) {
-      subSubcategory = await getSubSubcategoryById(
-        subSubcategoryId,
-        subcategoryId
       );
     }
 
@@ -292,11 +281,6 @@ export async function GET(
         id: subcategory.id,
         name: subcategory.name,
         slug: subcategory.slug,
-      } : null,
-      subSubcategory: subSubcategory ? {
-        id: subSubcategory.id,
-        name: subSubcategory.name,
-        slug: subSubcategory.slug,
       } : null,
       creator: {
         name: ticketData.user_full_name?.trim() || null,

@@ -22,7 +22,6 @@ export interface Ticket {
 	status_id: number;
 	category_id: number | null;
 	subcategory_id: number | null;
-	sub_subcategory_id: number | null;
 	scope_id: number | null;
 	created_by: string | null; // UUID
 	assigned_to: string | null; // UUID

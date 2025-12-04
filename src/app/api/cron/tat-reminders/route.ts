@@ -82,7 +82,6 @@ export async function GET(request: NextRequest) {
         status: ticket_statuses.value,
         category_id: tickets.category_id,
         subcategory_id: tickets.subcategory_id,
-        sub_subcategory_id: tickets.sub_subcategory_id,
         created_by: tickets.created_by,
         assigned_to: tickets.assigned_to,
         escalation_level: tickets.escalation_level,

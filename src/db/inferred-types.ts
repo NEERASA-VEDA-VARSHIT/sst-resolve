@@ -24,7 +24,6 @@ import {
   hostels,
   categories,
   subcategories,
-  sub_subcategories,
   ticket_feedback,
   ticket_integrations,
   ticket_activity,
@@ -78,8 +77,6 @@ export type CategoryInsert = typeof categories.$inferInsert;
 export type SubcategorySelect = typeof subcategories.$inferSelect;
 export type SubcategoryInsert = typeof subcategories.$inferInsert;
 
-export type SubSubcategorySelect = typeof sub_subcategories.$inferSelect;
-export type SubSubcategoryInsert = typeof sub_subcategories.$inferInsert;
 
 // ============================================================================
 // TICKET ACTIVITY (replaces comments)

@@ -113,7 +113,6 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
 
     subcategory_id: number | null;
 
-    sub_subcategory_id: number | null;
 
     created_by: string | null;
 
@@ -205,7 +204,6 @@ export default async function SuperAdminDashboardPage({ searchParams }: { search
 
           subcategory_id: tickets.subcategory_id,
 
-          sub_subcategory_id: tickets.sub_subcategory_id,
 
           created_by: tickets.created_by,
 

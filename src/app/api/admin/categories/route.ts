@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import { categories, subcategories, sub_subcategories, category_fields, field_options } from "@/db/schema";
+import { categories, subcategories, category_fields, field_options } from "@/db/schema";
 import { eq, desc, asc, and, inArray } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { getOrCreateUser } from "@/lib/auth/user-sync";
@@ -84,31 +84,9 @@ export async function GET(request: NextRequest) {
         )
         .orderBy(asc(subcategories.display_order), desc(subcategories.created_at));
 
-      // Optimized: Fetch all sub-subcategories and fields in parallel (reduces N+1 queries)
+      // Optimized: Fetch all fields in parallel (reduces N+1 queries)
       const subcategoryIds = subcats.map(s => s.id);
       
-      // Fetch all sub-subcategories for all subcategories in one query (optimized)
-      const allSubSubcatsOptimized = subcategoryIds.length > 0 ? await db
-        .select({
-          id: sub_subcategories.id,
-          subcategory_id: sub_subcategories.subcategory_id,
-          name: sub_subcategories.name,
-          slug: sub_subcategories.slug,
-          description: sub_subcategories.description,
-          is_active: sub_subcategories.is_active,
-          display_order: sub_subcategories.display_order,
-          created_at: sub_subcategories.created_at,
-          updated_at: sub_subcategories.updated_at,
-        })
-        .from(sub_subcategories)
-        .where(
-          and(
-            inArray(sub_subcategories.subcategory_id, subcategoryIds),
-            includeInactive ? undefined : eq(sub_subcategories.is_active, true)
-          )
-        )
-        .orderBy(asc(sub_subcategories.display_order), desc(sub_subcategories.created_at)) : [];
-
       // Fetch all fields for all subcategories in one query
       const allFields = subcategoryIds.length > 0 ? await db
         .select({
@@ -152,13 +130,6 @@ export async function GET(request: NextRequest) {
         .orderBy(asc(field_options.display_order), desc(field_options.created_at)) : [];
 
       // Group data by subcategory_id for efficient lookup
-      const subSubcatsBySubcatId = new Map<number, typeof allSubSubcatsOptimized>();
-      for (const subSubcat of allSubSubcatsOptimized) {
-        const existing = subSubcatsBySubcatId.get(subSubcat.subcategory_id) || [];
-        existing.push(subSubcat);
-        subSubcatsBySubcatId.set(subSubcat.subcategory_id, existing);
-      }
-
       const fieldsBySubcatId = new Map<number, typeof allFields>();
       for (const field of allFields) {
         const existing = fieldsBySubcatId.get(field.subcategory_id) || [];
@@ -175,7 +146,6 @@ export async function GET(request: NextRequest) {
 
       // Transform subcategories with grouped data
       const subcatsWithData = subcats.map((subcat) => {
-        const subSubcats = subSubcatsBySubcatId.get(subcat.id) || [];
         const fields = fieldsBySubcatId.get(subcat.id) || [];
         
         // Attach options to select fields
@@ -193,11 +163,6 @@ export async function GET(request: NextRequest) {
           active: subcat.is_active,
         };
         delete transformedSubcat.is_active;
-
-        transformedSubcat.sub_subcategories = subSubcats.map(subSubcat => {
-          const { is_active, ...rest } = subSubcat;
-          return { ...rest, active: is_active };
-        });
 
         transformedSubcat.fields = fieldsWithOptions.map(field => {
           const { is_active, ...rest } = field;

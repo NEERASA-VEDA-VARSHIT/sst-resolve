@@ -97,7 +97,6 @@ type Subcategory = {
   slug?: string;
   description?: string | null;
   fields?: DynamicField[];
-  sub_subcategories?: SubSubcategory[];
   display_order?: number;
 };
 
@@ -319,7 +318,6 @@ export default function TicketForm(props: TicketFormProps) {
     return {
       categoryId: null as number | null,
       subcategoryId: null as number | null,
-      subSubcategoryId: null as number | null,
       description: "",
       details: {} as Record<string, unknown>,
       profile: initialProfile as Record<string, string>,
@@ -532,10 +530,6 @@ export default function TicketForm(props: TicketFormProps) {
       if (!form.subcategoryId) newErrors["subcategory"] = "Subcategory is required";
     }
 
-    if (currentSubcategory && currentSubcategory.sub_subcategories && currentSubcategory.sub_subcategories.length > 0) {
-      if (!form.subSubcategoryId) newErrors["subSubcategory"] = "Please select a sub-type";
-    }
-
     // Check if dynamic fields handle description
     const fieldsToCheck = currentSubcategory?.fields || [];
     const hasDynamicDescription = fieldsToCheck.some(f => 
@@ -668,11 +662,6 @@ export default function TicketForm(props: TicketFormProps) {
 
     if (currentSchema && currentSchema.subcategories && currentSchema.subcategories.length > 0) {
       total++; if (form.subcategoryId) complete++;
-    }
-
-    const ss = currentSubcategory?.sub_subcategories || [];
-    if (ss.length > 0) {
-      total++; if (form.subSubcategoryId) complete++;
     }
 
     const pf = currentSchema?.profileFields || [];
@@ -813,7 +802,6 @@ export default function TicketForm(props: TicketFormProps) {
       const payload = {
         categoryId: form.categoryId,
         subcategoryId: form.subcategoryId,
-        subSubcategoryId: form.subSubcategoryId || null,
         description: form.description,
         details: detailsWithoutImages,
         images: images.length > 0 ? images : undefined,
@@ -904,7 +892,7 @@ export default function TicketForm(props: TicketFormProps) {
           value={form.categoryId?.toString() || ""}
           onValueChange={(v) => {
             const id = v ? Number(v) : null;
-            setFormPartial({ categoryId: id, subcategoryId: null, subSubcategoryId: null, details: { images: form.details?.images || [] } });
+            setFormPartial({ categoryId: id, subcategoryId: null, details: { images: form.details?.images || [] } });
             setErrors((p) => { const c = { ...p }; delete c.category; delete c.subcategory; return c; });
           }}
         >
@@ -933,8 +921,8 @@ export default function TicketForm(props: TicketFormProps) {
           value={form.subcategoryId?.toString() || ""}
           onValueChange={(v) => {
             const id = v ? Number(v) : null;
-            setFormPartial({ subcategoryId: id, subSubcategoryId: null, details: { images: form.details?.images || [] } });
-            setErrors((p) => { const c = { ...p }; delete c.subcategory; delete c.subSubcategory; return c; });
+            setFormPartial({ subcategoryId: id, details: { images: form.details?.images || [] } });
+            setErrors((p) => { const c = { ...p }; delete c.subcategory; return c; });
           }}
         >
           <SelectTrigger id="subcategory" className={`w-full h-11 ${errors.subcategory ? "border-destructive" : ""}`}>
@@ -949,31 +937,6 @@ export default function TicketForm(props: TicketFormProps) {
     );
   }
 
-  function SubSubcategorySelector() {
-    const ss = currentSubcategory?.sub_subcategories || [];
-    if (!ss || ss.length === 0) return null;
-    return (
-      <div className="space-y-2">
-        <Label className="text-sm sm:text-base font-semibold">Sub-Type <span className="text-destructive">*</span></Label>
-        <Select
-          value={form.subSubcategoryId?.toString() || ""}
-          onValueChange={(v) => {
-            const id = v ? Number(v) : null;
-            setFormPartial({ subSubcategoryId: id });
-            setErrors((p) => { const c = { ...p }; delete c.subSubcategory; return c; });
-          }}
-        >
-          <SelectTrigger id="subSubcategory" className={`w-full h-11 ${errors.subSubcategory ? "border-destructive" : ""}`}>
-            <SelectValue placeholder="Select sub-type" />
-          </SelectTrigger>
-          <SelectContent>
-            {ss.map((s) => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        {errors.subSubcategory && <p className="text-sm text-destructive flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errors.subSubcategory}</p>}
-      </div>
-    );
-  }
 
   // Create field-specific image upload handler
   const createImageUploadHandler = useCallback((fieldSlug: string) => {

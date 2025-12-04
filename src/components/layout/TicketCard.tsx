@@ -280,7 +280,6 @@ function TicketCardComponent({ ticket, basePath = "/student/dashboard", disableL
                   </Badge>
                 )}
 
-                {/* Note: subSubcategory is not in TicketMetadata type, removed for now */}
               </div>
             </div>
           </div>

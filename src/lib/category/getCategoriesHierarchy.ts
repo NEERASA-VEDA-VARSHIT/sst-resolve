@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { categories, subcategories, sub_subcategories, category_fields, field_options } from "@/db/schema";
+import { categories, subcategories, category_fields, field_options } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { unstable_cache } from "next/cache";
 
@@ -11,7 +11,6 @@ export const getCategoriesHierarchy = unstable_cache(
       const [
           categoriesResult,
           subcategoriesResult,
-          subSubcategoriesResult,
           fieldsResult,
           optionsResult
       ] = await Promise.allSettled([
@@ -34,16 +33,6 @@ export const getCategoriesHierarchy = unstable_cache(
               })
               .from(subcategories)
               .where(eq(subcategories.is_active, true)),
-          db
-              .select({
-                  id: sub_subcategories.id,
-                  subcategory_id: sub_subcategories.subcategory_id,
-                  name: sub_subcategories.name,
-                  slug: sub_subcategories.slug,
-                  display_order: sub_subcategories.display_order,
-              })
-              .from(sub_subcategories)
-              .where(eq(sub_subcategories.is_active, true)),
           db
               .select({
                   id: category_fields.id,
@@ -73,7 +62,6 @@ export const getCategoriesHierarchy = unstable_cache(
       // Extract results, handling failures gracefully
       const activeCategories = categoriesResult.status === 'fulfilled' ? categoriesResult.value : [];
       const activeSubcategories = subcategoriesResult.status === 'fulfilled' ? subcategoriesResult.value : [];
-      const allSubSubcategories = subSubcategoriesResult.status === 'fulfilled' ? subSubcategoriesResult.value : [];
       const activeFields = fieldsResult.status === 'fulfilled' ? fieldsResult.value : [];
       const activeOptions = optionsResult.status === 'fulfilled' ? optionsResult.value : [];
 
@@ -83,9 +71,6 @@ export const getCategoriesHierarchy = unstable_cache(
       }
       if (subcategoriesResult.status === 'rejected') {
         console.warn('[getCategoriesHierarchy] Failed to fetch subcategories:', subcategoriesResult.reason);
-      }
-      if (subSubcategoriesResult.status === 'rejected') {
-        console.warn('[getCategoriesHierarchy] Failed to fetch sub-subcategories:', subSubcategoriesResult.reason);
       }
       if (fieldsResult.status === 'rejected') {
         console.warn('[getCategoriesHierarchy] Failed to fetch category fields:', fieldsResult.reason);
@@ -109,13 +94,6 @@ export const getCategoriesHierarchy = unstable_cache(
         return (a.name || '').localeCompare(b.name || '');
     });
 
-    const sortedSubSubcategories = allSubSubcategories.sort((a, b) => {
-        if ((a.display_order || 0) !== (b.display_order || 0)) {
-            return (a.display_order || 0) - (b.display_order || 0);
-        }
-        return (a.name || '').localeCompare(b.name || '');
-    });
-
     const sortedFields = activeFields.sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
     const sortedOptions = activeOptions.sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
 
@@ -130,18 +108,12 @@ export const getCategoriesHierarchy = unstable_cache(
             label: category.name || '',
             id: category.id,
             subcategories: categorySubcategories.map((sub) => {
-                const subs = sortedSubSubcategories.filter(ss => ss.subcategory_id === sub.id);
                 const fields = sortedFields.filter(f => f.subcategory_id === sub.id);
 
                 return {
                     value: sub.slug || '',
                     label: sub.name || '',
                     id: sub.id,
-                    sub_subcategories: subs.map(ss => ({
-                        value: ss.slug || '',
-                        label: ss.name || '',
-                        id: ss.id
-                    })),
                     fields: fields.map(f => ({
                         id: f.id,
                         name: f.name || '',

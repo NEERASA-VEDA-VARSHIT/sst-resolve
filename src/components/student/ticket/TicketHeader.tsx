@@ -4,14 +4,13 @@ import { Badge } from "@/components/ui/badge";
 import { CardHeader, CardTitle } from "@/components/ui/card";
 import { TicketStatusBadge } from "@/components/tickets/TicketStatusBadge";
 import { ArrowLeft, FileText } from "lucide-react";
-import type { TicketStatusDisplay, TicketCategory, TicketSubcategory, TicketSubSubcategory } from "@/types/ticket";
+import type { TicketStatusDisplay, TicketCategory, TicketSubcategory } from "@/types/ticket";
 
 interface TicketHeaderProps {
   ticketId: number;
   status: TicketStatusDisplay | null;
   category: TicketCategory | null;
   subcategory: TicketSubcategory | null;
-  subSubcategory: TicketSubSubcategory | null;
 }
 
 export function TicketHeader({
@@ -19,7 +18,6 @@ export function TicketHeader({
   status,
   category,
   subcategory,
-  subSubcategory,
 }: TicketHeaderProps) {
   return (
     <>
@@ -55,11 +53,6 @@ export function TicketHeader({
               {subcategory && (
                 <Badge variant="outline" className="font-medium text-xs sm:text-sm">
                   {subcategory.name}
-                </Badge>
-              )}
-              {subSubcategory && (
-                <Badge variant="outline" className="font-medium text-xs">
-                  {subSubcategory.name}
                 </Badge>
               )}
             </div>

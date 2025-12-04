@@ -9,7 +9,6 @@ import { eq, sql } from "drizzle-orm";
 import {
   getCategorySchema,
   getSubcategoryById,
-  getSubSubcategoryById,
   getCategoryById,
   getCategoryProfileFields
 } from "@/lib/category/categories";
@@ -129,15 +128,13 @@ export async function getFullTicketData(ticketId: number, userId: string) {
 
     // 2-5. Fetch category-related data in parallel for performance
     const subcategoryId = typeof metadata?.subcategoryId === 'number' ? metadata.subcategoryId : null;
-    const subSubcategoryId = typeof metadata?.subSubcategoryId === 'number' ? metadata.subSubcategoryId : null;
     
     debugStep = "fetch-related-data";
     const [
       category,
       categorySchema,
       profileFields,
-      subcategory,
-      subSubcategory
+      subcategory
     ] = await Promise.all([
       // Fetch category with SLA info
       ticketData.ticket_category_id
@@ -154,10 +151,6 @@ export async function getFullTicketData(ticketId: number, userId: string) {
       // Fetch subcategory if ID exists
       (subcategoryId && ticketData.ticket_category_id)
         ? getSubcategoryById(subcategoryId, ticketData.ticket_category_id)
-        : Promise.resolve(null),
-      // Fetch sub-subcategory if ID exists
-      (subSubcategoryId && subcategoryId)
-        ? getSubSubcategoryById(subSubcategoryId, subcategoryId)
         : Promise.resolve(null),
     ]);
 
@@ -329,11 +322,6 @@ export async function getFullTicketData(ticketId: number, userId: string) {
         id: subcategory.id,
         name: subcategory.name,
         slug: subcategory.slug,
-      } : null,
-      subSubcategory: subSubcategory ? {
-        id: subSubcategory.id,
-        name: subSubcategory.name,
-        slug: subSubcategory.slug,
       } : null,
       creator: {
         name: ticketData.user_full_name || null,

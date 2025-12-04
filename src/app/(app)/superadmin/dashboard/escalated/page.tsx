@@ -25,7 +25,6 @@ export default async function SuperAdminEscalatedPage() {
       status_value: ticket_statuses.value,
       category_id: tickets.category_id,
       subcategory_id: tickets.subcategory_id,
-      sub_subcategory_id: tickets.sub_subcategory_id,
       created_by: tickets.created_by,
       assigned_to: tickets.assigned_to,
       group_id: tickets.group_id,

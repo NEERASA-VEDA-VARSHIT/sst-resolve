@@ -39,12 +39,6 @@ export interface TicketSubcategory {
   slug?: string;
 }
 
-export interface TicketSubSubcategory {
-  id: number;
-  name: string;
-  slug: string;
-}
-
 export interface TicketComment {
   text: string;
   author?: string;

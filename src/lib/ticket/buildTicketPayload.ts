@@ -17,7 +17,6 @@ interface StudentProfile {
 interface FormData {
   categoryId: number | null;
   subcategoryId: number | null;
-  subSubcategoryId: number | null;
   description: string;
   location: string;
   details: Record<string, unknown>;
@@ -34,7 +33,6 @@ interface FormData {
 interface TicketPayload {
   categoryId: number | null;
   subcategoryId: number | null;
-  subSubcategoryId: number | null;
   description: string;
   location: string | null;
   details: {
@@ -117,7 +115,6 @@ export function buildTicketPayload(
   return {
     categoryId: formData.categoryId,
     subcategoryId: formData.subcategoryId,
-    subSubcategoryId: formData.subSubcategoryId || null,
     description: formData.description,
     location: finalLocation || null,
     details: {

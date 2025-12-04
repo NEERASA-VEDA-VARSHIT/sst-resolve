@@ -78,7 +78,6 @@ export default async function SuperAdminAllTicketsPage({ searchParams }: { searc
     rating: number | null;
     title: string | null;
     subcategory_id: number | null;
-    sub_subcategory_id: number | null;
   };
   let allTickets: TicketRow[] = [];
   let total = 0;
@@ -101,7 +100,6 @@ export default async function SuperAdminAllTicketsPage({ searchParams }: { searc
       status: string | null;
       category_id: number | null;
       subcategory_id: number | null;
-      sub_subcategory_id: number | null;
       category_name: string | null;
       created_by: string | null;
       creator_full_name: string | null;
@@ -124,7 +122,6 @@ export default async function SuperAdminAllTicketsPage({ searchParams }: { searc
         status: ticket_statuses.value,
         category_id: tickets.category_id,
         subcategory_id: tickets.subcategory_id,
-        sub_subcategory_id: tickets.sub_subcategory_id,
         category_name: categories.name,
         created_by: tickets.created_by,
         creator_full_name: users.full_name,
@@ -166,7 +163,6 @@ export default async function SuperAdminAllTicketsPage({ searchParams }: { searc
         scope_id: null,
         title: t.title || null,
         subcategory_id: t.subcategory_id || null,
-        sub_subcategory_id: t.sub_subcategory_id || null,
         created_at: t.created_at || new Date(),
         updated_at: t.updated_at || new Date(),
         created_by: t.created_by || "",
@@ -280,7 +276,6 @@ export default async function SuperAdminAllTicketsPage({ searchParams }: { searc
                 scope_id: null,
                 title: ticket.title || null,
                 subcategory_id: ticket.subcategory_id || null,
-                sub_subcategory_id: ticket.sub_subcategory_id || null,
                 status: ticket.status || null,
                 category_name: ticket.category_name || null,
                 creator_name: ticket.creator_name || null,

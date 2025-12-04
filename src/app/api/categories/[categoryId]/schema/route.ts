@@ -84,33 +84,8 @@ export async function GET(
       updated_at: row.updated_at,
     }));
 
-    // Fetch sub-subcategories for all subcategories
-    const subcategoryIds = subcategoriesData.map((sc) => sc.id);
-    let subSubcategoriesData: Array<Record<string, unknown>> = [];
-    
-    if (subcategoryIds.length > 0) {
-      const subSubcatsResult = await db.execute(sql`
-        SELECT id, subcategory_id, name, slug, description, active, display_order, created_at, updated_at
-        FROM sub_subcategories
-        WHERE subcategory_id = ANY(${sql.raw(`ARRAY[${subcategoryIds.join(',')}]`)})
-          AND active = true
-        ORDER BY display_order ASC
-      `);
-
-      subSubcategoriesData = subSubcatsResult.map((row: Record<string, unknown>) => ({
-        id: row.id,
-        subcategory_id: row.subcategory_id,
-        name: row.name,
-        slug: row.slug,
-        description: row.description,
-        active: row.active,
-        display_order: row.display_order,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-      }));
-    }
-
     // Fetch all fields for all subcategories in one query
+    const subcategoryIds = subcategoriesData.map((sc) => sc.id);
     let fieldsData: Array<Record<string, unknown>> = [];
     if (subcategoryIds.length > 0) {
       const fieldsResult = await db.execute(sql`
@@ -175,9 +150,6 @@ export async function GET(
       },
       subcategories: subcategoriesData.map((subcat) => ({
         ...subcat,
-        sub_subcategories: subSubcategoriesData.filter(
-          (ssc) => ssc.subcategory_id === subcat.id
-        ),
         fields: fieldsData
           .filter((field) => field.subcategory_id === subcat.id)
           .map((field) => ({

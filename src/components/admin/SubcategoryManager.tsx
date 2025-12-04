@@ -35,7 +35,6 @@ interface Subcategory {
   active: boolean;
   assigned_admin_id?: number | null;
   fields?: Field[];
-  sub_subcategories?: SubSubcategory[];
 }
 
 interface Field {
@@ -83,7 +82,7 @@ export function SubcategoryManager({ categoryId, categoryDefaultAdmin }: Subcate
     try {
       setLoading(true);
       const response = await fetch(
-        `/api/admin/subcategories?category_id=${categoryId}&include_fields=true&include_sub_subcategories=true`
+        `/api/admin/subcategories?category_id=${categoryId}&include_fields=true`
       );
       if (response.ok) {
         const data = await response.json();

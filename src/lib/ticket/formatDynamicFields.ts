@@ -22,9 +22,7 @@ type DynamicField = {
  */
 const SYSTEM_FIELDS = [
   'subcategory',
-  'subSubcategory',
   'subcategoryId',
-  'subSubcategoryId',
   'slackMessageTs',
   'slackChannel',
   'originalEmailMessageId',

@@ -100,13 +100,6 @@ export default async function CommitteeNewTicketPage() {
     name: sub.label,
     slug: sub.value,
     display_order: undefined as number | undefined,
-    sub_subcategories: (sub.sub_subcategories || []).map((ss) => ({
-      id: ss.id,
-      subcategory_id: sub.id,
-      name: ss.label,
-      slug: ss.value,
-      display_order: undefined as number | undefined,
-    })),
     // Attach fields; TicketForm will further sort/normalize
     fields: (sub.fields || []).map((f) => ({
       id: f.id,

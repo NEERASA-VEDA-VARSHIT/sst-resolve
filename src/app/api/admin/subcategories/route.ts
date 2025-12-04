@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import { subcategories, sub_subcategories, category_fields, field_options } from "@/db/schema";
+import { subcategories, category_fields, field_options } from "@/db/schema";
 import { eq, and, desc, asc } from "drizzle-orm";
 import { getCachedAdminUser } from "@/lib/cache/cached-queries";
 
@@ -82,26 +82,9 @@ export async function GET(request: NextRequest) {
       )
       .orderBy(asc(subcategories.display_order), desc(subcategories.created_at));
 
-    const includeSubSubcategories = searchParams.get("include_sub_subcategories") === "true";
-
-    if (includeFields || includeSubSubcategories) {
+    if (includeFields) {
       const subcatsWithData = await Promise.all(
         subcats.map(async (subcat) => {
-          // Fetch sub-subcategories if requested
-          let subSubcategories: (typeof sub_subcategories.$inferSelect)[] = [];
-          if (includeSubSubcategories) {
-            subSubcategories = await db
-              .select()
-              .from(sub_subcategories)
-              .where(
-                and(
-                  eq(sub_subcategories.subcategory_id, subcat.id),
-                  eq(sub_subcategories.is_active, true)
-                )
-              )
-              .orderBy(asc(sub_subcategories.display_order), desc(sub_subcategories.created_at));
-          }
-
           // Fetch fields if requested
           type FieldRow = {
             id: number;
@@ -158,19 +141,10 @@ export async function GET(request: NextRequest) {
           };
           delete transformedSubcat.is_active;
 
-          if (includeFields) {
-            transformedSubcat.fields = fields.map(field => {
-              const { is_active, ...rest } = field;
-              return { ...rest, active: is_active };
-            });
-          }
-
-          if (includeSubSubcategories) {
-            transformedSubcat.sub_subcategories = subSubcategories.map(subSubcat => {
-              const { is_active, ...rest } = subSubcat;
-              return { ...rest, active: is_active };
-            });
-          }
+          transformedSubcat.fields = fields.map(field => {
+            const { is_active, ...rest } = field;
+            return { ...rest, active: is_active };
+          });
 
           return transformedSubcat;
         })

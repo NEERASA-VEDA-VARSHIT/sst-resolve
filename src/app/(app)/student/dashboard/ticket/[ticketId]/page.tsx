@@ -77,15 +77,7 @@ export default async function StudentTicketPage({ params }: { params: Promise<{ 
     notFound();
   }
 
-  const { ticket, category, subcategory, subSubcategory, creator, student, assignedStaff, profileFields, dynamicFields, comments } = data;
-
-  // Normalize subSubcategory
-  const normalizedSubSubcategory = subSubcategory && 
-    typeof subSubcategory.id === 'number' && 
-    typeof subSubcategory.name === 'string' && 
-    typeof subSubcategory.slug === 'string'
-      ? { id: subSubcategory.id, name: subSubcategory.name, slug: subSubcategory.slug }
-      : null;
+  const { ticket, category, subcategory, creator, student, assignedStaff, profileFields, dynamicFields, comments } = data;
 
   // Parse metadata
   const metadata = parseTicketMetadata(ticket.metadata);
@@ -170,7 +162,6 @@ export default async function StudentTicketPage({ params }: { params: Promise<{ 
           status={statusDisplay}
           category={category}
           subcategory={subcategory}
-          subSubcategory={normalizedSubSubcategory}
         />
 
         <Card className="border-2 shadow-xl bg-card/50 backdrop-blur-sm">

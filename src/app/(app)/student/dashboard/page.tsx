@@ -1,5 +1,5 @@
 import { auth } from "@clerk/nextjs/server";
-import { db, tickets, users, categories, subcategories, sub_subcategories, ticket_statuses } from "@/db";
+import { db, tickets, users, categories, subcategories, ticket_statuses } from "@/db";
 import { eq, ilike, and, or, sql, asc, desc } from "drizzle-orm";
 
 import { Suspense } from "react";
@@ -48,7 +48,6 @@ export default async function StudentDashboardPage({
   const escalatedFilter = params.escalated ?? "";
   const categoryFilter = params.category ?? "";
   const subcategoryFilter = params.subcategory ?? "";
-  const subSubcategoryFilter = params.sub_subcategory ?? "";
   const sortBy = params.sort ?? "newest";
 
   // -----------------------------
@@ -96,30 +95,17 @@ export default async function StudentDashboardPage({
     conditions.push(ilike(categories.slug, categoryFilter.toLowerCase()));
   }
 
-  // Subcategory and Sub-subcategory Filters - fetch in parallel
-  const [subcategoryResult, subSubcategoryResult] = await Promise.all([
-    subcategoryFilter
-      ? db
-          .select({ id: subcategories.id })
-          .from(subcategories)
-          .where(eq(subcategories.slug, subcategoryFilter))
-          .limit(1)
-      : Promise.resolve([]),
-    subSubcategoryFilter
-      ? db
-          .select({ id: sub_subcategories.id })
-          .from(sub_subcategories)
-          .where(eq(sub_subcategories.slug, subSubcategoryFilter))
-          .limit(1)
-      : Promise.resolve([]),
-  ]);
-
-  if (subcategoryResult.length > 0) {
-    conditions.push(sql`metadata->>'subcategoryId' = ${String(subcategoryResult[0].id)}`);
-  }
-
-  if (subSubcategoryResult.length > 0) {
-    conditions.push(sql`metadata->>'subSubcategoryId' = ${String(subSubcategoryResult[0].id)}`);
+  // Subcategory Filter
+  if (subcategoryFilter) {
+    const subcategoryResult = await db
+      .select({ id: subcategories.id })
+      .from(subcategories)
+      .where(eq(subcategories.slug, subcategoryFilter))
+      .limit(1);
+    
+    if (subcategoryResult.length > 0) {
+      conditions.push(sql`metadata->>'subcategoryId' = ${String(subcategoryResult[0].id)}`);
+    }
   }
 
   // Dynamic Field Filters (f_ prefix)
@@ -205,7 +191,6 @@ export default async function StudentDashboardPage({
         status: ticket_statuses.value,
         category_id: tickets.category_id,
         subcategory_id: tickets.subcategory_id,
-        sub_subcategory_id: tickets.sub_subcategory_id,
         scope_id: tickets.scope_id,
         created_by: tickets.created_by,
         assigned_to: tickets.assigned_to,
@@ -297,13 +282,6 @@ export default async function StudentDashboardPage({
                 value: sub.value ?? '',
                 label: sub.label ?? '',
                 id: sub.id ?? 0,
-                sub_subcategories: Array.isArray(sub.sub_subcategories)
-                  ? sub.sub_subcategories.map((ss) => ({
-                      value: ss.value ?? '',
-                      label: ss.label ?? '',
-                      id: ss.id ?? 0,
-                    }))
-                  : [],
                 fields: Array.isArray(sub.fields)
                   ? sub.fields.map((f) => ({
                       id: f.id ?? 0,
@@ -322,7 +300,7 @@ export default async function StudentDashboardPage({
             : [],
         });
         return sanitized;
-      }).filter(Boolean) as Array<{ value: string; label: string; id: number; subcategories: Array<{ value: string; label: string; id: number; sub_subcategories: Array<{ value: string; label: string; id: number }>; fields: Array<{ id: number; name: string; slug: string; type: string; options: Array<{ label: string; value: string }> }> }> }>
+      }).filter(Boolean) as Array<{ value: string; label: string; id: number; subcategories: Array<{ value: string; label: string; id: number; fields: Array<{ id: number; name: string; slug: string; type: string; options: Array<{ label: string; value: string }> }> }> }>
     : [];
   
   const ticketStatuses = Array.isArray(ticketStatusesResult)
@@ -383,7 +361,6 @@ export default async function StudentDashboardPage({
       status: ticket.status ?? null,
       category_id: ticket.category_id ?? null,
       subcategory_id: ticket.subcategory_id ?? null,
-      sub_subcategory_id: ticket.sub_subcategory_id ?? null,
       scope_id: ticket.scope_id ?? null,
       created_by: ticket.created_by ?? null,
       assigned_to: ticket.assigned_to ?? null,

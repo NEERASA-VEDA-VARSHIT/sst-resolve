@@ -34,14 +34,6 @@ export const TicketCreateSchema = z.object({
   // Location string (e.g., "Boys Hostel 3", "Library")
   location: z.string().max(500).optional(),
 
-  // Optional sub-subcategory fields / custom metadata
-  subSubcategoryId: z.union([
-    z.number().int().positive(),
-    z.null(),
-    z.undefined(),
-    z.literal("")
-  ]).transform(v => v === null || v === undefined || v === "" ? undefined : v).optional(),
-  subSubcategory: z.string().trim().min(1).optional(),
 
   // Images: array of publicIds or storage keys already uploaded
   images: z.array(z.string().min(1)).optional(),

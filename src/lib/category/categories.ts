@@ -12,7 +12,6 @@ import { db } from "@/db";
 import { 
   categories, 
   subcategories, 
-  sub_subcategories,
   category_fields, 
   field_options,
 } from "@/db/schema";
@@ -51,59 +50,6 @@ export async function getSubcategoryById(subcategoryId: number, categoryId: numb
     .limit(1);
   
   return subcategory;
-}
-
-/**
- * Get all sub-subcategories for a subcategory
- */
-export async function getSubSubcategories(subcategoryId: number) {
-  return await db
-    .select()
-    .from(sub_subcategories)
-    .where(
-      and(
-        eq(sub_subcategories.subcategory_id, subcategoryId),
-        eq(sub_subcategories.is_active, true)
-      )
-    )
-    .orderBy(asc(sub_subcategories.display_order));
-}
-
-/**
- * Get a single sub-subcategory by ID
- */
-export async function getSubSubcategoryById(subSubcategoryId: number, subcategoryId: number) {
-  const [subSubcategory] = await db
-    .select()
-    .from(sub_subcategories)
-    .where(
-      and(
-        eq(sub_subcategories.id, subSubcategoryId),
-        eq(sub_subcategories.subcategory_id, subcategoryId),
-        eq(sub_subcategories.is_active, true)
-      )
-    )
-    .limit(1);
-  
-  return subSubcategory;
-}
-
-/**
- * Get all sub-subcategories for multiple subcategories
- */
-export async function getSubSubcategoriesForSubcategories(subcategoryIds: number[]) {
-  if (subcategoryIds.length === 0) return [];
-  
-  return await db
-    .select()
-    .from(sub_subcategories)
-    .where(
-      and(
-        inArray(sub_subcategories.subcategory_id, subcategoryIds),
-        eq(sub_subcategories.is_active, true)
-      )
-    )
-    .orderBy(asc(sub_subcategories.display_order));
 }
 
 /**
@@ -199,9 +145,6 @@ export async function getCategorySchema(categoryId: number) {
 
   const subcategoryIds = subcategoriesData.map(sc => sc.id);
 
-  // Fetch all sub-subcategories for these subcategories
-  const subSubcategoriesData = await getSubSubcategoriesForSubcategories(subcategoryIds);
-
   // Fetch all fields for these subcategories
   const fieldsData = await getFieldsForSubcategories(subcategoryIds);
 
@@ -235,9 +178,6 @@ export async function getCategorySchema(categoryId: number) {
       display_order: subcat.display_order,
       created_at: subcat.created_at,
       updated_at: subcat.updated_at,
-      sub_subcategories: subSubcategoriesData.filter(
-        (ssc) => ssc.subcategory_id === subcat.id
-      ),
       fields: fieldsData
         .filter((field) => field.subcategory_id === subcat.id)
         .map((field) => ({

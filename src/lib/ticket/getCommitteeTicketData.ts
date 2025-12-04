@@ -9,7 +9,6 @@ import { eq, sql } from "drizzle-orm";
 import {
   getCategorySchema,
   getSubcategoryById,
-  getSubSubcategoryById,
   getCategoryById,
   getCategoryProfileFields
 } from "@/lib/category/categories";
@@ -116,14 +115,12 @@ export async function getCommitteeTicketData(ticketId: number) {
 
     // 2-5. Fetch category-related data in parallel
     const subcategoryId = typeof metadata?.subcategoryId === 'number' ? metadata.subcategoryId : null;
-    const subSubcategoryId = typeof metadata?.subSubcategoryId === 'number' ? metadata.subSubcategoryId : null;
     
     const [
       category,
       categorySchema,
       profileFields,
-      subcategory,
-      subSubcategory
+      subcategory
     ] = await Promise.all([
       ticketData.ticket_category_id
         ? getCategoryById(ticketData.ticket_category_id)
@@ -136,9 +133,6 @@ export async function getCommitteeTicketData(ticketId: number) {
         : Promise.resolve([]),
       (subcategoryId && ticketData.ticket_category_id)
         ? getSubcategoryById(subcategoryId, ticketData.ticket_category_id)
-        : Promise.resolve(null),
-      (subSubcategoryId && subcategoryId)
-        ? getSubSubcategoryById(subSubcategoryId, subcategoryId)
         : Promise.resolve(null),
     ]);
 
@@ -242,7 +236,6 @@ export async function getCommitteeTicketData(ticketId: number) {
       ticket,
       category,
       subcategory,
-      subSubcategory,
       creator,
       student,
       assignedStaff,

@@ -87,7 +87,6 @@ export default async function AdminDetailPage({
     status_id: number;
     category_id: number | null;
     subcategory_id: number | null;
-    sub_subcategory_id: number | null;
     created_by: string | null;
     assigned_to: string | null;
     group_id: number | null;
@@ -120,7 +119,6 @@ export default async function AdminDetailPage({
         status_value: ticket_statuses.value,
         category_id: tickets.category_id,
         subcategory_id: tickets.subcategory_id,
-        sub_subcategory_id: tickets.sub_subcategory_id,
         created_by: tickets.created_by,
         assigned_to: tickets.assigned_to,
         group_id: tickets.group_id,
@@ -157,7 +155,6 @@ export default async function AdminDetailPage({
         status_id: t.status_id || 0,
         category_id: t.category_id,
         subcategory_id: t.subcategory_id,
-        sub_subcategory_id: t.sub_subcategory_id,
         created_by: t.created_by,
         assigned_to: t.assigned_to,
         group_id: t.group_id,

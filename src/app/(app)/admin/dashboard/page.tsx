@@ -306,7 +306,6 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
                     status_id: ticket.status_id ?? 0,
                     category_id: ticket.category_id ?? null,
                     subcategory_id: ticket.subcategory_id ?? null,
-                    sub_subcategory_id: ticket.sub_subcategory_id ?? null,
                     scope_id: null,
                     created_by: ticket.created_by,
                     assigned_to: ticket.assigned_to,

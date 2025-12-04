@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { categories, subcategories, sub_subcategories, category_fields, field_options } from "@/db/schema";
+import { categories, subcategories, category_fields, field_options } from "@/db/schema";
 import { eq, and, asc, desc } from "drizzle-orm";
 
 // GET: Fetch subcategories for a category (fast, without profile fields)
@@ -63,21 +63,9 @@ export async function GET(request: NextRequest) {
       )
       .orderBy(asc(subcategories.display_order), desc(subcategories.created_at));
 
-    // Fetch sub-subcategories and fields for each subcategory (but not profile fields)
+    // Fetch fields for each subcategory (but not profile fields)
     const subcatsWithData = await Promise.all(
       subcats.map(async (subcat) => {
-        // Fetch sub-subcategories
-        const subSubcats = await db
-          .select()
-          .from(sub_subcategories)
-          .where(
-            and(
-              eq(sub_subcategories.subcategory_id, subcat.id),
-              eq(sub_subcategories.is_active, true)
-            )
-          )
-          .orderBy(asc(sub_subcategories.display_order), desc(sub_subcategories.created_at));
-
         // Fetch fields - explicitly select columns to avoid Drizzle issues
         const fields = await db
           .select({
@@ -127,7 +115,6 @@ export async function GET(request: NextRequest) {
         return {
           ...subcat,
           fields: fieldsWithOptions,
-          sub_subcategories: subSubcats,
         };
       })
     );

@@ -23,11 +23,6 @@ interface CategoryOption {
     value: string;
     label: string;
     id: number;
-    sub_subcategories?: {
-      value: string;
-      label: string;
-      id: number;
-    }[];
     fields?: {
       id: number;
       name: string;

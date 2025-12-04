@@ -359,43 +359,6 @@ import {
   );
   
   /* -------------------------------------------------------------------------- */
-  /* SUB-SUBCATEGORIES                                                           */
-  /* -------------------------------------------------------------------------- */
-  
-  export const sub_subcategories = pgTable(
-    "sub_subcategories",
-    {
-      id: serial("id").primaryKey(),
-  
-      subcategory_id: integer("subcategory_id")
-        .references(() => subcategories.id, { onDelete: "cascade" })
-        .notNull(),
-  
-      name: varchar("name", { length: 140 }).notNull(),
-      slug: varchar("slug", { length: 140 }).notNull(),
-  
-      description: text("description"),
-      assigned_admin_id: uuid("assigned_admin_id").references(() => users.id),
-  
-      sla_hours: integer("sla_hours"),
-      is_active: boolean("is_active").default(true),
-      display_order: integer("display_order").default(0),
-  
-      created_at: timestamp("created_at").defaultNow(),
-      updated_at: timestamp("updated_at").defaultNow(),
-    },
-    (table) => ({
-      subcategoryIdx: index("idx_sub_subcategories_subcategory").on(
-        table.subcategory_id
-      ),
-      uniqueSlug: unique("unique_sub_subcategory_slug").on(
-        table.subcategory_id,
-        table.slug
-      ),
-    })
-  );
-  
-  /* -------------------------------------------------------------------------- */
   /* CATEGORY FIELDS                                                             */
   /* -------------------------------------------------------------------------- */
   
@@ -570,9 +533,6 @@ import {
       category_id: integer("category_id").references(() => categories.id),
       subcategory_id: integer("subcategory_id").references(
         () => subcategories.id
-      ),
-      sub_subcategory_id: integer("sub_subcategory_id").references(
-        () => sub_subcategories.id
       ),
   
       scope_id: integer("scope_id").references(() => scopes.id),

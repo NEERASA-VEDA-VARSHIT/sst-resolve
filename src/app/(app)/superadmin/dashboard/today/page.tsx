@@ -33,7 +33,6 @@ export default async function SuperAdminTodayPendingPage() {
       category_id: tickets.category_id,
       category_name: categories.name,
       subcategory_id: tickets.subcategory_id,
-      sub_subcategory_id: tickets.sub_subcategory_id,
       created_by: tickets.created_by,
       creator_full_name: creatorUser.full_name,
       creator_email: creatorUser.email,

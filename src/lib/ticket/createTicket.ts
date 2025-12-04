@@ -1,5 +1,5 @@
 // lib/tickets/createTicket.ts
-import { db, tickets, users, outbox, categories, subcategories, sub_subcategories } from "@/db";
+import { db, tickets, users, outbox, categories, subcategories } from "@/db";
 import { eq, and } from "drizzle-orm";
 import { TicketCreateInput } from "@/lib/validation/ticket";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
@@ -267,41 +267,6 @@ export async function createTicket(args: {
     }
   }
 
-  // Sub-subcategory resolution (optional) - depends on subcategoryRecord
-  // Start this lookup early to parallelize with field lookup
-  const subSubcategoryPromise = subcategoryPromise.then(async (subcat) => {
-    if (!subcat) return undefined;
-    
-    if (payload.subSubcategoryId) {
-    const [ss] = await db
-      .select({ id: sub_subcategories.id, name: sub_subcategories.name, is_active: sub_subcategories.is_active })
-      .from(sub_subcategories)
-        .where(and(eq(sub_subcategories.id, payload.subSubcategoryId), eq(sub_subcategories.subcategory_id, subcat.id)))
-      .limit(1);
-    if (ss && ss.is_active) {
-        return { id: ss.id, name: ss.name };
-    } else if (ss && !ss.is_active) {
-      throw new Error("Sub-subcategory is inactive and cannot be used for ticket creation");
-      } else if (!ss) {
-      throw new Error("Sub-subcategory not found or does not belong to the selected subcategory");
-    }
-    } else if (payload.subSubcategory) {
-    const [ss] = await db
-      .select({ id: sub_subcategories.id, name: sub_subcategories.name, is_active: sub_subcategories.is_active })
-      .from(sub_subcategories)
-        .where(and(eq(sub_subcategories.name, payload.subSubcategory), eq(sub_subcategories.subcategory_id, subcat.id)))
-      .limit(1);
-    if (ss && ss.is_active) {
-        return { id: ss.id, name: ss.name };
-    } else if (ss && !ss.is_active) {
-      throw new Error("Sub-subcategory is inactive and cannot be used for ticket creation");
-      } else if (!ss) {
-      throw new Error("Sub-subcategory not found or does not belong to the selected subcategory");
-    }
-  }
-    return undefined;
-  });
-
   // Merge details (payload.details may be stringified JSON from client)
   // Parse this early so fieldLookupPromise can use it
   type DetailsObject = {
@@ -361,10 +326,9 @@ export async function createTicket(args: {
   }
   })();
   
-  // Wait for subcategory, sub-subcategory, and field lookups in parallel
-  const [finalSubcategory, finalSubSubcategory] = await Promise.all([
+  // Wait for subcategory and field lookups in parallel
+  const [finalSubcategory] = await Promise.all([
     subcategoryPromise,
-    subSubcategoryPromise,
     fieldLookupPromise, // Field lookup runs in parallel
   ]);
   
@@ -372,7 +336,6 @@ export async function createTicket(args: {
   if (finalSubcategory) {
     subcategoryRecord = finalSubcategory;
   }
-  const subSubcategoryRecord = finalSubSubcategory;
 
   // Build metadata object (store both ids and names)
   let metadata: Record<string, unknown> = {};
@@ -382,14 +345,6 @@ export async function createTicket(args: {
   } else if (payload.subcategory || payload.subcategoryId) {
     metadata.subcategory = payload.subcategory || null;
     metadata.subcategoryId = payload.subcategoryId || null;
-  }
-  
-  if (subSubcategoryRecord) {
-    metadata.subSubcategory = subSubcategoryRecord.name;
-    metadata.subSubcategoryId = subSubcategoryRecord.id;
-  } else if (payload.subSubcategory || payload.subSubcategoryId) {
-    metadata.subSubcategory = payload.subSubcategory || null;
-    metadata.subSubcategoryId = payload.subSubcategoryId || null;
   }
 
   // Merge with detailsObj and add dynamic fields
@@ -608,23 +563,6 @@ export async function createTicket(args: {
       );
     }
 
-    if (subSubcategoryRecord && subcategoryRecord) {
-      validationPromises.push(
-        tx
-        .select({ id: sub_subcategories.id, is_active: sub_subcategories.is_active })
-        .from(sub_subcategories)
-        .where(and(
-          eq(sub_subcategories.id, subSubcategoryRecord.id),
-          eq(sub_subcategories.subcategory_id, subcategoryRecord.id)
-        ))
-          .limit(1)
-          .then(([ss]) => {
-            if (!ss) throw new Error("Sub-subcategory was deleted. Please refresh the page and select a different sub-subcategory.");
-            if (!ss.is_active) throw new Error("Sub-subcategory was deactivated. Please refresh the page and select a different sub-subcategory.");
-            return ss;
-          })
-      );
-    }
 
     // Execute all validations in parallel (optimized: only select needed fields)
     await Promise.all(validationPromises);
@@ -658,7 +596,6 @@ export async function createTicket(args: {
       metadata: metadata && typeof metadata === 'object' && !Array.isArray(metadata) && Object.keys(metadata).length > 0 ? metadata : null,
       attachments: attachments,
       ...(subcategoryRecord?.id ? { subcategory_id: subcategoryRecord.id } : {}),
-      ...(subSubcategoryRecord?.id ? { sub_subcategory_id: subSubcategoryRecord.id } : {}),
       ...(assignedUserId ? { assigned_to: assignedUserId } : {}),
     };
 
