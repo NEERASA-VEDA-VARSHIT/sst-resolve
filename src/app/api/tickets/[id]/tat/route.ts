@@ -12,6 +12,9 @@ import { getCachedAdminUser } from "@/lib/cache/cached-queries";
 import type { TicketMetadata } from "@/db/inferred-types";
 import { getCachedTicketStatuses } from "@/lib/cache/cached-queries";
 
+// Force Node.js runtime for Slack/email integrations
+export const runtime = 'nodejs';
+
 /**
  * ============================================
  * /api/tickets/[id]/tat

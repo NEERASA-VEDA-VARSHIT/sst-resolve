@@ -222,14 +222,17 @@ export async function shouldSendSlackNotification(
 ): Promise<boolean> {
   try {
     const config = await getNotificationConfig(categoryId, subcategoryId, scopeId, ticketLocation);
+    console.log(`[shouldSendSlackNotification] Config result: enableSlack=${config.enableSlack}, enableEmail=${config.enableEmail}, slackChannel=${config.slackChannel}`);
     
     // If database config says Slack is disabled, don't send
     if (!config.enableSlack) {
+      console.log(`[shouldSendSlackNotification] Slack disabled in config for categoryId=${categoryId}, scopeId=${scopeId}`);
       return false;
     }
     
     // If Slack is not enabled in environment, don't send
     if (!slackConfig.enabled) {
+      console.log(`[shouldSendSlackNotification] Slack disabled in environment config (slackConfig.enabled=false)`);
       return false;
     }
     
@@ -237,13 +240,17 @@ export async function shouldSendSlackNotification(
     // This ensures existing behavior continues until admins configure via database
     const SLACK_SUPPORTED_CATEGORIES = ["Hostel", "College", "Committee"] as const;
     const hasDbConfig = await hasNotificationConfig(categoryId, subcategoryId, scopeId, ticketLocation);
+    console.log(`[shouldSendSlackNotification] hasDbConfig=${hasDbConfig} for categoryId=${categoryId}, scopeId=${scopeId}`);
     
     if (!hasDbConfig) {
       // No database config, use legacy hardcoded check
-      return SLACK_SUPPORTED_CATEGORIES.includes(categoryName as typeof SLACK_SUPPORTED_CATEGORIES[number]);
+      const legacyResult = SLACK_SUPPORTED_CATEGORIES.includes(categoryName as typeof SLACK_SUPPORTED_CATEGORIES[number]);
+      console.log(`[shouldSendSlackNotification] No DB config, using legacy check: categoryName=${categoryName}, result=${legacyResult}`);
+      return legacyResult;
     }
     
     // Database config exists, use it
+    console.log(`[shouldSendSlackNotification] Using DB config: enableSlack=${config.enableSlack}`);
     return config.enableSlack;
   } catch (error) {
     // Table might not exist yet - this is expected during migration
@@ -252,7 +259,9 @@ export async function shouldSendSlackNotification(
     }
     // Fallback to legacy behavior
     const SLACK_SUPPORTED_CATEGORIES = ["Hostel", "College", "Committee"] as const;
-    return SLACK_SUPPORTED_CATEGORIES.includes(categoryName as typeof SLACK_SUPPORTED_CATEGORIES[number]);
+    const fallbackResult = SLACK_SUPPORTED_CATEGORIES.includes(categoryName as typeof SLACK_SUPPORTED_CATEGORIES[number]);
+    console.log(`[shouldSendSlackNotification] Error occurred, using fallback: categoryName=${categoryName}, result=${fallbackResult}`);
+    return fallbackResult;
   }
 }
 

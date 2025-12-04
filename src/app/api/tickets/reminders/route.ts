@@ -6,6 +6,9 @@ import { postThreadReply } from "@/lib/integration/slack";
 import { sendEmail, getTATReminderEmail } from "@/lib/integration/email";
 import { getCanonicalStatus, TICKET_STATUS } from "@/conf/constants";
 
+// Force Node.js runtime for Slack/email integrations
+export const runtime = 'nodejs';
+
 /**
  * ============================================
  * /api/tickets/reminders

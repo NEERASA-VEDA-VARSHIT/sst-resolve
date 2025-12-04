@@ -8,6 +8,9 @@ import type { TicketMetadata } from "@/db/inferred-types";
 import { TICKET_STATUS } from "@/conf/constants";
 import { getStatusIdByValue } from "@/lib/status/getTicketStatuses";
 
+// Force Node.js runtime for Slack/email integrations
+export const runtime = 'nodejs';
+
 export async function POST(request: NextRequest) {
 	try {
 		const body = await request.json();

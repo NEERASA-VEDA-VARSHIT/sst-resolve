@@ -6,6 +6,9 @@ import { logger } from "@/lib/logger";
 import { db, outbox } from "@/db";
 import { sql } from "drizzle-orm";
 
+// Force Node.js runtime for Slack/email integrations and cron jobs
+export const runtime = 'nodejs';
+
 type TicketCreatedPayload = {
   ticket_id: number;
   created_by_clerk?: string;
@@ -26,17 +29,22 @@ export async function GET(request: NextRequest) {
       return authError;
     }
 
-    const maxEventsPerRun = 10; // Process up to 10 events per cron run
+    const maxEventsPerRun = 50; // Process up to 50 events per cron run (increased for better coverage)
     let processed = 0;
     let errors = 0;
+
+    console.log(`[Outbox Cron] Starting outbox processing (max ${maxEventsPerRun} events)`);
 
     while (processed < maxEventsPerRun) {
       const outboxRow = await claimNextOutboxRow();
 
       if (!outboxRow) {
         // No more events to process
+        console.log(`[Outbox Cron] No more events to process. Processed ${processed} events.`);
         break;
       }
+
+      console.log(`[Outbox Cron] Processing event ${outboxRow.id} (type: ${outboxRow.event_type})`);
 
       try {
         const { event_type, payload, id } = outboxRow;
@@ -76,6 +84,7 @@ export async function GET(request: NextRequest) {
             await processTicketCreated(id, ticketPayload);
             await markOutboxSuccess(id);
             processed++;
+            console.log(`[Outbox Cron] ✅ Successfully processed ticket.created event ${id} for ticket #${ticketPayload.ticket_id}`);
             break;
 
           // Add other event types here as needed
@@ -109,13 +118,17 @@ export async function GET(request: NextRequest) {
       console.warn(`[Outbox] High backlog detected: ${unprocessedCount} unprocessed events`);
     }
 
-    return NextResponse.json({
+    const response = {
       success: true,
       processed,
       errors,
       unprocessed: unprocessedCount,
       message: `Processed ${processed} events${errors > 0 ? `, ${errors} errors` : ""}`,
-    });
+    };
+    
+    console.log(`[Outbox Cron] Completed: ${JSON.stringify(response)}`);
+    
+    return NextResponse.json(response);
   } catch (error) {
     logger.error("[Outbox Cron] Fatal error", error);
     return NextResponse.json(

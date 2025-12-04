@@ -5,6 +5,9 @@ import { desc, eq } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
 import { createTicket } from "@/lib/ticket/createTicket";
 
+// Force Node.js runtime for Slack/email integrations
+export const runtime = 'nodejs';
+
 /**
  * ============================================
  * /api/tickets
@@ -104,12 +107,16 @@ export async function POST(request: NextRequest) {
         console.log(`[Ticket API] 🔔 Starting async notification processing for ticket #${ticket.id}`);
         
         // Small delay to ensure transaction is committed
+        console.log(`[Ticket API] ⏳ Waiting 100ms for transaction commit...`);
         await new Promise(resolve => setTimeout(resolve, 100));
+        console.log(`[Ticket API] ✅ Wait complete, proceeding with outbox query...`);
         
+        console.log(`[Ticket API] 📦 Importing dependencies...`);
         const { processTicketCreated } = await import("@/workers/handlers/processTicketCreatedWorker");
         const { markOutboxSuccess, markOutboxFailure } = await import("@/workers/utils");
         const { db: dbInstance, outbox: outboxTable } = await import("@/db");
         const { eq, desc, and, isNull, sql } = await import("drizzle-orm");
+        console.log(`[Ticket API] ✅ Dependencies imported successfully`);
         
         
         // Find the outbox event for this specific ticket using JSONB query

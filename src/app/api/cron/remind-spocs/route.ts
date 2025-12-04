@@ -7,6 +7,9 @@ import { sendEmail } from "@/lib/integration/email";
 import { verifyCronAuth } from "@/lib/cron-auth";
 import { getStatusIdByValue } from "@/lib/status/getTicketStatuses";
 
+// Force Node.js runtime for Slack/email integrations
+export const runtime = 'nodejs';
+
 /**
  * GET /api/cron/remind-spocs
  * Cron job to send reminders to SPOCs for pending tickets

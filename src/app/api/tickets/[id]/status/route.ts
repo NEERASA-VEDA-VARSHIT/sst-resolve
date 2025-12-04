@@ -8,6 +8,9 @@ import { getCachedAdminUser, getCachedUser, getCachedTicketStatuses } from "@/li
 import { UpdateTicketStatusSchema } from "@/schemas/business/ticket";
 import { TICKET_STATUS, getCanonicalStatus } from "@/conf/constants";
 
+// Force Node.js runtime for Slack/email integrations
+export const runtime = 'nodejs';
+
 /**
  * ============================================
  * /api/tickets/[id]/status

@@ -11,6 +11,9 @@ import { getOrCreateUser } from "@/lib/auth/user-sync";
 import { getAdminAssignment, ticketMatchesAdminAssignment } from "@/lib/assignment/admin-assignment";
 import type { TicketMetadata } from "@/db/inferred-types";
 
+// Force Node.js runtime for Slack/email integrations
+export const runtime = 'nodejs';
+
 /** Utility: Ensure user owns the ticket */
 async function userOwnsTicket(userId: string, ticketId: number) {
   const [userRow] = await db

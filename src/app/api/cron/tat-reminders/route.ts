@@ -9,6 +9,9 @@ import { verifyCronAuth } from "@/lib/cron-auth";
 import { logger } from "@/lib/logger";
 import { getStatusIdByValue } from "@/lib/status/getTicketStatuses";
 
+// Force Node.js runtime for Slack/email integrations
+export const runtime = 'nodejs';
+
 const envEnabled = (value: string | undefined) => value === undefined || value !== "false";
 
 /**

@@ -419,6 +419,7 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
 
     // Check if Slack should be sent (database-driven config, no hardcoding)
     // Pass scope_id and location for scope-based notification config lookup
+    console.log(`[processTicketCreated] Checking Slack notification config for ticket #${ticket.id}: categoryName=${categoryName}, categoryId=${ticket.categoryId}, scopeId=${ticketRow.scopeId}, location=${ticket.location}`);
     const shouldSendSlack = await shouldSendSlackNotification(
       categoryName,
       ticket.categoryId,
@@ -426,6 +427,7 @@ export async function processTicketCreated(outboxId: number, payload: TicketCrea
       ticketRow.scopeId || null, // scopeId from ticket
       ticket.location || null // ticketLocation for scope resolution fallback
     );
+    console.log(`[processTicketCreated] shouldSendSlack result for ticket #${ticket.id}: ${shouldSendSlack}`);
 
     // Track Slack message status for final log
     let messageTs: string | null = null;
