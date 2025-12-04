@@ -296,12 +296,12 @@ export default async function AdminGroupsPage({
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <CardTitle>Select Tickets to Group</CardTitle>
                 <Badge variant="secondary" className="text-sm w-fit">
-                  {allTickets.length} {allTickets.length === 1 ? "ticket" : "tickets"} available
+                  {availableTickets.length} {availableTickets.length === 1 ? "ticket" : "tickets"} available
                 </Badge>
               </div>
             </CardHeader>
             <CardContent>
-              {allTickets.length === 0 ? (
+              {availableTickets.length === 0 ? (
                 <div className="py-12 text-center">
                   <Package className="w-12 h-12 text-muted-foreground mx-auto mb-3 opacity-50" />
                   <p className="text-muted-foreground font-medium">No tickets available for grouping</p>
@@ -311,7 +311,7 @@ export default async function AdminGroupsPage({
                 </div>
               ) : (
                 <SelectableTicketList
-                  tickets={allTickets.map(t => ({
+                  tickets={availableTickets.map(t => ({
                     id: t.id,
                     status: t.status_value || null,
                     description: t.description || null,

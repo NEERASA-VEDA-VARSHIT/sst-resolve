@@ -101,6 +101,8 @@ export async function POST(request: NextRequest) {
     // Fire and forget - don't await this
     (async () => {
       try {
+        console.log(`[Ticket API] 🔔 Starting async notification processing for ticket #${ticket.id}`);
+        
         // Small delay to ensure transaction is committed
         await new Promise(resolve => setTimeout(resolve, 100));
         
@@ -128,6 +130,7 @@ export async function POST(request: NextRequest) {
         let eventToProcess = outboxEvent;
         
         if (!eventToProcess) {
+          console.log(`[Ticket API] ⏳ Outbox event not found immediately for ticket #${ticket.id}, retrying...`);
           // No outbox event found, retrying...
           // Wait a bit and retry once (race condition handling)
           await new Promise(resolve => setTimeout(resolve, 500));
@@ -146,9 +149,13 @@ export async function POST(request: NextRequest) {
           
           if (!retryEvent) {
             // Still no outbox event after retry, cron job will handle it
+            console.warn(`[Ticket API] ⚠️ Outbox event not found after retry for ticket #${ticket.id}. Cron job will process it.`);
             return;
           }
+          console.log(`[Ticket API] ✅ Found outbox event ${retryEvent.id} on retry for ticket #${ticket.id}`);
           eventToProcess = retryEvent;
+        } else {
+          console.log(`[Ticket API] ✅ Found outbox event ${eventToProcess.id} for ticket #${ticket.id}`);
         }
         
         if (eventToProcess && eventToProcess.payload) {
@@ -172,27 +179,35 @@ export async function POST(request: NextRequest) {
                 category: typeof parsed.category === 'string' ? parsed.category : undefined,
                 ...parsed
               };
+              console.log(`[Ticket API] 📦 Processing outbox event ${eventToProcess.id} for ticket #${payload.ticket_id} (category: ${payload.category || 'unknown'})`);
             } else {
-              console.warn("[Ticket API] Invalid outbox payload type, using empty object");
+              console.warn(`[Ticket API] ⚠️ Invalid outbox payload type for ticket #${ticket.id}, using empty object`);
               payload = { ticket_id: 0 };
             }
           } catch (error) {
-            console.error("[Ticket API] Error processing outbox payload:", error);
+            console.error(`[Ticket API] ❌ Error processing outbox payload for ticket #${ticket.id}:`, error);
             payload = { ticket_id: 0 };
           }
           
+          if (payload.ticket_id === 0) {
+            console.error(`[Ticket API] ❌ Invalid payload for ticket #${ticket.id}, skipping notification processing`);
+            return;
+          }
+          
           // Process immediately (non-blocking)
+          console.log(`[Ticket API] 🚀 Starting notification processing for ticket #${payload.ticket_id}`);
           processTicketCreated(eventToProcess.id, payload)
             .then(() => {
+              console.log(`[Ticket API] ✅ Notification processing completed for ticket #${payload.ticket_id}`);
               return markOutboxSuccess(eventToProcess.id);
             })
             .catch((error) => {
-              console.error(`[Ticket API] ❌ Failed to process outbox event ${eventToProcess.id}:`, error);
+              console.error(`[Ticket API] ❌ Failed to process outbox event ${eventToProcess.id} for ticket #${payload.ticket_id}:`, error);
               console.error("[Ticket API] Error stack:", error instanceof Error ? error.stack : "No stack trace");
               return markOutboxFailure(eventToProcess.id, error instanceof Error ? error.message : "Unknown error");
             });
         } else {
-          console.warn(`[Ticket API] Outbox event has no payload for ticket #${ticket.id}`);
+          console.warn(`[Ticket API] ⚠️ Outbox event has no payload for ticket #${ticket.id}`);
         }
       } catch (error) {
         // Log but don't fail the request if immediate processing fails
@@ -209,7 +224,7 @@ export async function POST(request: NextRequest) {
       }
     })().catch((error) => {
       // Catch any unhandled errors in the async block
-      console.error("[Ticket API] Unhandled error in async notification block:", error);
+      console.error(`[Ticket API] ❌ Unhandled error in async notification block for ticket #${ticket.id}:`, error);
     });
 
     // Return minimal ticket data for faster response
