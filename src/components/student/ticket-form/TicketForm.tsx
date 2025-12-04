@@ -816,42 +816,51 @@ export default function TicketForm(props: TicketFormProps) {
         body: JSON.stringify(payload),
       });
 
-      // Check Content-Type before parsing
+      // For successful responses, try to parse as JSON regardless of Content-Type
+      // (NextResponse.json() should set it automatically, but be lenient)
+      if (res.ok) {
+        try {
+          const ticket = await res.json();
+          const ticketId = ticket?.id || ticket?.ticket?.id;
+          
+          if (!ticketId) {
+            throw new Error("Ticket created but no ID returned");
+          }
+          
+          // Dismiss loading toast and show success
+          toast.dismiss(loadingToastId);
+          toast.success("Ticket created successfully!", {
+            description: `Ticket #${ticketId} has been created and assigned`,
+            duration: 3000,
+          });
+          
+          // Small delay to let user see success message before redirect
+          await new Promise(resolve => setTimeout(resolve, 500));
+          router.push(`/student/dashboard/ticket/${ticketId}`);
+          return;
+        } catch (parseError) {
+          console.error("[TicketForm] Failed to parse successful response:", parseError);
+          throw new Error("Ticket created but response could not be parsed");
+        }
+      }
+
+      // For error responses, check Content-Type and handle appropriately
       const contentType = res.headers.get("content-type");
       if (!contentType || !contentType.includes("application/json")) {
         // Try to get error text if available
         const text = await res.text().catch(() => "Unknown error");
-        console.error("[TicketForm] Non-JSON response:", {
+        console.error("[TicketForm] Non-JSON error response:", {
           status: res.status,
           statusText: res.statusText,
           contentType,
           body: text.substring(0, 500), // First 500 chars
         });
-        throw new Error(`Server error (${res.status}): ${res.statusText || "Unknown error"}`);
+        throw new Error(`Server error (${res.status}): ${res.statusText || text || "Unknown error"}`);
       }
 
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: "ticket creation failed" }));
-        throw new Error(err.error || `Ticket creation failed (${res.status})`);
-      }
-
-      const ticket = await res.json();
-      const ticketId = ticket?.id || ticket?.ticket?.id;
-      
-      if (!ticketId) {
-        throw new Error("Ticket created but no ID returned");
-      }
-      
-      // Dismiss loading toast and show success
-      toast.dismiss(loadingToastId);
-      toast.success("Ticket created successfully!", {
-        description: `Ticket #${ticketId} has been created and assigned`,
-        duration: 3000,
-      });
-      
-      // Small delay to let user see success message before redirect
-      await new Promise(resolve => setTimeout(resolve, 500));
-      router.push(`/student/dashboard/ticket/${ticketId}`);
+      // Parse error response as JSON
+      const err = await res.json().catch(() => ({ error: "ticket creation failed" }));
+      throw new Error(err.error || `Ticket creation failed (${res.status})`);
     } catch (err: unknown) {
       console.error("Ticket create error:", err);
       const errorMessage = err instanceof Error ? err.message : "Failed to create ticket";
@@ -1268,10 +1277,7 @@ export default function TicketForm(props: TicketFormProps) {
               
               <div className="grid grid-cols-1 gap-4 sm:gap-6">
                 <CategorySelector />
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-                  <SubcategorySelector />
-                  <SubSubcategorySelector />
-                </div>
+                <SubcategorySelector />
 
                 {DynamicFieldsSectionMemo}
 

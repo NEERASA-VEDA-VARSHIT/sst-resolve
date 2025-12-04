@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useUser } from "@clerk/nextjs";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -13,22 +12,15 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { User, Save, Loader2, Lock, AlertCircle } from "lucide-react";
+import { User, Loader2, Lock, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
-import type { StudentProfile, Hostel } from "@/db/types-only";
+import type { StudentProfile } from "@/db/types-only";
 
 export default function StudentProfilePage() {
   const { user, isLoaded } = useUser();
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [needsLink, setNeedsLink] = useState(false);
   const [profile, setProfile] = useState<StudentProfile | null>(null);
-  const [hostels, setHostels] = useState<Hostel[]>([]);
-
-  // Editable fields
-  const [mobile, setMobile] = useState("");
-  const [hostelId, setHostelId] = useState<number | string>("");
-  const [roomNumber, setRoomNumber] = useState("");
 
   const fetchProfile = useCallback(async () => {
     try {
@@ -38,9 +30,6 @@ export default function StudentProfilePage() {
       if (response.ok) {
         const data = await response.json();
         setProfile(data);
-        setMobile(data.mobile || "");
-        setHostelId(data.hostel_id || "");
-        setRoomNumber(data.room_number || "");
       } else if (response.status === 404) {
         const data = await response.json();
         if (data.needsLink) setNeedsLink(true);
@@ -54,74 +43,12 @@ export default function StudentProfilePage() {
     }
   }, []);
 
-  const fetchHostels = useCallback(async () => {
-    try {
-      const response = await fetch("/api/hostels");
-      if (response.ok) {
-        const data = await response.json();
-        setHostels(data);
-      }
-    } catch (error) {
-      console.error("Error fetching hostels:", error);
-    }
-  }, []);
-
   useEffect(() => {
     if (isLoaded && user?.id) {
       fetchProfile();
-      fetchHostels();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoaded, user?.id]);
-
-  const handleProfileUpdate = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    const clean = mobile.replace(/\D+/g, "");
-
-    if (!/^[6-9]\d{9}$/.test(clean)) {
-      toast.error("Enter a valid 10-digit mobile number");
-      return;
-    }
-
-    if (!hostelId) {
-      toast.error("Please select a hostel");
-      return;
-    }
-
-    if (!roomNumber.trim()) {
-      toast.error("Please enter a room number");
-      return;
-    }
-
-    setSaving(true);
-
-    try {
-      const response = await fetch("/api/profile", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mobile: clean,
-          hostel_id: Number(hostelId),
-          room_number: roomNumber.trim(),
-        }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        setProfile(data);
-        toast.success("Profile updated successfully!");
-      } else {
-        toast.error(data.error || "Failed to update mobile number");
-      }
-    } catch (error) {
-      console.error("Mobile update error:", error);
-      toast.error("Failed to update. Try again.");
-    } finally {
-      setSaving(false);
-    }
-  };
 
   /* ----------------------------------------------------
       LOADING STATE
@@ -198,7 +125,7 @@ export default function StudentProfilePage() {
             <div className="min-w-0 flex-1">
               <h1 className="text-2xl sm:text-3xl font-bold">My Profile</h1>
               <p className="text-sm sm:text-base text-muted-foreground">
-                View your information and update hostel, room, and mobile
+                View your student information
               </p>
             </div>
           </div>
@@ -210,13 +137,14 @@ export default function StudentProfilePage() {
               <strong className="block mb-1 text-sm sm:text-base">
                 Profile Managed by Administration
               </strong>
-              <span className="text-xs sm:text-sm">You can update your hostel, room number, and mobile. Contact admin
-              for other changes.</span>
+              <span className="text-xs sm:text-sm">
+                All profile information is managed by administration. Contact admin for any changes.
+              </span>
             </AlertDescription>
           </Alert>
 
           {/* Readonly Profile */}
-          <Card className="mb-4 sm:mb-6">
+          <Card>
             <CardHeader className="p-4 sm:p-6">
               <CardTitle className="text-lg sm:text-xl">Student Information</CardTitle>
               <CardDescription className="text-xs sm:text-sm">
@@ -245,95 +173,29 @@ export default function StudentProfilePage() {
                 />
               </div>
 
+              {/* Hostel + Room */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                <ReadonlyField
+                  label="Hostel"
+                  value={profile.hostel ?? "Not Assigned"}
+                />
+                <ReadonlyField
+                  label="Room Number"
+                  value={profile.room_number ?? "Not Assigned"}
+                />
+              </div>
+
+              {/* Mobile */}
+              <ReadonlyField
+                label="Mobile Number"
+                value={profile.mobile ?? "Not Assigned"}
+              />
+
               {/* Timestamps */}
               <div className="text-[10px] sm:text-xs text-muted-foreground pt-3 sm:pt-4 border-t space-y-1">
                 <p>Created: {new Date(profile.created_at).toLocaleString()}</p>
                 <p>Updated: {new Date(profile.updated_at).toLocaleString()}</p>
               </div>
-            </CardContent>
-          </Card>
-
-          {/* Editable Mobile */}
-          {/* Editable Profile Section */}
-          <Card>
-            <CardHeader className="p-4 sm:p-6">
-              <CardTitle className="text-lg sm:text-xl">Update Your Information</CardTitle>
-              <CardDescription className="text-xs sm:text-sm">
-                You can update your hostel, room number, and mobile
-              </CardDescription>
-            </CardHeader>
-
-            <CardContent className="p-4 sm:p-6 pt-0">
-              <form onSubmit={handleProfileUpdate} className="space-y-3 sm:space-y-4">
-                {/* Hostel */}
-                <div>
-                  <Label htmlFor="hostel" className="text-sm sm:text-base">Hostel *</Label>
-                  <select
-                    id="hostel"
-                    className="w-full border rounded-md p-2 sm:p-2.5 mt-1 bg-background text-sm sm:text-base h-9 sm:h-10"
-                    value={hostelId}
-                    onChange={(e) => setHostelId(e.target.value)}
-                    disabled={!hostels.length}
-                    required
-                  >
-                    <option value="">Select hostel</option>
-                    {hostels.map((h) => (
-                      <option key={h.id} value={String(h.id)}>
-                        {h.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Room Number */}
-                <div>
-                  <Label htmlFor="room" className="text-sm sm:text-base">Room Number *</Label>
-                  <Input
-                    id="room"
-                    value={roomNumber}
-                    onChange={(e) => {
-                      const clean = e.target.value
-                        .toUpperCase()
-                        .replace(/[^A-Z0-9\- ]/g, "");
-                      setRoomNumber(clean);
-                    }}
-                    placeholder="Enter room number"
-                    required
-                    className="mt-1 text-sm sm:text-base h-9 sm:h-10"
-                  />
-                </div>
-
-                {/* Mobile */}
-                <div>
-                  <Label htmlFor="mobile" className="text-sm sm:text-base">Mobile Number *</Label>
-                  <Input
-                    id="mobile"
-                    type="tel"
-                    value={mobile}
-                    onChange={(e) => setMobile(e.target.value)}
-                    placeholder="10-digit mobile number"
-                    required
-                    className="mt-1 text-sm sm:text-base h-9 sm:h-10"
-                  />
-                  <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">
-                    Enter a valid 10-digit mobile number
-                  </p>
-                </div>
-
-                <Button disabled={saving} type="submit" className="w-full sm:w-auto text-sm sm:text-base h-9 sm:h-10">
-                  {saving ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Updating...
-                    </>
-                  ) : (
-                    <>
-                      <Save className="w-4 h-4 mr-2" />
-                      Save Changes
-                    </>
-                  )}
-                </Button>
-              </form>
             </CardContent>
           </Card>
         </div>

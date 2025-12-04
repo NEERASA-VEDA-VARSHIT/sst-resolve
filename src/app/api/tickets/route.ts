@@ -94,7 +94,12 @@ export async function POST(request: NextRequest) {
       
       return NextResponse.json(
         { error: errorMessage },
-        { status: statusCode }
+        { 
+          status: statusCode,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }
       );
     }
 

@@ -212,7 +212,6 @@ export default function TicketSearch({
           const newValue = value === "all" ? "" : value;
           setCategoryFilter(newValue);
           setSubcategoryFilter("");
-          setSubSubcategoryFilter("");
           setDynamicFilters({});
           applyFilters(searchQuery, statusFilter, newValue, "", "", sortBy, {});
         }}>
@@ -235,7 +234,6 @@ export default function TicketSearch({
           <Select value={subcategoryFilter || "all"} onValueChange={(value) => {
             const newValue = value === "all" ? "" : value;
             setSubcategoryFilter(newValue);
-            setSubSubcategoryFilter("");
             setDynamicFilters({});
             applyFilters(searchQuery, statusFilter, categoryFilter, newValue, "", sortBy, {});
           }}>
