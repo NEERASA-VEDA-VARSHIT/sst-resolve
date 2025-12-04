@@ -9,6 +9,8 @@ import {
   Clock,
   CheckCircle2,
   MessageSquare,
+  RotateCcw,
+  XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -17,7 +19,9 @@ interface Stats {
   open: number;
   inProgress: number;
   awaitingStudent: number;
+  reopened?: number;
   resolved: number;
+  closed?: number;
   escalated: number;
 }
 
@@ -169,6 +173,15 @@ export function StatsCards({ stats }: StatsCardsProps) {
         searchParams.get("status") === "awaiting_student_response",
     },
     {
+      key: "reopened",
+      label: "Reopened",
+      value: stats.reopened ?? 0,
+      icon: RotateCcw,
+      color: "purple",
+      onClick: () => handleFilter("status", "reopened"),
+      isActive: searchParams.get("status") === "reopened",
+    },
+    {
       key: "resolved",
       label: "Resolved",
       value: stats.resolved,
@@ -176,6 +189,15 @@ export function StatsCards({ stats }: StatsCardsProps) {
       color: "emerald",
       onClick: () => handleFilter("status", "resolved"),
       isActive: searchParams.get("status") === "resolved",
+    },
+    {
+      key: "closed",
+      label: "Closed",
+      value: stats.closed ?? 0,
+      icon: XCircle,
+      color: "default",
+      onClick: () => handleFilter("status", "closed"),
+      isActive: searchParams.get("status") === "closed",
     },
     {
       key: "escalated",

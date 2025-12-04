@@ -24,10 +24,12 @@ export default async function NewTicketPage() {
     hostelsList,
     categoryHierarchy,
   ] = await Promise.all([
-    // Fetch student row from DB with class section name
+    // Fetch only needed student fields with class section name (optimized: select specific fields)
     db
       .select({
-        student: students,
+        student_id: students.id,
+        hostel_id: students.hostel_id,
+        room_no: students.room_no,
         class_section_name: class_sections.name,
         batch_year: batches.batch_year,
       })
@@ -37,24 +39,26 @@ export default async function NewTicketPage() {
       .where(eq(students.user_id, dbUser.id))
       .limit(1),
 
-    // Fetch hostels to map ID to name (only active hostels)
+    // Fetch only id and name for hostels (optimized: reduce payload size)
     db
-      .select()
+      .select({
+        id: hostels.id,
+        name: hostels.name,
+      })
       .from(hostels)
       .where(eq(hostels.is_active, true))
       .orderBy(asc(hostels.name)),
 
     // Fetch full category hierarchy (categories → subcategories → sub-subcategories → fields → options)
+    // Already cached with unstable_cache for 5 minutes
     getCategoriesHierarchy(),
   ]);
 
   const [studentData] = studentDataResult;
-  if (!studentData?.student) redirect("/student/profile");
-
-  const student = studentData.student;
+  if (!studentData) redirect("/student/profile");
 
   // Find the student's hostel name from ID
-  const studentHostel = hostelsList.find(h => h.id === student.hostel_id);
+  const studentHostel = hostelsList.find(h => h.id === studentData.hostel_id);
 
   // Normalize student - use full_name from schema
   const fullName = dbUser.full_name || "";
@@ -64,7 +68,7 @@ export default async function NewTicketPage() {
     email: dbUser.email || "",
     mobile: dbUser.phone || "",
     hostel: studentHostel?.name || null,  // Use hostel name instead of ID
-    roomNumber: student.room_no,
+    roomNumber: studentData.room_no,
     batchYear: studentData.batch_year,
     classSection: studentData.class_section_name || null,  // Use class section name instead of ID
   };
@@ -74,7 +78,7 @@ export default async function NewTicketPage() {
     (cat) => cat.label.toLowerCase() !== "committee" && cat.value.toLowerCase() !== "committee"
   );
 
-  // Flatten hierarchy into shapes expected by TicketForm
+  // Flatten hierarchy into shapes expected by TicketForm (optimized: only include needed fields)
   const categoriesFromHierarchy = visibleCategories.map((cat) => ({
     id: cat.id,
     name: cat.label,
@@ -182,7 +186,7 @@ export default async function NewTicketPage() {
       profileFields={standardProfileFields}
       dynamicFields={mappedCategoryFields}
       fieldOptions={[]}
-      hostels={hostelsList}
+      hostels={hostelsList as Array<{ id: number; name: string }>}
     />
   );
 }

@@ -5,68 +5,94 @@ import { unstable_cache } from "next/cache";
 
 export const getCategoriesHierarchy = unstable_cache(
   async () => {
-    // Fetch all data in parallel for performance (without orderBy)
-    const [
-        activeCategories,
-        activeSubcategories,
-        allSubSubcategories,
-        activeFields,
-        activeOptions
-    ] = await Promise.all([
-        db
-            .select({
-                id: categories.id,
-                name: categories.name,
-                slug: categories.slug,
-                display_order: categories.display_order,
-            })
-            .from(categories)
-            .where(eq(categories.is_active, true)),
-        db
-            .select({
-                id: subcategories.id,
-                category_id: subcategories.category_id,
-                name: subcategories.name,
-                slug: subcategories.slug,
-                display_order: subcategories.display_order,
-            })
-            .from(subcategories)
-            .where(eq(subcategories.is_active, true)),
-        db
-            .select({
-                id: sub_subcategories.id,
-                subcategory_id: sub_subcategories.subcategory_id,
-                name: sub_subcategories.name,
-                slug: sub_subcategories.slug,
-                display_order: sub_subcategories.display_order,
-            })
-            .from(sub_subcategories)
-            .where(eq(sub_subcategories.is_active, true)),
-        db
-            .select({
-                id: category_fields.id,
-                subcategory_id: category_fields.subcategory_id,
-                name: category_fields.name,
-                slug: category_fields.slug,
-                field_type: category_fields.field_type,
-                required: category_fields.required,
-                placeholder: category_fields.placeholder,
-                help_text: category_fields.help_text,
-                validation_rules: category_fields.validation_rules,
-                display_order: category_fields.display_order,
-            })
-            .from(category_fields)
-            .where(eq(category_fields.is_active, true)),
-        db
-            .select({
-                field_id: field_options.field_id,
-                label: field_options.label,
-                value: field_options.value,
-                display_order: field_options.display_order,
-            })
-            .from(field_options)
-            .where(eq(field_options.is_active, true))
-    ]);
+    try {
+      // Fetch all data in parallel for performance (without orderBy)
+      // Use Promise.allSettled to handle individual query failures gracefully
+      const [
+          categoriesResult,
+          subcategoriesResult,
+          subSubcategoriesResult,
+          fieldsResult,
+          optionsResult
+      ] = await Promise.allSettled([
+          db
+              .select({
+                  id: categories.id,
+                  name: categories.name,
+                  slug: categories.slug,
+                  display_order: categories.display_order,
+              })
+              .from(categories)
+              .where(eq(categories.is_active, true)),
+          db
+              .select({
+                  id: subcategories.id,
+                  category_id: subcategories.category_id,
+                  name: subcategories.name,
+                  slug: subcategories.slug,
+                  display_order: subcategories.display_order,
+              })
+              .from(subcategories)
+              .where(eq(subcategories.is_active, true)),
+          db
+              .select({
+                  id: sub_subcategories.id,
+                  subcategory_id: sub_subcategories.subcategory_id,
+                  name: sub_subcategories.name,
+                  slug: sub_subcategories.slug,
+                  display_order: sub_subcategories.display_order,
+              })
+              .from(sub_subcategories)
+              .where(eq(sub_subcategories.is_active, true)),
+          db
+              .select({
+                  id: category_fields.id,
+                  subcategory_id: category_fields.subcategory_id,
+                  name: category_fields.name,
+                  slug: category_fields.slug,
+                  field_type: category_fields.field_type,
+                  required: category_fields.required,
+                  placeholder: category_fields.placeholder,
+                  help_text: category_fields.help_text,
+                  validation_rules: category_fields.validation_rules,
+                  display_order: category_fields.display_order,
+              })
+              .from(category_fields)
+              .where(eq(category_fields.is_active, true)),
+          db
+              .select({
+                  field_id: field_options.field_id,
+                  label: field_options.label,
+                  value: field_options.value,
+                  display_order: field_options.display_order,
+              })
+              .from(field_options)
+              .where(eq(field_options.is_active, true))
+      ]);
+
+      // Extract results, handling failures gracefully
+      const activeCategories = categoriesResult.status === 'fulfilled' ? categoriesResult.value : [];
+      const activeSubcategories = subcategoriesResult.status === 'fulfilled' ? subcategoriesResult.value : [];
+      const allSubSubcategories = subSubcategoriesResult.status === 'fulfilled' ? subSubcategoriesResult.value : [];
+      const activeFields = fieldsResult.status === 'fulfilled' ? fieldsResult.value : [];
+      const activeOptions = optionsResult.status === 'fulfilled' ? optionsResult.value : [];
+
+      // Log warnings for failed queries (but don't fail the entire operation)
+      if (categoriesResult.status === 'rejected') {
+        console.warn('[getCategoriesHierarchy] Failed to fetch categories:', categoriesResult.reason);
+      }
+      if (subcategoriesResult.status === 'rejected') {
+        console.warn('[getCategoriesHierarchy] Failed to fetch subcategories:', subcategoriesResult.reason);
+      }
+      if (subSubcategoriesResult.status === 'rejected') {
+        console.warn('[getCategoriesHierarchy] Failed to fetch sub-subcategories:', subSubcategoriesResult.reason);
+      }
+      if (fieldsResult.status === 'rejected') {
+        console.warn('[getCategoriesHierarchy] Failed to fetch category fields:', fieldsResult.reason);
+      }
+      if (optionsResult.status === 'rejected') {
+        console.warn('[getCategoriesHierarchy] Failed to fetch field options (continuing without options):', optionsResult.reason?.message || optionsResult.reason);
+      }
 
     // Sort manually to avoid orderBy issues
     const sortedCategories = activeCategories.sort((a, b) => {
@@ -135,11 +161,16 @@ export const getCategoriesHierarchy = unstable_cache(
         };
     });
 
-    return categoriesWithSubcategories;
+      return categoriesWithSubcategories;
+    } catch (error) {
+      console.error('[getCategoriesHierarchy] Unexpected error:', error);
+      // Return empty array on complete failure to prevent breaking the app
+      return [];
+    }
   },
   ["categories-hierarchy"],
   {
-    revalidate: 300, // Cache for 5 minutes
+    revalidate: 1800, // Cache for 30 minutes (categories don't change frequently)
     tags: ["categories"],
   }
 );

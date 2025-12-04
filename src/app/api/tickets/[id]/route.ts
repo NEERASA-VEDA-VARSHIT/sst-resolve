@@ -433,11 +433,13 @@ export async function PATCH(
     }
 
     if (status) {
-      // Get original email Message-ID BEFORE updating (to preserve it in metadata)
+      // Get original email Message-ID and subject BEFORE updating (to preserve it in metadata)
       let originalMessageId: string | undefined;
+      let originalSubject: string | undefined;
       try {
         const metadata = (ticket.metadata as TicketMetadata) || {};
         originalMessageId = metadata.originalEmailMessageId;
+        originalSubject = metadata.originalEmailSubject;
       } catch {
         // Metadata parsing failed, continue without threading info
       }
@@ -602,7 +604,7 @@ export async function PATCH(
           const studentEmail = updatedTicket.creator_email || null;
 
           if (studentEmail) {
-            // Use the originalMessageId we retrieved before the update
+            // Use the originalMessageId and originalSubject we retrieved before the update
             const emailTemplate = getStatusUpdateEmail(
               updatedTicket.id,
               status,
@@ -614,6 +616,7 @@ export async function PATCH(
               html: emailTemplate.html,
               ticketId: updatedTicket.id,
               threadMessageId: originalMessageId,
+              originalSubject: originalSubject,
             });
 
             if (!emailResult) {

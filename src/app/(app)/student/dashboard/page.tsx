@@ -7,10 +7,11 @@ import { TicketCard } from "@/components/layout/TicketCard";
 import { Card, CardContent } from "@/components/ui/card";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
+import { Plus, AlertCircle } from "lucide-react";
 import { StatsCards } from "@/components/dashboard/StatsCards";
 import { getCachedUser } from "@/lib/cache/cached-queries";
 import { TicketSearchWrapper } from "@/components/student/TicketSearchWrapper";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { getCategoriesHierarchy } from "@/lib/category/getCategoriesHierarchy";
 import { getCachedTicketStatuses } from "@/lib/cache/cached-queries";
 import { getCanonicalStatus } from "@/conf/constants";
@@ -151,6 +152,7 @@ export default async function StudentDashboardPage({
 
     case "status":
       // Use joined ticket_statuses for status-based sorting (no subquery needed)
+      // Closed and resolved should appear at the bottom (higher numbers)
       orderBy = sql`
         CASE 
           WHEN LOWER(${ticket_statuses.value}) = 'open' THEN 1
@@ -159,16 +161,24 @@ export default async function StudentDashboardPage({
           WHEN LOWER(${ticket_statuses.value}) = 'reopened' THEN 4
           WHEN LOWER(${ticket_statuses.value}) = 'escalated' THEN 5
           WHEN LOWER(${ticket_statuses.value}) = 'forwarded' THEN 6
-          WHEN LOWER(${ticket_statuses.value}) = 'resolved' THEN 7
+          WHEN LOWER(${ticket_statuses.value}) = 'resolved' THEN 8
+          WHEN LOWER(${ticket_statuses.value}) = 'closed' THEN 9
           ELSE 999
         END
       `;
       break;
 
     default:
-      // Sort by updated_at desc to show recently updated tickets (including reopened) at the top
+      // Sort by status priority first (active tickets first, closed/resolved last)
+      // Then by updated_at desc to show recently updated tickets at the top
       // Fallback to created_at if updated_at is null
-      orderBy = sql`COALESCE(${tickets.updated_at}, ${tickets.created_at}) DESC`;
+      orderBy = sql`
+        CASE 
+          WHEN LOWER(${ticket_statuses.value}) IN ('closed', 'resolved') THEN 1
+          ELSE 0
+        END,
+        COALESCE(${tickets.updated_at}, ${tickets.created_at}) DESC
+      `;
   }
 
   // -----------------------------
@@ -235,7 +245,9 @@ export default async function StudentDashboardPage({
         open: sql<number>`SUM(CASE WHEN LOWER(${ticket_statuses.value})='open' THEN 1 ELSE 0 END)`,
         inProgress: sql<number>`SUM(CASE WHEN LOWER(${ticket_statuses.value}) IN ('in_progress','escalated') THEN 1 ELSE 0 END)`,
         awaitingStudent: sql<number>`SUM(CASE WHEN LOWER(${ticket_statuses.value})='awaiting_student' THEN 1 ELSE 0 END)`,
+        reopened: sql<number>`SUM(CASE WHEN LOWER(${ticket_statuses.value})='reopened' THEN 1 ELSE 0 END)`,
         resolved: sql<number>`SUM(CASE WHEN LOWER(${ticket_statuses.value})='resolved' THEN 1 ELSE 0 END)`,
+        closed: sql<number>`SUM(CASE WHEN LOWER(${ticket_statuses.value})='closed' THEN 1 ELSE 0 END)`,
         escalated: sql<number>`SUM(CASE WHEN ${tickets.escalation_level} > 0 THEN 1 ELSE 0 END)`,
       })
       .from(tickets)
@@ -401,7 +413,9 @@ export default async function StudentDashboardPage({
     open: Number(statsResult[0]?.open) || 0,
     inProgress: Number(statsResult[0]?.inProgress) || 0,
     awaitingStudent: Number(statsResult[0]?.awaitingStudent) || 0,
+    reopened: Number(statsResult[0]?.reopened) || 0,
     resolved: Number(statsResult[0]?.resolved) || 0,
+    closed: Number(statsResult[0]?.closed) || 0,
     escalated: Number(statsResult[0]?.escalated) || 0,
   };
 
@@ -460,6 +474,19 @@ export default async function StudentDashboardPage({
           </Link>
         </div>
       </div>
+
+      {/* Alert for tickets awaiting student response */}
+      {safeStats && typeof safeStats === 'object' && 'awaitingStudent' in safeStats && Number(safeStats.awaitingStudent) > 0 && (
+        <Alert className="border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800">
+          <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+          <AlertTitle className="text-amber-900 dark:text-amber-100">
+            Action Required: {Number(safeStats.awaitingStudent)} Ticket{Number(safeStats.awaitingStudent) !== 1 ? 's' : ''} Awaiting Your Response
+          </AlertTitle>
+          <AlertDescription className="text-amber-800 dark:text-amber-200 mt-1">
+            You have {Number(safeStats.awaitingStudent)} ticket{Number(safeStats.awaitingStudent) !== 1 ? 's' : ''} that {Number(safeStats.awaitingStudent) !== 1 ? 'require' : 'requires'} your response. Please review and respond to help resolve these tickets.
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* Stats */}
       {safeStats && typeof safeStats === 'object' && 'total' in safeStats && safeStats.total > 0 && (

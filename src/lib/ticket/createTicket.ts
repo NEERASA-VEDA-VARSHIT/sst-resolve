@@ -342,12 +342,17 @@ export async function createTicket(args: {
 
     const fieldMap = new Map(activeFields.map(f => [f.slug, f.id]));
 
-    // Store field IDs with their values
+    // Store field IDs with their values (optimized: only store non-empty values)
     // Safety check: ensure detailsObj is an object before calling Object.entries
     if (detailsObj && typeof detailsObj === 'object' && !Array.isArray(detailsObj)) {
       for (const [slug, value] of Object.entries(detailsObj)) {
         const fieldId = fieldMap.get(slug);
+        // Only store fields with actual values (skip empty strings, null, undefined, empty arrays)
         if (fieldId && value !== null && value !== undefined && value !== '') {
+          // Skip empty arrays and objects
+          if (Array.isArray(value) && value.length === 0) continue;
+          if (typeof value === 'object' && Object.keys(value).length === 0) continue;
+          
           usedFieldIds.push(fieldId);
           dynamicFields[slug] = { field_id: fieldId, value };
         }
@@ -569,11 +574,12 @@ export async function createTicket(args: {
   let result;
   try {
     result = await db.transaction(async (tx) => {
-    // Optimized: Re-validate all category hierarchy in parallel (single query per level)
+    // Optimized: Re-validate category hierarchy in parallel (single query per level)
     // This prevents race condition where category is deleted between form submission and ticket creation
+    // Note: We already validated these earlier, but this is a final safety check inside the transaction
     const validationPromises: Promise<unknown>[] = [
       tx
-      .select({ id: categories.id, name: categories.name, is_active: categories.is_active })
+      .select({ id: categories.id, is_active: categories.is_active })
       .from(categories)
       .where(eq(categories.id, categoryRecord.id))
         .limit(1)
@@ -620,7 +626,7 @@ export async function createTicket(args: {
       );
     }
 
-    // Execute all validations in parallel
+    // Execute all validations in parallel (optimized: only select needed fields)
     await Promise.all(validationPromises);
     
     // Update user profile if needed (inside transaction for atomicity)
