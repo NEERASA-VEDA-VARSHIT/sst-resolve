@@ -112,11 +112,38 @@ export async function POST(request: NextRequest) {
         console.log(`[Ticket API] ✅ Wait complete, proceeding with outbox query...`);
         
         console.log(`[Ticket API] 📦 Importing dependencies...`);
-        const { processTicketCreated } = await import("@/workers/handlers/processTicketCreatedWorker");
-        const { markOutboxSuccess, markOutboxFailure } = await import("@/workers/utils");
-        const { db: dbInstance, outbox: outboxTable } = await import("@/db");
-        const { eq, desc, and, isNull, sql } = await import("drizzle-orm");
-        console.log(`[Ticket API] ✅ Dependencies imported successfully`);
+        let processTicketCreated, markOutboxSuccess, markOutboxFailure, dbInstance, outboxTable, eq, desc, and, isNull, sql;
+        try {
+          const processTicketCreatedModule = await import("@/workers/handlers/processTicketCreatedWorker");
+          processTicketCreated = processTicketCreatedModule.processTicketCreated;
+          console.log(`[Ticket API] ✅ processTicketCreated imported`);
+          
+          const utilsModule = await import("@/workers/utils");
+          markOutboxSuccess = utilsModule.markOutboxSuccess;
+          markOutboxFailure = utilsModule.markOutboxFailure;
+          console.log(`[Ticket API] ✅ worker utils imported`);
+          
+          const dbModule = await import("@/db");
+          dbInstance = dbModule.db;
+          outboxTable = dbModule.outbox;
+          console.log(`[Ticket API] ✅ db module imported`);
+          
+          const drizzleModule = await import("drizzle-orm");
+          eq = drizzleModule.eq;
+          desc = drizzleModule.desc;
+          and = drizzleModule.and;
+          isNull = drizzleModule.isNull;
+          sql = drizzleModule.sql;
+          console.log(`[Ticket API] ✅ drizzle-orm imported`);
+          
+          console.log(`[Ticket API] ✅ All dependencies imported successfully`);
+        } catch (importError) {
+          console.error(`[Ticket API] ❌ Error importing dependencies for ticket #${ticket.id}:`, importError);
+          if (importError instanceof Error) {
+            console.error(`[Ticket API] Import error stack:`, importError.stack);
+          }
+          throw importError;
+        }
         
         
         // Find the outbox event for this specific ticket using JSONB query
