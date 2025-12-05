@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { StatsCards } from "./StatsCards";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { AriaLiveRegion } from "@/lib/ui/aria-live-region";
 
 interface Stats {
   total: number;
@@ -35,12 +36,29 @@ function StatsCardsSkeleton() {
 
 async function StatsCardsContent({ statsPromise }: StatsCardsWrapperProps) {
   const stats = await statsPromise;
-  return <StatsCards stats={stats} />;
+  return (
+    <>
+      <AriaLiveRegion
+        success={true}
+        successMessage={`Loaded ${stats.total} tickets`}
+        dataCount={stats.total}
+        dataLabel="tickets"
+      />
+      <StatsCards stats={stats} />
+    </>
+  );
 }
 
 export function StatsCardsWrapper({ statsPromise }: StatsCardsWrapperProps) {
   return (
-    <Suspense fallback={<StatsCardsSkeleton />}>
+    <Suspense 
+      fallback={
+        <>
+          <AriaLiveRegion loading={true} loadingMessage="Loading ticket statistics..." />
+          <StatsCardsSkeleton />
+        </>
+      }
+    >
       <StatsCardsContent statsPromise={statsPromise} />
     </Suspense>
   );

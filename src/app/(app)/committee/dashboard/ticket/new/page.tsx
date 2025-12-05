@@ -4,7 +4,7 @@ import { db, students, hostels, class_sections, batches } from "@/db";
 import { eq, asc } from "drizzle-orm";
 import { getCachedUser } from "@/lib/cache/cached-queries";
 import { getCategoriesHierarchy } from "@/lib/category/getCategoriesHierarchy";
-import TicketForm from "@/components/student/ticket-form/TicketForm";
+import TicketForm from "@/components/features/tickets/forms/TicketForm/TicketForm";
 
 /**
  * Committee New Ticket Page

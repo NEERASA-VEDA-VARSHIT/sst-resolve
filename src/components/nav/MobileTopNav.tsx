@@ -5,7 +5,7 @@ import Image from "next/image";
 import { ThemeToggle } from "@/components/layout/ThemeToggle";
 import { NavUserMenu } from "./NavUserMenu";
 import { getDashboardLinkForRole } from "./nav-items";
-import { UserRole } from "./useRole";
+import { UserRole } from "@/hooks/auth/useRole";
 
 type MobileTopNavProps = {
   role: UserRole;

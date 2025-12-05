@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { StatsCards } from "@/components/dashboard/StatsCards";
 import { getCreatedTickets } from "@/lib/committee/getCreatedTickets";
-import { filterTickets } from "@/lib/ticket/filterTickets";
+import { filterTickets } from "@/lib/ticket/filters/filterTickets";
 import { calculateTicketStats } from "@/lib/committee/calculateStats";
 
 export const dynamic = "force-dynamic";

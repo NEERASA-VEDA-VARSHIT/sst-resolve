@@ -67,8 +67,12 @@ export default clerkMiddleware(async (auth, req) => {
     return NextResponse.next();
   }
 
-  // If role not found, allow access - page will handle user creation & authorization
+  // If role not found (DB unavailable or user doesn't exist yet), allow access
+  // Pages will handle role assignment and redirects
+  // This prevents redirect loops when DB queries fail in Edge runtime
   if (!role) {
+    // Allow all routes - let page layouts handle authorization
+    // This prevents redirect loops when DB is unavailable
     return NextResponse.next();
   }
 

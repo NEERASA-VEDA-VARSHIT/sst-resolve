@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { useTransition } from "react";
+import { useTransition, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   FileText,
@@ -11,8 +11,10 @@ import {
   MessageSquare,
   RotateCcw,
   XCircle,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 interface Stats {
   total: number;
@@ -79,15 +81,22 @@ export function StatsCards({ stats }: StatsCardsProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [, startTransition] = useTransition();
+  const [isPending, startTransition] = useTransition();
+  const [loadingKey, setLoadingKey] = useState<string | null>(null);
 
   /* -----------------------------------------------
       FILTER HANDLER (clean, easy to extend)
   ------------------------------------------------ */
   const handleFilter = (
     type: "status" | "escalated" | "clear",
-    value?: string
+    value?: string,
+    itemKey?: string
   ) => {
+    // Set loading state for the clicked card
+    if (itemKey) {
+      setLoadingKey(itemKey);
+    }
+
     const params = new URLSearchParams();
 
     // Preserve all params except status and escalated
@@ -97,9 +106,22 @@ export function StatsCards({ stats }: StatsCardsProps) {
       }
     });
 
+    let filterLabel = "";
+    let toastMessage = "";
+
     if (type === "clear") {
+      filterLabel = "All tickets";
+      toastMessage = "Showing all tickets";
+      toast.loading("Clearing filter...", { id: "filter-action" });
       startTransition(() => {
         router.push(pathname);
+        setTimeout(() => {
+          toast.success(toastMessage, {
+            id: "filter-action",
+            description: "Filter cleared successfully",
+          });
+          setLoadingKey(null);
+        }, 100);
       });
       return;
     }
@@ -109,22 +131,56 @@ export function StatsCards({ stats }: StatsCardsProps) {
       if (current === "true") {
         // Toggle off if already active
         params.delete("escalated");
+        filterLabel = "All tickets";
+        toastMessage = "Escalated filter removed";
       } else {
         // Toggle on and remove status filter (they're mutually exclusive)
         params.set("escalated", "true");
         params.delete("status");
+        filterLabel = "Escalated tickets";
+        toastMessage = "Filtering escalated tickets";
       }
     }
 
     if (type === "status" && value) {
       const current = searchParams.get("status");
-      if (current !== value) params.set("status", value);
-      params.delete("escalated"); // remove escalated filter when selecting a status
+      if (current !== value) {
+        params.set("status", value);
+        params.delete("escalated"); // remove escalated filter when selecting a status
+        
+        // Map status values to readable labels
+        const statusLabels: Record<string, string> = {
+          open: "Open tickets",
+          in_progress: "In Progress tickets",
+          awaiting_student_response: "Awaiting Student Response tickets",
+          reopened: "Reopened tickets",
+          resolved: "Resolved tickets",
+          closed: "Closed tickets",
+        };
+        filterLabel = statusLabels[value] || "Filtered tickets";
+        toastMessage = `Filtering ${statusLabels[value] || value}`;
+      } else {
+        // Already active, don't do anything
+        setLoadingKey(null);
+        return;
+      }
     }
 
     const query = params.toString();
+    if (toastMessage) {
+      toast.loading("Applying filter...", { id: "filter-action" });
+    }
     startTransition(() => {
       router.push(query ? `${pathname}?${query}` : pathname);
+      setTimeout(() => {
+        if (toastMessage) {
+          toast.success(toastMessage, {
+            id: "filter-action",
+            description: `Showing ${filterLabel.toLowerCase()}`,
+          });
+        }
+        setLoadingKey(null);
+      }, 100);
     });
   };
 
@@ -138,7 +194,7 @@ export function StatsCards({ stats }: StatsCardsProps) {
       value: stats.total,
       icon: FileText,
       color: "default",
-      onClick: () => handleFilter("clear"),
+      onClick: () => handleFilter("clear", undefined, "total"),
       isActive:
         !searchParams.get("status") &&
         searchParams.get("escalated") !== "true",
@@ -150,7 +206,7 @@ export function StatsCards({ stats }: StatsCardsProps) {
       value: stats.open,
       icon: AlertCircle,
       color: "blue",
-      onClick: () => handleFilter("status", "open"),
+      onClick: () => handleFilter("status", "open", "open"),
       isActive: searchParams.get("status") === "open",
     },
     {
@@ -159,7 +215,7 @@ export function StatsCards({ stats }: StatsCardsProps) {
       value: stats.inProgress,
       icon: Clock,
       color: "amber",
-      onClick: () => handleFilter("status", "in_progress"),
+      onClick: () => handleFilter("status", "in_progress", "inProgress"),
       isActive: searchParams.get("status") === "in_progress",
     },
     {
@@ -168,7 +224,7 @@ export function StatsCards({ stats }: StatsCardsProps) {
       value: stats.awaitingStudent,
       icon: MessageSquare,
       color: "purple",
-      onClick: () => handleFilter("status", "awaiting_student_response"),
+      onClick: () => handleFilter("status", "awaiting_student_response", "awaitingStudent"),
       isActive:
         searchParams.get("status") === "awaiting_student_response",
     },
@@ -178,7 +234,7 @@ export function StatsCards({ stats }: StatsCardsProps) {
       value: stats.reopened ?? 0,
       icon: RotateCcw,
       color: "purple",
-      onClick: () => handleFilter("status", "reopened"),
+      onClick: () => handleFilter("status", "reopened", "reopened"),
       isActive: searchParams.get("status") === "reopened",
     },
     {
@@ -187,7 +243,7 @@ export function StatsCards({ stats }: StatsCardsProps) {
       value: stats.resolved,
       icon: CheckCircle2,
       color: "emerald",
-      onClick: () => handleFilter("status", "resolved"),
+      onClick: () => handleFilter("status", "resolved", "resolved"),
       isActive: searchParams.get("status") === "resolved",
     },
     {
@@ -196,7 +252,7 @@ export function StatsCards({ stats }: StatsCardsProps) {
       value: stats.closed ?? 0,
       icon: XCircle,
       color: "default",
-      onClick: () => handleFilter("status", "closed"),
+      onClick: () => handleFilter("status", "closed", "closed"),
       isActive: searchParams.get("status") === "closed",
     },
     {
@@ -205,7 +261,7 @@ export function StatsCards({ stats }: StatsCardsProps) {
       value: stats.escalated,
       icon: AlertCircle,
       color: "red",
-      onClick: () => handleFilter("escalated"),
+      onClick: () => handleFilter("escalated", undefined, "escalated"),
       isActive: searchParams.get("escalated") === "true",
     },
   ].filter((item) => item.alwaysShow || item.value > 0);
@@ -220,28 +276,42 @@ export function StatsCards({ stats }: StatsCardsProps) {
       {statItems.map((item) => {
         const Icon = item.icon;
         const styles = COLOR_STYLES[item.color as keyof typeof COLOR_STYLES];
+        const isLoading = isPending && loadingKey === item.key;
+        const isDisabled = isPending && loadingKey !== item.key;
 
         return (
           <Card
             key={item.key}
             className={cn(
-              "border-2 cursor-pointer transition-all hover:shadow-lg hover:scale-105 group",
+              "border-2 cursor-pointer transition-all hover:shadow-lg hover:scale-105 group relative",
               styles.card,
-              item.isActive && "ring-2 ring-primary ring-offset-1 sm:ring-offset-2 shadow-md"
+              item.isActive && "ring-2 ring-primary ring-offset-1 sm:ring-offset-2 shadow-md",
+              isLoading && "opacity-75 cursor-wait",
+              isDisabled && "opacity-50 cursor-not-allowed"
             )}
-            onClick={item.onClick}
+            onClick={isPending ? undefined : item.onClick}
           >
             <CardContent className="p-3 sm:p-4">
-              {/* Icon + active dot */}
+              {/* Icon + active dot / loading spinner */}
               <div className="flex items-center justify-between mb-1.5 sm:mb-2">
-                <Icon
-                  className={cn(
-                    "w-3.5 h-3.5 sm:w-4 sm:h-4 transition-transform group-hover:scale-110",
+                {isLoading ? (
+                  <Loader2 className={cn(
+                    "w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin",
                     styles.icon
-                  )}
-                />
-                {item.isActive && (
+                  )} />
+                ) : (
+                  <Icon
+                    className={cn(
+                      "w-3.5 h-3.5 sm:w-4 sm:h-4 transition-transform group-hover:scale-110",
+                      styles.icon
+                    )}
+                  />
+                )}
+                {item.isActive && !isLoading && (
                   <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-primary animate-pulse" />
+                )}
+                {isLoading && (
+                  <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-primary" />
                 )}
               </div>
 
@@ -254,6 +324,13 @@ export function StatsCards({ stats }: StatsCardsProps) {
               <p className={cn("text-lg sm:text-xl lg:text-2xl font-bold", styles.text)}>
                 {item.value ?? 0}
               </p>
+
+              {/* Loading overlay */}
+              {isLoading && (
+                <div className="absolute inset-0 bg-background/50 backdrop-blur-[1px] rounded-lg flex items-center justify-center">
+                  <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                </div>
+              )}
             </CardContent>
           </Card>
         );

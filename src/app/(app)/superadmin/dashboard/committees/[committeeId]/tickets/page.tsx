@@ -8,7 +8,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, FileText } from "lucide-react";
 import { StatsCards } from "@/components/dashboard/StatsCards";
-import { filterTickets } from "@/lib/ticket/filterTickets";
+import { filterTickets } from "@/lib/ticket/filters/filterTickets";
 import { calculateTicketStats } from "@/lib/committee/calculateStats";
 import { getCommitteeTicketsById } from "@/lib/committee/getCommitteeTicketsById";
 import type { Ticket } from "@/db/types-only";

@@ -44,7 +44,7 @@ export function getCanonicalStatus(status: string | null | undefined): TicketSta
     
     // Check aliases
     if (normalized in STATUS_ALIASES) {
-        return STATUS_ALIASES[normalized];
+        return STATUS_ALIASES[normalized] ?? null;
     }
     
     return null;

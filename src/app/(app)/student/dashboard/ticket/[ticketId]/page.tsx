@@ -2,51 +2,79 @@ import { auth } from "@clerk/nextjs/server";
 import { notFound } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import nextDynamic from "next/dynamic";
+import { db, tickets } from "@/db";
+import { desc } from "drizzle-orm";
 
 // Data loading
 import { getCachedUser } from "@/lib/cache/cached-queries";
-import { getStudentTicketViewModel } from "@/lib/tickets/viewModel";
+import { getStudentTicketViewModel } from "@/lib/ticket/data/viewModel";
 
 // UI Components
-import { TicketHeader } from "@/components/student/ticket/TicketHeader";
-import { TicketQuickInfo } from "@/components/student/ticket/TicketQuickInfo";
-import { TicketSubmittedInfo } from "@/components/student/ticket/TicketSubmittedInfo";
-import { StudentActions } from "@/components/tickets/StudentActions";
+import { TicketHeader } from "@/components/features/tickets/display/StudentTicket/TicketHeader";
+import { TicketQuickInfo } from "@/components/features/tickets/display/StudentTicket/TicketQuickInfo";
+import { TicketSubmittedInfo } from "@/components/features/tickets/display/StudentTicket/TicketSubmittedInfo";
+import { StudentActions } from "@/components/features/tickets/actions/StudentActions";
 
 // Lazy-load heavy, below-the-fold sections using dynamic imports.
 // Note: We don't disable SSR here because this is a Server Component.
 const TicketTimeline = nextDynamic(() =>
-  import("@/components/student/ticket/TicketTimeline").then(
+  import("@/components/features/tickets/display/StudentTicket/TicketTimeline").then(
     (mod) => mod.TicketTimeline
   )
 );
 
 const TicketConversation = nextDynamic(() =>
-  import("@/components/student/ticket/TicketConversation").then(
+  import("@/components/features/tickets/display/StudentTicket/TicketConversation").then(
     (mod) => mod.TicketConversation
   )
 );
 
 const TicketRating = nextDynamic(() =>
-  import("@/components/student/ticket/TicketRating").then(
+  import("@/components/features/tickets/display/StudentTicket/TicketRating").then(
     (mod) => mod.TicketRating
   )
 );
 
 const TicketTATInfo = nextDynamic(() =>
-  import("@/components/student/ticket/TicketTATInfo").then(
+  import("@/components/features/tickets/display/StudentTicket/TicketTATInfo").then(
     (mod) => mod.TicketTATInfo
   )
 );
 
 const TicketStudentInfo = nextDynamic(() =>
-  import("@/components/student/ticket/TicketStudentInfo").then(
+  import("@/components/features/tickets/display/StudentTicket/TicketStudentInfo").then(
     (mod) => mod.TicketStudentInfo
   )
 );
 
-export const dynamic = "force-dynamic";
+// Use ISR (Incremental Static Regeneration) - revalidate every 30 seconds
+// Removed force-dynamic to allow revalidation to work
 export const revalidate = 30;
+
+// Allow on-demand rendering for tickets not in the static params list
+export const dynamicParams = true;
+
+/**
+ * Generate static params for ticket detail pages
+ * Pre-renders the 50 most recent tickets at build time for faster loads
+ */
+export async function generateStaticParams() {
+  try {
+    const recentTickets = await db
+      .select({ id: tickets.id })
+      .from(tickets)
+      .orderBy(desc(tickets.created_at))
+      .limit(50);
+
+    return recentTickets.map((ticket) => ({
+      ticketId: ticket.id.toString(),
+    }));
+  } catch (error) {
+    console.error("Error generating static params for tickets:", error);
+    // Return empty array on error to allow build to continue
+    return [];
+  }
+}
 
 /**
  * Student Ticket Detail Page
@@ -59,17 +87,20 @@ export const revalidate = 30;
 export default async function StudentTicketPage({
   params,
 }: {
-  params: Promise<{ ticketId: string }>;
+  params: { ticketId: string };
 }) {
   const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized"); // Should never happen due to layout protection
 
-  const { ticketId } = await params;
+  const { ticketId } = params;
   const id = Number(ticketId);
   if (!Number.isFinite(id)) notFound();
 
   // Get user
   const dbUser = await getCachedUser(userId);
+  if (!dbUser) {
+    throw new Error("User not found in database");
+  }
 
   // Load view model (handles all business logic)
   const vm = await getStudentTicketViewModel(id, dbUser.id);
@@ -113,6 +144,7 @@ export default async function StudentTicketPage({
               ticketId={vm.ticket.id}
               status={vm.statusDisplay}
               normalizedStatus={vm.normalizedStatus}
+              optimisticComments={[]}
             />
 
             {(vm.normalizedStatus === "closed" || vm.normalizedStatus === "resolved") && (

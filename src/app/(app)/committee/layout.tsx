@@ -1,9 +1,8 @@
 import { Suspense } from "react";
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { getUserRoleFromDB } from "@/lib/auth/db-roles";
-import { getOrCreateUser } from "@/lib/auth/user-sync";
-import { CommitteeNav } from "@/components/nav/CommitteeNav";
+import { getUserRole, ensureUser } from "@/lib/auth/api-auth";
+import { RoleNav } from "@/components/nav/RoleNav";
 import { NavLoadingShimmer } from "@/components/nav/NavLoadingShimmer";
 
 /**
@@ -23,10 +22,10 @@ export default async function CommitteeLayout({
   }
 
   // Ensure user exists in database
-  await getOrCreateUser(userId);
+  await ensureUser(userId);
 
-  // Get role from database (single source of truth)
-  const role = await getUserRoleFromDB(userId);
+  // Get role from API (single source of truth)
+  const role = await getUserRole(userId);
 
   // Redirect non-committee users to their appropriate dashboard
   if (role !== "committee") {
@@ -42,7 +41,7 @@ export default async function CommitteeLayout({
   return (
     <>
       <Suspense fallback={<NavLoadingShimmer />}>
-        <CommitteeNav />
+        <RoleNav role="committee" />
       </Suspense>
       {children}
     </>

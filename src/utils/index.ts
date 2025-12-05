@@ -90,7 +90,7 @@ export function calculateTATDate(tatText: string): Date {
     return new Date(now.getTime() + 24 * 60 * 60 * 1000);
   }
   
-  const amount = parseInt(match[1]);
+  const amount = parseInt(match[1] || "1", 10);
   const unit = match[2];
   
   let milliseconds = 0;
@@ -165,7 +165,7 @@ export function escapeHtml(text: string): string {
     '"': "&quot;",
     "'": "&#039;",
   };
-  return text.replace(/[&<>"']/g, (m) => map[m]);
+  return text.replace(/[&<>"']/g, (m) => map[m] || m);
 }
 
 /**

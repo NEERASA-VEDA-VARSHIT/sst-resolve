@@ -86,6 +86,29 @@ export async function getOrCreateUser(clerkUserId: string) {
       // Edge case: Clerk user might have been deleted but local session persisted.
       // Periodically re-validate with Clerk (cached to avoid excessive API calls).
       await ensureClerkUserExists(clerkUserId);
+
+      // Ensure the user always has a role_id (backfill missing roles to student)
+      if (!existingUser.role_id) {
+        const studentRoleId = await db
+          .select({ id: roles.id })
+          .from(roles)
+          .where(eq(roles.name, "student"))
+          .limit(1);
+
+        if (studentRoleId?.[0]?.id) {
+          const [updatedUser] = await db
+            .update(users)
+            .set({
+              role_id: studentRoleId[0].id,
+              updated_at: new Date(),
+            })
+            .where(eq(users.id, existingUser.id))
+            .returning();
+
+          return updatedUser;
+        }
+      }
+
       return existingUser;
     }
 

@@ -156,11 +156,13 @@ export function ProgressBar() {
       const anchor = target.closest('a');
       
       if (anchor) {
-        const href = anchor.getAttribute('href');
+        const href = anchor?.getAttribute("href");
+        if (!href) return;
+        
         // Only handle internal links (starting with /) and not external links or anchors
-        if (href && href.startsWith('/') && !href.startsWith('//') && !href.startsWith('/#')) {
+        if (href.startsWith('/') && !href.startsWith('//') && !href.startsWith('/#')) {
           // Extract pathname from href (remove query params and hash)
-          const hrefPath = href.split('?')[0].split('#')[0];
+          const hrefPath = href.split('?')[0]?.split('#')[0] || '';
           const currentPath = pathname;
           
           // Check if it's a different route

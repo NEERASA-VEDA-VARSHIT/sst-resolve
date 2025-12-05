@@ -1,20 +1,18 @@
 import { db, tickets, categories, ticket_statuses, ticket_groups, users } from "@/db";
 import { desc, eq, isNotNull, and, sql, ilike } from "drizzle-orm";
 import { aliasedTable } from "drizzle-orm";
-import { TicketGrouping } from "@/components/admin/TicketGrouping";
-import { SelectableTicketList } from "@/components/admin/SelectableTicketList";
+import { TicketGrouping, SelectableTicketList } from "@/components/admin/tickets";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import { ArrowLeft, Users, Package, CheckCircle2, TrendingUp } from "lucide-react";
-import { AdminTicketFilters } from "@/components/admin/AdminTicketFilters";
+import { AdminTicketFilters } from "@/components/admin/tickets";
 import type { Ticket } from "@/db/types-only";
 import type { TicketMetadata } from "@/db/inferred-types";
 
-// Force dynamic rendering since we use auth headers
-export const dynamic = "force-dynamic";
-// Cache response for 30 seconds to improve performance
+// Use ISR (Incremental Static Regeneration) - cache for 30 seconds
+// Removed force-dynamic to allow revalidation to work
 export const revalidate = 30;
 
 /**

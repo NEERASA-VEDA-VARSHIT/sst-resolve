@@ -81,6 +81,9 @@ export async function POST(request: NextRequest) {
 
     // Ensure user exists in database
     const dbUser = await getOrCreateUser(userId);
+    if (!dbUser) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
 
     // Create the group
     const [newGroup] = await db
@@ -91,6 +94,10 @@ export async function POST(request: NextRequest) {
         created_by: dbUser.id,
       })
       .returning();
+
+    if (!newGroup) {
+      return NextResponse.json({ error: "Failed to create group" }, { status: 500 });
+    }
 
     // Add tickets to the group
     await db
@@ -277,15 +284,15 @@ export async function GET() {
                         }
                         // If it's not a plain object, try to convert it
                         try {
-                          return JSON.parse(JSON.stringify(t.metadata, (key, value) => {
-                            if (value instanceof Date) {
-                              return value.toISOString();
-                            }
-                            if (value === undefined) {
-                              return null;
-                            }
-                            return value;
-                          }));
+                          return JSON.parse(JSON.stringify(t.metadata, (_key, value) => {
+                                                                            if (value instanceof Date) {
+                                                                              return value.toISOString();
+                                                                            }
+                                                                            if (value === undefined) {
+                                                                              return null;
+                                                                            }
+                                                                            return value;
+                                                                          }));
                         } catch {
                           return null;
                         }
@@ -403,7 +410,7 @@ export async function GET() {
                       if (typeof t.metadata === 'object' && t.metadata !== null) {
                         if (t.metadata.constructor === Object || Object.getPrototypeOf(t.metadata) === null) {
                           try {
-                            return JSON.parse(JSON.stringify(t.metadata, (key, value) => {
+                            return JSON.parse(JSON.stringify(t.metadata, (_key, value) => {
                               if (value instanceof Date) return value.toISOString();
                               if (value === undefined) return null;
                               return value;
@@ -413,7 +420,7 @@ export async function GET() {
                           }
                         }
                         try {
-                          return JSON.parse(JSON.stringify(t.metadata, (key, value) => {
+                          return JSON.parse(JSON.stringify(t.metadata, (_key, value) => {
                             if (value instanceof Date) return value.toISOString();
                             if (value === undefined) return null;
                             return value;
@@ -475,7 +482,7 @@ export async function GET() {
     const finalGroups = serializableGroups.map(g => {
       // Use JSON.parse(JSON.stringify()) to ensure everything is serializable
       try {
-        return JSON.parse(JSON.stringify(g, (key, value) => {
+        return JSON.parse(JSON.stringify(g, (_key, value) => {
           // Convert any remaining Date objects
           if (value instanceof Date) {
             return value.toISOString();

@@ -10,7 +10,7 @@ import { fastAuthCheck, isAuthError } from "@/lib/auth/fast-auth";
 export async function GET() {
   try {
     // Fast auth check (skips user sync for read operation)
-    const authResult = await fastAuthCheck(["admin", "super_admin", "committee"]);
+    const authResult = await fastAuthCheck(["admin", "snr_admin", "super_admin", "committee"]);
     
     // Return error response if auth failed
     if (isAuthError(authResult)) {
@@ -52,8 +52,9 @@ export async function POST(request: NextRequest) {
     // Get role from database (single source of truth)
     const role = await getUserRoleFromDB(userId);
     
-    if (role !== "super_admin") {
-      return NextResponse.json({ error: "Only super admins can create committees" }, { status: 403 });
+    // Snr Admin and Super Admin can create committees
+    if (role !== "super_admin" && role !== "snr_admin") {
+      return NextResponse.json({ error: "Only senior admins and super admins can create committees" }, { status: 403 });
     }
 
     const body = await request.json();

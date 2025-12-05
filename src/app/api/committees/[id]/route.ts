@@ -23,8 +23,9 @@ export async function PATCH(
     // Get role from database (single source of truth)
     const role = await getUserRoleFromDB(userId);
     
-    if (role !== "super_admin") {
-      return NextResponse.json({ error: "Only super admins can update committees" }, { status: 403 });
+    // Snr Admin and Super Admin can update committees
+    if (role !== "super_admin" && role !== "snr_admin") {
+      return NextResponse.json({ error: "Only senior admins and super admins can update committees" }, { status: 403 });
     }
 
     const { id } = await params;
@@ -251,8 +252,9 @@ export async function DELETE(
     // Get role from database (single source of truth)
     const role = await getUserRoleFromDB(userId);
     
-    if (role !== "super_admin") {
-      return NextResponse.json({ error: "Only super admins can delete committees" }, { status: 403 });
+    // Snr Admin and Super Admin can delete committees
+    if (role !== "super_admin" && role !== "snr_admin") {
+      return NextResponse.json({ error: "Only senior admins and super admins can delete committees" }, { status: 403 });
     }
 
     const { id } = await params;

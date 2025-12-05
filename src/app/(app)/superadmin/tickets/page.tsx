@@ -3,7 +3,7 @@ import { db, tickets, categories, users, ticket_statuses } from "@/db";
 import { desc, sql, and, count, eq } from "drizzle-orm";
 import Link from "next/link";
 import { TicketCard } from "@/components/layout/TicketCard";
-import { AdminTicketFilters } from "@/components/admin/AdminTicketFilters";
+import { AdminTicketFilters } from "@/components/admin/tickets";
 import { Card, CardContent } from "@/components/ui/card";
 import { FileText } from "lucide-react";
 import { getCachedAdminAssignment } from "@/lib/cache/cached-queries";

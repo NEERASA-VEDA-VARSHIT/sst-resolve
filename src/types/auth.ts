@@ -7,7 +7,7 @@
  * Use getUserRoleFromDB() from @/lib/auth/db-roles to get user roles.
  */
 
-export type UserRole = "super_admin" | "admin" | "committee" | "student";
+export type UserRole = "super_admin" | "snr_admin" | "admin" | "committee" | "student";
 
 /**
  * @deprecated Roles are now stored in database, not Clerk metadata
@@ -22,7 +22,7 @@ export interface SessionMetadata {
  * Use getUserRoleFromDB() from @/lib/auth/db-roles instead
  */
 export function getValidRole(metadata: SessionMetadata | undefined): UserRole {
-  const allowedRoles: readonly UserRole[] = ["super_admin", "admin", "committee", "student"] as const;
+  const allowedRoles: readonly UserRole[] = ["super_admin", "snr_admin", "admin", "committee", "student"] as const;
   const role = metadata?.role;
 
   if (role && allowedRoles.includes(role)) {
@@ -39,6 +39,8 @@ export function getDashboardPath(role: UserRole): string {
   switch (role) {
     case "super_admin":
       return "/superadmin/dashboard";
+    case "snr_admin":
+      return "/snr-admin/dashboard";
     case "admin":
       return "/admin/dashboard";
     case "committee":

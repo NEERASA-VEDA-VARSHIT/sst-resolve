@@ -44,9 +44,10 @@ export async function GET() {
     // -------------------------------
     // BASIC METRICS
     // -------------------------------
-    const [{ total }] = await db
-    .select({ total: sql<number>`COUNT(*)` })
-    .from(tickets);
+    const totalRows = await db
+      .select({ total: sql<number>`COUNT(*)` })
+      .from(tickets);
+    const total = totalRows[0]?.total ?? 0;
 
   const statusList = [
     TICKET_STATUS.OPEN,
@@ -98,7 +99,7 @@ export async function GET() {
   // -------------------------------
   // Average resolution time (in hours) - extract from metadata
   // Note: This is a simplified calculation. For production, you may want to query metadata JSONB
-  const [{ avgResolutionHours }] = await db
+  const avgResolutionRows = await db
     .select({
       avgResolutionHours: sql<number>`
           AVG(
@@ -112,6 +113,7 @@ export async function GET() {
     })
     .from(tickets)
     .where(sql`metadata->>'resolved_at' IS NOT NULL`);
+  const avgResolutionHours = avgResolutionRows[0]?.avgResolutionHours ?? 0;
 
   // Overdue tickets: updated_at > 48h OR SLA custom logic
   const resolvedStatusId = await getStatusIdByValue(TICKET_STATUS.RESOLVED);
@@ -122,15 +124,16 @@ export async function GET() {
       )
     : sql`now() - ${tickets.created_at} > interval '48 hours'`;
 
-  const [{ overdue }] = await db
+  const overdueRows = await db
     .select({
       overdue: sql<number>`COUNT(*)`,
     })
     .from(tickets)
     .where(overdueWhere);
+  const overdue = overdueRows[0]?.overdue ?? 0;
 
   const reopenedStatusId = await getStatusIdByValue(TICKET_STATUS.REOPENED);
-  const [{ reopened }] = reopenedStatusId
+  const reopenedRows = reopenedStatusId
     ? await db
         .select({
           reopened: sql<number>`COUNT(*)`,
@@ -138,6 +141,7 @@ export async function GET() {
         .from(tickets)
         .where(eq(tickets.status_id, reopenedStatusId))
     : [{ reopened: 0 }];
+  const reopened = reopenedRows[0]?.reopened ?? 0;
 
   // -------------------------------
   // TODAY'S METRICS
@@ -147,13 +151,14 @@ export async function GET() {
 
   const todayStartSQL = sql`${todayStart.toISOString()}`;
 
-  const [{ createdToday }] = await db
+  const createdTodayRows = await db
     .select({ createdToday: sql<number>`COUNT(*)` })
     .from(tickets)
     .where(gte(tickets.created_at, todayStartSQL));
+  const createdToday = createdTodayRows[0]?.createdToday ?? 0;
 
   const resolvedStatusIdForToday = await getStatusIdByValue(TICKET_STATUS.RESOLVED);
-  const [{ resolvedToday }] = resolvedStatusIdForToday
+  const resolvedTodayRows = resolvedStatusIdForToday
     ? await db
         .select({ resolvedToday: sql<number>`COUNT(*)` })
         .from(tickets)
@@ -165,9 +170,10 @@ export async function GET() {
           )
         )
     : [{ resolvedToday: 0 }];
+  const resolvedToday = resolvedTodayRows[0]?.resolvedToday ?? 0;
 
   const escalatedStatusId = await getStatusIdByValue(TICKET_STATUS.ESCALATED);
-  const [{ escalatedToday }] = escalatedStatusId
+  const escalatedTodayRows = escalatedStatusId
     ? await db
         .select({ escalatedToday: sql<number>`COUNT(*)` })
         .from(tickets)
@@ -179,6 +185,7 @@ export async function GET() {
           )
         )
     : [{ escalatedToday: 0 }];
+  const escalatedToday = escalatedTodayRows[0]?.escalatedToday ?? 0;
 
   // -------------------------------
   // FINAL RESPONSE

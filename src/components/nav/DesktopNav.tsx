@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/layout/ThemeToggle";
 import { NavUserMenu } from "./NavUserMenu";
 import { NavItem, getDashboardLinkForRole } from "./nav-items";
-import { UserRole } from "./useRole";
+import { UserRole } from "@/hooks/auth/useRole";
 import { isRouteActive } from "./nav-utils";
 import { Button } from "@/components/ui/button";
 import { PanelLeftOpen, PanelLeftClose } from "lucide-react";

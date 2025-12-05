@@ -5,14 +5,14 @@ import { TicketCard } from "@/components/layout/TicketCard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import Link from "next/link";
-import { AdminTicketFilters } from "@/components/admin/AdminTicketFilters";
+import { AdminTicketFilters } from "@/components/admin/tickets";
 import { StatsCards } from "@/components/dashboard/StatsCards";
 import { Button } from "@/components/ui/button";
 import { FileText, AlertCircle, TrendingUp, Calendar } from "lucide-react";
 import { getCachedAdminUser, getCachedAdminAssignment, getCachedAdminTickets, getCachedTicketStatuses } from "@/lib/cache/cached-queries";
 import { ticketMatchesAdminAssignment } from "@/lib/assignment/admin-assignment";
 import type { Ticket } from "@/db/types-only";
-import type { AdminTicketRow } from "@/lib/ticket/adminTicketFilters";
+import type { AdminTicketRow } from "@/lib/ticket/filters/adminTicketFilters";
 import {
   applySearchFilter,
   applyCategoryFilter,
@@ -24,14 +24,13 @@ import {
   applyDateRangeFilter,
   applyTATFilter,
   calculateTicketStats,
-} from "@/lib/ticket/adminTicketFilters";
+} from "@/lib/ticket/filters/adminTicketFilters";
 import { parseTicketMetadata } from "@/db/inferred-types";
-import { isOpenStatus, normalizeStatus } from "@/lib/ticket/normalizeStatus";
+import { isOpenStatus, normalizeStatus } from "@/lib/ticket/utils/normalizeStatus";
 import type { TicketStatusValue } from "@/conf/constants";
 
-// Force dynamic rendering for authenticated routes
-export const dynamic = 'force-dynamic';
-// Revalidate every 30 seconds for fresh data
+// Use ISR (Incremental Static Regeneration) - revalidate every 30 seconds
+// Removed force-dynamic to allow revalidation to work
 export const revalidate = 30;
 
 /**

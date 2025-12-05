@@ -213,7 +213,7 @@ export default function TicketSearch({
           setCategoryFilter(newValue);
           setSubcategoryFilter("");
           setDynamicFilters({});
-          applyFilters(searchQuery, statusFilter, newValue, "", "", sortBy, {});
+          applyFilters(searchQuery, statusFilter, newValue, "", sortBy, {});
         }}>
           <SelectTrigger className="w-full sm:w-[180px] h-9 sm:h-10 text-xs sm:text-sm">
             <SelectValue placeholder="All Categories" />
@@ -235,7 +235,7 @@ export default function TicketSearch({
             const newValue = value === "all" ? "" : value;
             setSubcategoryFilter(newValue);
             setDynamicFilters({});
-            applyFilters(searchQuery, statusFilter, categoryFilter, newValue, "", sortBy, {});
+            applyFilters(searchQuery, statusFilter, categoryFilter, newValue, sortBy, {});
           }}>
             <SelectTrigger className="w-full sm:w-[180px] h-9 sm:h-10 text-xs sm:text-sm">
               <SelectValue placeholder="All Subcategories" />

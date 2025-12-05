@@ -1,7 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { getUserRoleFromDB } from "@/lib/auth/db-roles";
-import { getOrCreateUser } from "@/lib/auth/user-sync";
+import { getUserRole, ensureUser } from "@/lib/auth/api-auth";
 import { SuperAdminLayoutShell } from "@/components/nav/SuperAdminLayoutShell";
 
 /**
@@ -21,10 +20,10 @@ export default async function SuperAdminLayout({
   }
 
   // Ensure user exists in database
-  await getOrCreateUser(userId);
+  await ensureUser(userId);
 
-  // Get role from database (single source of truth)
-  const role = await getUserRoleFromDB(userId);
+  // Get role from API (single source of truth)
+  const role = await getUserRole(userId);
 
   // Redirect non-super_admin users to their appropriate dashboard
   if (role !== "super_admin") {

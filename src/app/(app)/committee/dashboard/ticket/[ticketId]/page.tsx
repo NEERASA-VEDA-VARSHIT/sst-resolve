@@ -5,34 +5,34 @@ import { redirect, notFound } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 import { getCachedUser } from "@/lib/cache/cached-queries";
-import { canCommitteeAccessTicket } from "@/lib/ticket/committeeAccess";
+import { canCommitteeAccessTicket } from "@/lib/ticket/utils/committeeAccess";
 
-import { getCommitteeTicketData } from "@/lib/ticket/getCommitteeTicketData";
+import { getCommitteeTicketData } from "@/lib/ticket/data/getCommitteeTicketData";
 
-import { resolveProfileFields } from "@/lib/ticket/profileFieldResolver";
+import { resolveProfileFields } from "@/lib/ticket/validation/profileFieldResolver";
 
-import { buildTimeline } from "@/lib/ticket/buildTimeline";
+import { buildTimeline } from "@/lib/ticket/formatting/buildTimeline";
 
-import { enrichTimelineWithTAT } from "@/lib/ticket/enrichTimeline";
+import { enrichTimelineWithTAT } from "@/lib/ticket/formatting/enrichTimeline";
 
-import { parseTicketMetadata, extractImagesFromMetadata } from "@/lib/ticket/parseTicketMetadata";
+import { parseTicketMetadata, extractImagesFromMetadata } from "@/lib/ticket/validation/parseTicketMetadata";
 
-import { calculateTATInfo } from "@/lib/ticket/calculateTAT";
+import { calculateTATInfo } from "@/lib/ticket/utils/calculateTAT";
 
 import { normalizeStatusForComparison } from "@/lib/utils";
 
 import { getCachedTicketStatuses } from "@/lib/cache/cached-queries";
 import { buildProgressMap } from "@/lib/status/getTicketStatuses";
 
-import { CommitteeTicketHeader } from "@/components/committee/ticket/CommitteeTicketHeader";
+import { CommitteeTicketHeader } from "@/components/features/tickets/actions/CommitteeTicket/CommitteeTicketHeader";
 
-import { TicketQuickInfo } from "@/components/student/ticket/TicketQuickInfo";
+import { TicketQuickInfo } from "@/components/features/tickets/display/StudentTicket/TicketQuickInfo";
 
-import { TicketSubmittedInfo } from "@/components/student/ticket/TicketSubmittedInfo";
+import { TicketSubmittedInfo } from "@/components/features/tickets/display/StudentTicket/TicketSubmittedInfo";
 
-import { TicketTimeline } from "@/components/student/ticket/TicketTimeline";
+import { TicketTimeline } from "@/components/features/tickets/display/StudentTicket/TicketTimeline";
 
-import { AdminCommentComposer } from "@/components/tickets/AdminCommentComposer";
+import { AdminCommentComposer } from "@/components/features/tickets/actions/AdminCommentComposer";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
 
@@ -44,21 +44,47 @@ import { MessageSquare, User } from "lucide-react";
 
 import { format } from "date-fns";
 
-import { TicketRating } from "@/components/student/ticket/TicketRating";
+import { TicketRating } from "@/components/features/tickets/display/StudentTicket/TicketRating";
 
-import { TicketTATInfo } from "@/components/student/ticket/TicketTATInfo";
+import { TicketTATInfo } from "@/components/features/tickets/display/StudentTicket/TicketTATInfo";
 
-import { TicketStudentInfo } from "@/components/student/ticket/TicketStudentInfo";
+import { TicketStudentInfo } from "@/components/features/tickets/display/StudentTicket/TicketStudentInfo";
 
-import { CommitteeActions } from "@/components/committee/ticket/CommitteeActions";
+import { CommitteeActions } from "@/components/features/tickets/actions/CommitteeTicket/CommitteeActions";
 
 import type { TicketStatusDisplay, TicketComment, TicketTimelineEntry, ResolvedProfileField, TATInfo } from "@/types/ticket";
 
+import { db, tickets } from "@/db";
+import { desc } from "drizzle-orm";
 
-
-export const dynamic = "force-dynamic";
-
+// Use ISR (Incremental Static Regeneration) - revalidate every 30 seconds
+// Removed force-dynamic to allow revalidation to work
 export const revalidate = 30;
+
+// Allow on-demand rendering for tickets not in the static params list
+export const dynamicParams = true;
+
+/**
+ * Generate static params for ticket detail pages
+ * Pre-renders the 50 most recent tickets at build time for faster loads
+ */
+export async function generateStaticParams() {
+  try {
+    const recentTickets = await db
+      .select({ id: tickets.id })
+      .from(tickets)
+      .orderBy(desc(tickets.created_at))
+      .limit(50);
+
+    return recentTickets.map((ticket) => ({
+      ticketId: ticket.id.toString(),
+    }));
+  } catch (error) {
+    console.error("Error generating static params for tickets:", error);
+    // Return empty array on error to allow build to continue
+    return [];
+  }
+}
 
 
 

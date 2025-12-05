@@ -14,6 +14,7 @@ import type { UserRole } from "@/types/auth";
 const ROLE_NAMES: Record<UserRole, string> = {
   student: "student",
   admin: "admin",
+  snr_admin: "snr_admin",
   super_admin: "super_admin",
   committee: "committee",
 };
@@ -27,6 +28,7 @@ export { ROLE_NAMES };
  */
 const ROLE_PRIORITY: Record<UserRole, number> = {
   super_admin: 5,
+  snr_admin: 4,
   admin: 3,
   committee: 2,
   student: 1,
@@ -144,6 +146,10 @@ export async function getOrCreateRole(roleName: UserRole): Promise<number> {
       })
       .returning({ id: roles.id });
 
+    if (!newRole) {
+      throw new Error("Failed to create role");
+    }
+
     setRoleInCache(name, newRole.id);
     return newRole.id;
   } catch (err: unknown) {
@@ -202,6 +208,8 @@ export async function getUserRoleFromDB(clerkUserId: string): Promise<UserRole> 
 
     const [user] = await db
       .select({
+        userId: users.id,
+        roleId: users.role_id,
         roleName: roles.name,
       })
       .from(users)
@@ -214,10 +222,21 @@ export async function getUserRoleFromDB(clerkUserId: string): Promise<UserRole> 
       )
       .limit(1);
 
+    // If user is missing a role, assign the default "student" role and persist it
     if (!user || !user.roleName) {
+      const studentRoleId = await getRoleId("student");
+
+      if (studentRoleId && user?.userId) {
+        await db
+          .update(users)
+          .set({ role_id: studentRoleId, updated_at: new Date() })
+          .where(eq(users.id, user.userId));
+      }
+
       if (process.env.NODE_ENV !== "production") {
         console.warn(`[DB Roles] User ${clerkUserId} not found or has no role, defaulting to student`);
       }
+      setUserRoleInCache(clerkUserId, "student");
       return "student";
     }
 
@@ -226,6 +245,8 @@ export async function getUserRoleFromDB(clerkUserId: string): Promise<UserRole> 
 
     return roleName;
   } catch (error) {
+    // Safety fallback to prevent redirect loops if role lookup fails
+    // Do NOT cache the fallback result so we don't pin users to "student"
     console.error("[DB Roles] Error getting user role:", error);
     return "student";
   }
@@ -362,7 +383,7 @@ export async function setUserRole(
       .where(eq(users.id, user.id));
 
     // Update or create admin profile with primary domain/scope
-    if (roleName === "admin" || roleName === "super_admin") {
+    if (roleName === "admin" || roleName === "snr_admin" || roleName === "super_admin") {
       const { admin_profiles } = await import("@/db/schema");
       const { eq } = await import("drizzle-orm");
       
@@ -393,11 +414,11 @@ export async function setUserRole(
       }
     }
 
-    // If promoting to admin or super_admin, delete student record if it exists
+    // If promoting to admin, snr_admin, or super_admin, delete student record if it exists
     // Admins and super_admins are not students, so their student record should be removed
     // Note: Student records are only created when explicitly needed (via admin form/bulk upload),
     // so a new staff member who logs in won't have a student record - that's fine!
-    if (roleName === "admin" || roleName === "super_admin") {
+    if (roleName === "admin" || roleName === "snr_admin" || roleName === "super_admin") {
       try {
         const { students } = await import("@/db/schema");
         const { eq } = await import("drizzle-orm");

@@ -1,5 +1,5 @@
+import type { ReactNode } from "react";
 import { auth } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
 import { isProfileComplete } from "@/lib/auth/profile-check";
 import { getCachedUser } from "@/lib/cache/cached-queries";
 
@@ -7,15 +7,23 @@ import { getCachedUser } from "@/lib/cache/cached-queries";
  * Student Dashboard Layout
  * Note: Auth and role checks are handled by parent student/layout.tsx
  * This layout only handles profile completion check
+ * 
+ * DO NOT call auth() or redirect based on userId here - creates loops!
+ * Parent layout already verified userId exists.
  */
 export default async function StudentDashboardLayout({
   children,
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
-  // Layout ensures userId exists and user is a student
+  // Get userId from auth (should exist - parent layout verified)
   const { userId } = await auth();
-  if (!userId) throw new Error("Unauthorized"); // TypeScript type guard - parent layout ensures this never happens
+  
+  // If userId is null, something went wrong at parent layout level
+  // Just render children - page will show error message
+  if (!userId) {
+    return <>{children}</>;
+  }
 
   // Use cached function for better performance (request-scoped deduplication)
   // Parent layout already ensures user exists, so dbUser will exist
@@ -24,15 +32,17 @@ export default async function StudentDashboardLayout({
   // Safety check (UUID should always exist)
   if (!dbUser.id) {
     console.error("[StudentDashboardLayout] Missing dbUser.id", dbUser);
-    redirect("/");
+    return <>{children}</>;
   }
 
   // Profile check must use DB UUID (not Clerk ID)
   const profileComplete = await isProfileComplete(dbUser.id);
 
-  if (!profileComplete) {
-    redirect("/student/profile");
-  }
+  // Temporarily disabled to prevent redirect loops
+  // TODO: Re-enable after fixing auth flow
+  // if (!profileComplete) {
+  //   redirect("/student/profile");
+  // }
 
   return (
     <div className="pb-16 lg:pb-0 pt-16 lg:pt-0">

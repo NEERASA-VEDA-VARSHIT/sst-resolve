@@ -199,7 +199,7 @@ export async function POST(
       }
     } else if (isCommittee) {
       // Edge case: Validate committee member has access to this ticket
-      const { canCommitteeAccessTicket } = await import("@/lib/ticket/committeeAccess");
+      const { canCommitteeAccessTicket } = await import("@/lib/ticket/utils/committeeAccess");
       const hasAccess = await canCommitteeAccessTicket(ticketId, localUser.id);
       if (!hasAccess) {
         return NextResponse.json({ error: "You can only comment on tickets tagged to your committee or tickets you created" }, { status: 403 });

@@ -1,70 +1,74 @@
-"use client";
-
-import { useEffect, useState, useCallback } from "react";
-import { useUser } from "@clerk/nextjs";
+import { auth } from "@clerk/nextjs/server";
+import { db, students, users, hostels, batches, class_sections } from "@/db";
+import { eq } from "drizzle-orm";
+import { getOrCreateUser } from "@/lib/auth/user-sync";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { User, Lock, AlertCircle } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { User, Loader2, Lock, AlertCircle } from "lucide-react";
-import { toast } from "sonner";
-import type { StudentProfile } from "@/db/types-only";
+import { redirect } from "next/navigation";
 
-export default function StudentProfilePage() {
-  const { user, isLoaded } = useUser();
-  const [loading, setLoading] = useState(true);
-  const [needsLink, setNeedsLink] = useState(false);
-  const [profile, setProfile] = useState<StudentProfile | null>(null);
+// Use ISR - revalidate every 30 seconds (profile changes infrequently)
+export const revalidate = 30;
 
-  const fetchProfile = useCallback(async () => {
-    try {
-      setLoading(true);
-      const response = await fetch("/api/profile");
+async function getStudentProfile(dbUserId: string) {
+  const [student] = await db
+    .select({
+      id: students.id,
+      user_id: students.user_id,
+      room_no: students.room_no,
+      hostel_id: students.hostel_id,
+      hostel_name: hostels.name,
+      class_section_id: students.class_section_id,
+      class_section_name: class_sections.name,
+      batch_id: students.batch_id,
+      batch_year: batches.batch_year,
+      blood_group: students.blood_group,
+      created_at: students.created_at,
+      updated_at: students.updated_at,
+    })
+    .from(students)
+    .leftJoin(hostels, eq(students.hostel_id, hostels.id))
+    .leftJoin(class_sections, eq(students.class_section_id, class_sections.id))
+    .leftJoin(batches, eq(students.batch_id, batches.id))
+    .where(eq(students.user_id, dbUserId))
+    .limit(1);
 
-      if (response.ok) {
-        const data = await response.json();
-        setProfile(data);
-      } else if (response.status === 404) {
-        const data = await response.json();
-        if (data.needsLink) setNeedsLink(true);
-        toast.error("Profile not found. Contact administration.");
-      }
-    } catch (error) {
-      console.error("Error fetching profile:", error);
-      toast.error("Failed to load profile.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  return student;
+}
 
-  useEffect(() => {
-    if (isLoaded && user?.id) {
-      fetchProfile();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoaded, user?.id]);
+export default async function StudentProfilePage() {
+  const { userId } = await auth();
+  
+  if (!userId) {
+    redirect("/sign-in");
+  }
 
-  /* ----------------------------------------------------
-      LOADING STATE
-  ---------------------------------------------------- */
-  if (!isLoaded || loading) {
+  const dbUser = await getOrCreateUser(userId);
+  if (!dbUser) {
     return (
       <div className="flex h-screen items-center justify-center p-4">
-        <Loader2 className="w-6 h-6 sm:w-8 sm:h-8 animate-spin text-primary" />
+        <Card className="w-full max-w-md">
+          <CardHeader className="p-4 sm:p-6">
+            <CardTitle className="text-lg sm:text-xl">User Not Found</CardTitle>
+          </CardHeader>
+          <CardContent className="p-4 sm:p-6 pt-0">
+            <Alert>
+              <AlertCircle className="h-4 w-4 flex-shrink-0" />
+              <AlertDescription className="text-xs sm:text-sm">
+                Please contact administration to have your account created.
+              </AlertDescription>
+            </Alert>
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
-  /* ----------------------------------------------------
-      PROFILE NOT FOUND BUT NEEDS LINK
-  ---------------------------------------------------- */
-  if (needsLink) {
+  const profile = await getStudentProfile(dbUser.id);
+
+  if (!profile) {
     return (
       <div className="flex h-screen items-center justify-center p-4">
         <Card className="w-full max-w-md">
@@ -88,33 +92,22 @@ export default function StudentProfilePage() {
     );
   }
 
-  /* ----------------------------------------------------
-      PROFILE MISSING REGULAR
-  ---------------------------------------------------- */
-  if (!profile) {
-    return (
-      <div className="flex h-screen items-center justify-center p-4">
-        <Card className="w-full max-w-md">
-          <CardHeader className="p-4 sm:p-6">
-            <CardTitle className="text-lg sm:text-xl">Profile Not Found</CardTitle>
-          </CardHeader>
-          <CardContent className="p-4 sm:p-6 pt-0">
-            <Alert>
-              <AlertCircle className="h-4 w-4 flex-shrink-0" />
-              <AlertDescription className="text-xs sm:text-sm">
-                Please contact administration to have your student profile
-                created.
-              </AlertDescription>
-            </Alert>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  // Transform profile data to match component expectations
+  const profileData = {
+    id: profile.id,
+    full_name: dbUser.full_name || "",
+    email: dbUser.email || "",
+    mobile: dbUser.phone || "",
+    room_number: profile.room_no || null,
+    hostel: profile.hostel_name || null,
+    hostel_id: profile.hostel_id || null,
+    class_section: profile.class_section_name || null,
+    batch_year: profile.batch_year || null,
+    blood_group: profile.blood_group || null,
+    created_at: profile.created_at ? new Date(profile.created_at).toISOString() : new Date().toISOString(),
+    updated_at: profile.updated_at ? new Date(profile.updated_at).toISOString() : new Date().toISOString(),
+  };
 
-  /* ----------------------------------------------------
-      MAIN PROFILE UI
-  ---------------------------------------------------- */
   return (
     <div className="flex h-[calc(100vh-73px)]">
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
@@ -155,21 +148,21 @@ export default function StudentProfilePage() {
             <CardContent className="space-y-3 sm:space-y-4 p-4 sm:p-6 pt-0">
               {/* Name */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                <ReadonlyField label="Full Name" value={profile.full_name} />
+                <ReadonlyField label="Full Name" value={profileData.full_name} />
               </div>
 
               {/* Email */}
-              <ReadonlyField label="Email Address" value={profile.email} />
+              <ReadonlyField label="Email Address" value={profileData.email} />
 
               {/* Class + Batch */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <ReadonlyField
                   label="Class Section"
-                  value={profile.class_section ?? "Not Assigned"}
+                  value={profileData.class_section ?? "Not Assigned"}
                 />
                 <ReadonlyField
                   label="Batch Year"
-                  value={profile.batch_year?.toString() ?? "Not Assigned"}
+                  value={profileData.batch_year?.toString() ?? "Not Assigned"}
                 />
               </div>
 
@@ -177,24 +170,24 @@ export default function StudentProfilePage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <ReadonlyField
                   label="Hostel"
-                  value={profile.hostel ?? "Not Assigned"}
+                  value={profileData.hostel ?? "Not Assigned"}
                 />
                 <ReadonlyField
                   label="Room Number"
-                  value={profile.room_number ?? "Not Assigned"}
+                  value={profileData.room_number ?? "Not Assigned"}
                 />
               </div>
 
               {/* Mobile */}
               <ReadonlyField
                 label="Mobile Number"
-                value={profile.mobile ?? "Not Assigned"}
+                value={profileData.mobile ?? "Not Assigned"}
               />
 
               {/* Timestamps */}
               <div className="text-[10px] sm:text-xs text-muted-foreground pt-3 sm:pt-4 border-t space-y-1">
-                <p>Created: {new Date(profile.created_at).toLocaleString()}</p>
-                <p>Updated: {new Date(profile.updated_at).toLocaleString()}</p>
+                <p>Created: {new Date(profileData.created_at).toLocaleString()}</p>
+                <p>Updated: {new Date(profileData.updated_at).toLocaleString()}</p>
               </div>
             </CardContent>
           </Card>

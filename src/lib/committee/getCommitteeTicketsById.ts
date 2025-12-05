@@ -6,7 +6,7 @@
 
 import { db, committees, tickets, categories, ticket_statuses, ticket_committee_tags, ticket_groups, users } from "@/db";
 import { desc, eq, inArray } from "drizzle-orm";
-import { mapTicketRecord } from "@/lib/ticket/mapTicketRecord";
+import { mapTicketRecord } from "@/lib/ticket/data/mapTicketRecord";
 
 export async function getCommitteeTicketsById(committeeId: number) {
   // Get committee with head_id

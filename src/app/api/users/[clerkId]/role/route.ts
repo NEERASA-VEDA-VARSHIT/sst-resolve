@@ -9,7 +9,7 @@ import type { UserRole } from "@/types/auth";
  * Used by client components that can't access database directly
  */
 export async function GET(
-  request: NextRequest,
+  _request: unknown,
   { params }: { params: Promise<{ clerkId: string }> }
 ) {
   try {

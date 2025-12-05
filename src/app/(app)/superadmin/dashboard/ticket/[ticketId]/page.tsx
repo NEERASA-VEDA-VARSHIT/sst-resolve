@@ -5,30 +5,55 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Calendar, ArrowLeft, User, MapPin, FileText, Clock, AlertTriangle, AlertCircle, Image as ImageIcon, MessageSquare, CheckCircle2, Sparkles, RotateCw } from "lucide-react";
 import { db, tickets, categories, users, roles, students, hostels, ticket_statuses } from "@/db";
-import { eq, aliasedTable } from "drizzle-orm";
-import { AdminActions } from "@/components/tickets/AdminActions";
-import { CommitteeTagging } from "@/components/admin/CommitteeTagging";
-import { AdminCommentComposer } from "@/components/tickets/AdminCommentComposer";
+import { eq, aliasedTable, desc } from "drizzle-orm";
+import { AdminActions } from "@/components/features/tickets/actions/AdminActions";
+import { CommitteeTagging } from "@/components/admin/committees";
+import { AdminCommentComposer } from "@/components/features/tickets/actions/AdminCommentComposer";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { TicketStatusBadge } from "@/components/tickets/TicketStatusBadge";
+import { TicketStatusBadge } from "@/components/features/tickets/display/TicketStatusBadge";
 import type { TicketMetadata } from "@/db/inferred-types";
-import { buildTimeline } from "@/lib/ticket/buildTimeline";
+import { buildTimeline } from "@/lib/ticket/formatting/buildTimeline";
 import { normalizeStatusForComparison } from "@/lib/utils";
 import { getCachedTicketStatuses } from "@/lib/cache/cached-queries";
 import { buildProgressMap } from "@/lib/status/getTicketStatuses";
 import { getCategoryProfileFields, getCategorySchema } from "@/lib/category/categories";
-import { resolveProfileFields } from "@/lib/ticket/profileFieldResolver";
-import { extractDynamicFields } from "@/lib/ticket/formatDynamicFields";
-import { DynamicFieldDisplay } from "@/components/tickets/DynamicFieldDisplay";
+import { resolveProfileFields } from "@/lib/ticket/validation/profileFieldResolver";
+import { extractDynamicFields } from "@/lib/ticket/formatting/formatDynamicFields";
+import { DynamicFieldDisplay } from "@/components/features/tickets/display/DynamicFieldDisplay";
 import { CardDescription } from "@/components/ui/card";
 import { Info } from "lucide-react";
 import { format } from "date-fns";
 
 // Revalidate every 10 seconds for ticket detail page (more frequent for real-time updates)
 export const revalidate = 10;
+
+// Allow on-demand rendering for tickets not in the static params list
+export const dynamicParams = true;
+
+/**
+ * Generate static params for ticket detail pages
+ * Pre-renders the 50 most recent tickets at build time for faster loads
+ */
+export async function generateStaticParams() {
+  try {
+    const recentTickets = await db
+      .select({ id: tickets.id })
+      .from(tickets)
+      .orderBy(desc(tickets.created_at))
+      .limit(50);
+
+    return recentTickets.map((ticket) => ({
+      ticketId: ticket.id.toString(),
+    }));
+  } catch (error) {
+    console.error("Error generating static params for tickets:", error);
+    // Return empty array on error to allow build to continue
+    return [];
+  }
+}
 
 /**
  * Super Admin Ticket Detail Page

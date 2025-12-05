@@ -3,7 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { db, tickets, users, categories } from "@/db";
 import { desc, eq } from "drizzle-orm";
 import { getUserRoleFromDB } from "@/lib/auth/db-roles";
-import { createTicket } from "@/lib/ticket/createTicket";
+import { createTicket } from "@/lib/ticket/actions/createTicket";
 
 // Force Node.js runtime for Slack/email integrations
 export const runtime = 'nodejs';
@@ -422,7 +422,7 @@ export async function GET(request: NextRequest) {
 
     //
     // -------------------------------
-    // ADMIN / SENIOR_ADMIN → assigned tickets
+    // ADMIN → assigned tickets
     // -------------------------------
     //
     else if (role === "admin") {
@@ -472,10 +472,10 @@ export async function GET(request: NextRequest) {
 
     //
     // -------------------------------
-    // SUPER_ADMIN → all tickets
+    // SNR_ADMIN / SUPER_ADMIN → all tickets
     // -------------------------------
     //
-    else if (role === "super_admin") {
+    else if (role === "snr_admin" || role === "super_admin") {
       results = await db
         .select()
         .from(tickets)

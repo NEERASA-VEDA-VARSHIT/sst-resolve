@@ -43,6 +43,9 @@ export async function POST(
 
 		// Use cached function for better performance (request-scoped deduplication)
 		const { dbUser, role } = await getCachedAdminUser(userId);
+		if (!dbUser) {
+			return NextResponse.json({ error: "User not found" }, { status: 404 });
+		}
 
 		if (role !== "admin" && role !== "super_admin") {
 			return NextResponse.json({ error: "Forbidden" }, { status: 403 });

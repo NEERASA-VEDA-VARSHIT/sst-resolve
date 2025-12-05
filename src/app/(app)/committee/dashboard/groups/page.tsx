@@ -3,9 +3,7 @@ import { db, tickets, ticket_groups } from "@/db";
 
 import { eq, isNotNull } from "drizzle-orm";
 
-import { TicketGrouping } from "@/components/admin/TicketGrouping";
-
-import { SelectableTicketList } from "@/components/admin/SelectableTicketList";
+import { TicketGrouping, SelectableTicketList } from "@/components/admin/tickets";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -19,7 +17,7 @@ import { ArrowLeft, Users, Package, CheckCircle2, TrendingUp } from "lucide-reac
 
 import { getCachedUser, getCachedCommitteeTickets } from "@/lib/cache/cached-queries";
 
-import { AdminTicketFilters } from "@/components/admin/AdminTicketFilters";
+import { AdminTicketFilters } from "@/components/admin/tickets";
 
 import type { Ticket } from "@/db/types-only";
 

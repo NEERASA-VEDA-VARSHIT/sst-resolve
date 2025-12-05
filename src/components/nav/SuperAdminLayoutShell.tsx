@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Suspense } from "react";
-import { SuperAdminNav } from "./SuperAdminNav";
+import { RoleNav } from "./RoleNav";
 import { SuperAdminSideNav } from "./SuperAdminSideNav";
 import { NavLoadingShimmer } from "./NavLoadingShimmer";
 
@@ -16,7 +16,8 @@ export function SuperAdminLayoutShell({ children }: SuperAdminLayoutShellProps) 
   return (
     <>
       <Suspense fallback={<NavLoadingShimmer />}>
-        <SuperAdminNav
+        <RoleNav
+          role="super_admin"
           sideNavOpen={sideNavOpen}
           onToggleSideNav={() => setSideNavOpen((prev) => !prev)}
         />

@@ -30,6 +30,9 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const localUser = await getOrCreateUser(userId);
+    if (!localUser) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
     const body = await request.json().catch(() => null);
 
     if (!body || !body.ticketId || !body.publicId) {

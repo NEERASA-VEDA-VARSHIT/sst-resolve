@@ -7,7 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Users } from "lucide-react";
 import { StatsCards } from "@/components/dashboard/StatsCards";
 import { getTaggedTickets } from "@/lib/committee/getTaggedTickets";
-import { filterTickets } from "@/lib/ticket/filterTickets";
+import { filterTickets } from "@/lib/ticket/filters/filterTickets";
 import { calculateTicketStats } from "@/lib/committee/calculateStats";
 
 export const dynamic = "force-dynamic";

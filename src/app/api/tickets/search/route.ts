@@ -115,13 +115,15 @@ export async function GET(request: NextRequest) {
     // -----------------------
     // COUNT FOR PAGINATION
     // -----------------------
-    const [{ count }] = await db
+    const countRows = await db
       .select({
         count: sql<number>`COUNT(*)`,
       })
       .from(tickets)
       .leftJoin(ticket_statuses, eq(ticket_statuses.id, tickets.status_id))
       .where(whereClause ?? undefined);
+
+    const count = countRows[0]?.count ?? 0;
 
     return NextResponse.json({
       page,

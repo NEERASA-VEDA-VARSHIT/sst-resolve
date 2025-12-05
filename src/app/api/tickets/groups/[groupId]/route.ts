@@ -34,7 +34,7 @@ import { getStatusIdByValue } from "@/lib/status/getTicketStatuses";
 
 // GET - Get a specific ticket group with its tickets
 export async function GET(
-  request: NextRequest,
+  _request: unknown,
   { params }: { params: Promise<{ groupId: string }> }
 ) {
   try {
@@ -275,6 +275,9 @@ export async function PATCH(
       
       // Get admin user for assignment
       const dbUser = await getOrCreateUser(userId);
+      if (!dbUser) {
+        return NextResponse.json({ error: "User not found" }, { status: 404 });
+      }
 
       // Get group's committee_id if it exists
       const [groupInfo] = await db
@@ -475,6 +478,9 @@ export async function PATCH(
       const tatText = groupTAT.trim();
       const tatDate = calculateTATDate(tatText);
       const dbUser = await getOrCreateUser(userId);
+      if (!dbUser) {
+        return NextResponse.json({ error: "User not found" }, { status: 404 });
+      }
       const inProgressStatusId = await getStatusIdByValue(TICKET_STATUS.IN_PROGRESS);
 
       // Get all tickets in the group

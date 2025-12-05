@@ -8,54 +8,70 @@ import { AlertCircle } from "lucide-react";
 import { getCachedUser } from "@/lib/cache/cached-queries";
 import { getCategoriesHierarchy } from "@/lib/category/getCategoriesHierarchy";
 import { getCachedTicketStatuses } from "@/lib/cache/cached-queries";
-import { getStudentTickets, getTicketStats } from "@/lib/tickets/queries";
-import { sanitizeTicket, sanitizeCategoryHierarchy } from "@/lib/tickets/serialization";
+import { getStudentTickets, getTicketStats } from "@/lib/ticket/data/queries";
+import { sanitizeTicket, sanitizeCategoryHierarchy } from "@/lib/ticket/formatting/serialization";
 
 // UI Components
 import { DashboardHeader } from "@/components/student/dashboard/DashboardHeader";
 import { StatsCards } from "@/components/dashboard/StatsCards";
-import { TicketSearchWrapper } from "@/components/student/TicketSearchWrapper";
+import TicketSearch from "@/components/student/TicketSearch";
 import { TicketList } from "@/components/student/dashboard/TicketList";
 import { TicketEmpty } from "@/components/student/dashboard/TicketEmpty";
 import { PaginationControls } from "@/components/dashboard/PaginationControls";
 
-// Force dynamic rendering for authenticated routes
-export const dynamic = 'force-dynamic';
-// Cache response for 30 seconds to improve performance
+// Use ISR (Incremental Static Regeneration) - cache for 30 seconds
+// Removed force-dynamic to allow revalidation to work
 export const revalidate = 30;
 
 export default async function StudentDashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<Record<string, string | undefined>>;
+  searchParams?: Record<string, string | string[] | undefined>;
 }) {
   try {
-    // -----------------------------
-    // 1. Get DB User
-    // Note: Auth is handled by student/layout.tsx
-    // Layout ensures userId exists and user is created via getOrCreateUser
-    // -----------------------------
-    const { userId } = await auth();
-    if (!userId) throw new Error("Unauthorized"); // TypeScript type guard - layout ensures this never happens
+    // Get auth from Clerk - layout already verified userId exists
+    // We need to get userId for DB queries, but layout already guarded this page
+    const session = await auth();
+    const userId = session?.userId;
+    
+    // This should never happen - layout.tsx already verified, but type safety
+    if (!userId) {
+      return (
+        <Alert variant="destructive" className="m-6">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Authentication Error</AlertTitle>
+          <AlertDescription>
+            Unable to verify your identity. Please try logging in again.
+          </AlertDescription>
+        </Alert>
+      );
+    }
+    
     const dbUser = await getCachedUser(userId);
+    if (!dbUser) {
+      throw new Error("User not found in database");
+    }
 
     // -----------------------------
     // 2. Parse URL params
     // -----------------------------
-    const params = (await searchParams) ?? {};
-    const search = params.search ?? "";
-    const statusFilter = params.status ?? "";
-    const escalatedFilter = params.escalated ?? "";
-    const categoryFilter = params.category ?? "";
-    const subcategoryFilter = params.subcategory ?? "";
-    const sortBy = params.sort ?? "newest";
-    const page = parseInt(params.page || "1", 10);
+    const params = searchParams ?? {};
+    const getParam = (value: string | string[] | undefined) =>
+      Array.isArray(value) ? value[0] ?? "" : value ?? "";
+
+    const search = getParam(params.search);
+    const statusFilter = getParam(params.status);
+    const escalatedFilter = getParam(params.escalated);
+    const categoryFilter = getParam(params.category);
+    const subcategoryFilter = getParam(params.subcategory);
+    const sortBy = getParam(params.sort) || "newest";
+    const page = parseInt(getParam(params.page) || "1", 10);
 
     // Build dynamic filters from params
-    const safeParams = params && typeof params === 'object' && !Array.isArray(params) ? params : {};
+    const safeParams = params && typeof params === "object" && !Array.isArray(params) ? params : {};
     const dynamicFilters = Object.entries(safeParams)
       .filter(([key]) => key.startsWith("f_"))
-      .map(([key, value]) => ({ key, value: value || "" }))
+      .map(([key, value]) => ({ key, value: Array.isArray(value) ? value[0] ?? "" : value || "" }))
       .filter((f) => f.value);
 
     // -----------------------------
@@ -163,7 +179,7 @@ export default async function StudentDashboardPage({
         <Card className="border-2">
           <CardContent className="p-4 sm:p-6">
             <Suspense fallback={<div className="h-20 animate-pulse bg-muted rounded-lg" />}>
-              <TicketSearchWrapper
+              <TicketSearch
                 categories={categoryList}
                 currentSort={sortBy}
                 statuses={ticketStatuses}

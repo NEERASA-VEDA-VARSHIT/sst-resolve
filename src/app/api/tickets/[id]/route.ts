@@ -34,7 +34,7 @@ async function userOwnsTicket(userId: string, ticketId: number) {
 }
 
 export async function GET(
-  request: NextRequest,
+  _request: unknown,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -150,7 +150,7 @@ export async function GET(
       }
     }
 
-    // Admin/SPOC → must have access based on domain/scope OR be assigned
+    // Admin → must have access based on domain/scope OR be assigned
     if (role === "admin") {
       const dbUser = await getOrCreateUser(userId);
       if (!dbUser) {
@@ -183,7 +183,7 @@ export async function GET(
       // If assigned OR has domain/scope access, allow viewing
     }
 
-    // Super admin → full access (no restrictions)
+    // Snr Admin and Super Admin → full access (no restrictions, can view ALL tickets)
 
     return NextResponse.json({
       ...ticketRecord,
@@ -212,7 +212,7 @@ export async function PATCH(
 
     // Get role from database (single source of truth)
     const role = await getUserRoleFromDB(userId);
-    const isAdmin = role === "admin" || role === "super_admin";
+    const isAdmin = role === "admin" || role === "snr_admin" || role === "super_admin";
     const isCommittee = role === "committee";
 
     const { id } = await params;
@@ -666,89 +666,4 @@ export async function PATCH(
   }
 }
 
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const { userId } = await auth();
-
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    // Ensure user exists in database
-    await getOrCreateUser(userId);
-
-    // Get role from database (single source of truth)
-    const role = await getUserRoleFromDB(userId);
-
-    // Only admins can delete tickets
-    if (role !== "admin" && role !== "super_admin") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    const { id } = await params;
-    const ticketId = parseInt(id);
-    if (isNaN(ticketId)) {
-      return NextResponse.json({ error: "Invalid ticket ID" }, { status: 400 });
-    }
-
-    // Fetch ticket with status to validate deletion
-    const { ticket_statuses } = await import("@/db/schema");
-    const [ticket] = await db
-      .select({
-        id: tickets.id,
-        status: ticket_statuses.value,
-        group_id: tickets.group_id,
-      })
-      .from(tickets)
-      .leftJoin(ticket_statuses, eq(ticket_statuses.id, tickets.status_id))
-      .where(eq(tickets.id, ticketId))
-      .limit(1);
-
-    if (!ticket) {
-      return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
-    }
-
-    // Edge case: Prevent deleting tickets that are in active groups
-    // (Groups should be archived first, or tickets removed from group)
-    if (ticket.group_id) {
-      const { ticket_groups } = await import("@/db/schema");
-      const [group] = await db
-        .select({ is_archived: ticket_groups.is_archived })
-        .from(ticket_groups)
-        .where(eq(ticket_groups.id, ticket.group_id))
-        .limit(1);
-      
-      if (group && !group.is_archived) {
-        return NextResponse.json(
-          { error: "Cannot delete ticket that is part of an active group. Archive the group first or remove the ticket from the group." },
-          { status: 409 }
-        );
-      }
-    }
-
-    // Edge case: Warn if deleting non-resolved tickets (but allow it for super admins)
-    const statusValue = ticket.status?.toLowerCase() || "";
-    const isResolved = statusValue === "resolved" || statusValue === "closed";
-    if (!isResolved && role !== "super_admin") {
-      // Allow deletion but log a warning
-      console.warn(`[Ticket Delete] Admin ${userId} deleting ticket #${ticketId} with status "${ticket.status}"`);
-    }
-
-    const result = await db
-      .delete(tickets)
-      .where(eq(tickets.id, ticketId))
-      .returning();
-
-    if (!result || result.length === 0) {
-      return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
-    }
-
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error("Error deleting ticket:", error);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
-  }
-}
+// DELETE endpoint removed - tickets should not be deleted

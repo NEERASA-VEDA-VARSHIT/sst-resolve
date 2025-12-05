@@ -8,7 +8,7 @@ import {
   Tag,
   LucideIcon,
 } from "lucide-react";
-import { UserRole } from "./useRole";
+import { UserRole } from "@/hooks/auth/useRole";
 
 // Re-export UserRole for convenience
 export type { UserRole };
@@ -28,6 +28,7 @@ export function getNavItemsForRole(role: UserRole, mounted: boolean): NavItem[] 
   if (!mounted) return [];
 
   const isSuperAdmin = role === "super_admin";
+  const isSnrAdmin = role === "snr_admin";
   const isCommittee = role === "committee";
   const isRegularAdmin = role === "admin";
 
@@ -112,6 +113,52 @@ export function getNavItemsForRole(role: UserRole, mounted: boolean): NavItem[] 
       : []),
 
     // ============================================
+    // SENIOR ADMIN NAVIGATION
+    // ============================================
+    // Note: Logo links to /snr-admin/dashboard, so "Dashboard" is redundant
+    // Snr Admin has: View ALL tickets, Manage committees, Manage categories
+    ...(isSnrAdmin
+      ? [
+          {
+            title: "All Tickets",
+            href: "/snr-admin/tickets",
+            icon: FileText,
+            show: true,
+          },
+          {
+            title: "Today",
+            href: "/snr-admin/dashboard/today",
+            icon: Calendar,
+            show: true,
+          },
+          {
+            title: "Escalated",
+            href: "/snr-admin/dashboard/escalated",
+            icon: AlertCircle,
+            show: true,
+          },
+          {
+            title: "Analytics",
+            href: "/snr-admin/analytics",
+            icon: BarChart3,
+            show: true,
+          },
+          {
+            title: "Groups",
+            href: "/snr-admin/dashboard/groups",
+            icon: Users,
+            show: true,
+          },
+          {
+            title: "Committees",
+            href: "/snr-admin/dashboard/committees",
+            icon: Users,
+            show: true,
+          },
+        ]
+      : []),
+
+    // ============================================
     // SUPER ADMIN NAVIGATION
     // ============================================
     // Note: Logo links to /superadmin/dashboard, so "Dashboard" is redundant
@@ -167,6 +214,7 @@ export function getNavItemsForRole(role: UserRole, mounted: boolean): NavItem[] 
  */
 export function getDashboardLinkForRole(role: UserRole): string {
   if (role === "super_admin") return "/superadmin/dashboard";
+  if (role === "snr_admin") return "/snr-admin/dashboard";
   if (role === "admin") return "/admin/dashboard";
   if (role === "committee") return "/committee/dashboard";
   return "/student/dashboard";
@@ -177,6 +225,7 @@ export function getDashboardLinkForRole(role: UserRole): string {
  */
 export function getProfileLinkForRole(role: UserRole): string {
   if (role === "super_admin") return "/superadmin/profile";
+  if (role === "snr_admin") return "/snr-admin/profile";
   if (role === "admin") return "/admin/profile";
   if (role === "committee") return "/committee/dashboard";
   return "/student/profile";
@@ -189,6 +238,8 @@ export function getRoleDisplayName(role: UserRole): string {
   switch (role) {
     case "super_admin":
       return "Super Admin";
+    case "snr_admin":
+      return "Senior Admin";
     case "admin":
       return "Admin";
     case "committee":

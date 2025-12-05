@@ -9,9 +9,8 @@ import { Calendar, AlertTriangle, CheckCircle2, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
-// Force dynamic rendering since we use auth headers
-export const dynamic = "force-dynamic";
-// Cache response for 30 seconds to improve performance
+// Use ISR (Incremental Static Regeneration) - cache for 30 seconds
+// Removed force-dynamic to allow revalidation to work
 export const revalidate = 30;
 
 /**

@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/provider/ThemeProvider";
 import { ProgressBar } from "@/components/dashboard/ProgressBar";
 import { SpeedInsights } from "@vercel/speed-insights/next";
+import { WebVitals } from "./web-vitals";
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
@@ -72,6 +73,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               duration={4000}
             />
             <SpeedInsights />
+            <WebVitals />
           </ThemeProvider>
         </body>
       </html>

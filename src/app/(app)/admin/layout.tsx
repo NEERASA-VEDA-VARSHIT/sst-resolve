@@ -1,9 +1,8 @@
 import { Suspense } from "react";
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { getUserRoleFromDB } from "@/lib/auth/db-roles";
-import { getOrCreateUser } from "@/lib/auth/user-sync";
-import { AdminNav } from "@/components/nav/AdminNav";
+import { getUserRole, ensureUser } from "@/lib/auth/api-auth";
+import { RoleNav } from "@/components/nav/RoleNav";
 import { NavLoadingShimmer } from "@/components/nav/NavLoadingShimmer";
 
 /**
@@ -23,10 +22,10 @@ export default async function AdminLayout({
   }
 
   // Ensure user exists in database
-  await getOrCreateUser(userId);
+  await ensureUser(userId);
 
-  // Get role from database (single source of truth)
-  const role = await getUserRoleFromDB(userId);
+  // Get role from API (single source of truth)
+  const role = await getUserRole(userId);
 
   // Redirect committee members to their own dashboard
   if (role === "committee") {
@@ -38,7 +37,12 @@ export default async function AdminLayout({
     redirect("/superadmin/dashboard");
   }
 
-  // Only allow admin role (exclude committee, super_admin, and students)
+  // Redirect snr_admin to snr-admin dashboard
+  if (role === "snr_admin") {
+    redirect("/snr-admin/dashboard");
+  }
+
+  // Only allow admin role (exclude committee, super_admin, snr_admin, and students)
   if (role !== "admin") {
     redirect("/student/dashboard");
   }
@@ -46,7 +50,7 @@ export default async function AdminLayout({
   return (
     <>
       <Suspense fallback={<NavLoadingShimmer />}>
-        <AdminNav />
+        <RoleNav role="admin" />
       </Suspense>
       {children}
     </>

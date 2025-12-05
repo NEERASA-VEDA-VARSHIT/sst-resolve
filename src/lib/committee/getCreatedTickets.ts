@@ -4,7 +4,7 @@
 
 import { db, tickets, categories, ticket_statuses } from "@/db";
 import { desc, eq } from "drizzle-orm";
-import { mapTicketRecord } from "@/lib/ticket/mapTicketRecord";
+import { mapTicketRecord } from "@/lib/ticket/data/mapTicketRecord";
 
 export async function getCreatedTickets(userId: string) {
   const ticketRows = await db

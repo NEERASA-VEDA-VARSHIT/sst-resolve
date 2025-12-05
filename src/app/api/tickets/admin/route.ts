@@ -143,12 +143,14 @@ export async function GET(request: NextRequest) {
       .offset(offset);
 
     // Get total count for pagination
-    const [{ total }] = await db
+    const totalRows = await db
       .select({
         total: sql<number>`COUNT(*)`,
       })
       .from(tickets)
       .where(whereClause ?? undefined);
+
+    const total = totalRows[0]?.total ?? 0;
 
     // Transform data for frontend
     const ticketsData = ticketRows.map(ticket => ({

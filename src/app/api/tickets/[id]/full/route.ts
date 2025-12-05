@@ -20,7 +20,7 @@
  * ============================================
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import {
@@ -38,10 +38,10 @@ import {
   getCategoryById,
   getCategoryProfileFields
 } from "@/lib/category/categories";
-import { extractDynamicFields } from "@/lib/ticket/formatDynamicFields";
+import { extractDynamicFields } from "@/lib/ticket/formatting/formatDynamicFields";
 
 export async function GET(
-  request: NextRequest,
+  _request: unknown,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
